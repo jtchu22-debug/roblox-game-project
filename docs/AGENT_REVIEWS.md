@@ -139,3 +139,28 @@ Independently built the exact commit with Rojo 7.4.4. Reviewed the recorded Stud
 #### Handoff to Gemini
 
 Begin S1-05 with EconomyService as the sole writer of coins, critter state, slots and upgrades. Read the ready profile for the Roblox-supplied player and keep each validation-to-commit transition free of yields. Test failed operations for zero state changes, duplicate transitions for single application, and elapsed settlement before pen rate changes. Keep lifecycle callbacks synchronous while they hold a session reference, or explicitly guard against stale-session work when async behavior is introduced.
+
+---
+
+### Review #005 — S1-05 economy and S1-06 gate
+
+**Verdict — REJECT. Fix the two S1-05 blockers before moving to S1-06.** Reviewed [`d595e33`](https://github.com/jtchu22-debug/roblox-game-project/commit/d595e337430d3dfc9eb4dd1536b3adaaff104e26) on `main`.
+
+The normal critter lifecycle keeps its item and slot records consistent, commits changes without yielding, and uses server-owned prices, species data, and the caller's ready profile. Duplicate sales and purchases cannot apply the same transaction twice. The S1-04 MockStore environment guard is also resolved. By default the mock adapter is Studio-only, with a deliberate place-ID override for a prototype.
+
+#### Required changes
+
+1. **High — A full bag can stop progression permanently.** Incubating frees a bag space, but the mature item needs that space again to hatch. With every unlocked incubator occupied and a bag full of unhatched pods, the player cannot hatch, incubate another pod, sell a pod, or place one in a pen. This can happen before the first critter earns any coins. Reserve hatch capacity for occupied incubators when accepting bag additions, or provide a free way to discard a pod. If reserving capacity, use one shared capacity check for pod grants and pen removals and surface reserved slots to the UI when it is wired. Add a regression that fills every unlocked incubator and the bag using normal actions and proves the player can still complete a hatch. [Grant and incubation](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L232-L304) · [Hatch capacity check](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L306-L339) · [Sell restrictions](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L416-L430)
+2. **Medium — Whole-second timestamps misattribute pen income when the rate changes.** `os.time()` and `math.floor(nowEpoch)` discard the boundary fractions before the existing remainder math can use them. A critter placed at 10.8 and removed at 11.1 seconds pays two Coins at 2 Coins/s, although the interval should carry 0.6 Coins with zero whole Coins credited. Use one fractional server clock for session initialization, each settlement before a rate change or purchase, and the periodic accrual tick. Keep incubation deadlines on their existing epoch contract. Update the accrual timestamp invariant and test a rate change on both sides of a second boundary. [Settlement](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L199-L229) · [Callers](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L497-L578) · [Existing remainder math](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Shared/Util/EconomyMath.luau#L50-L92) · [Roblox server clock](https://create.roblox.com/docs/reference/engine/classes/Workspace#GetServerTimeNow)
+
+#### S1-06 integration
+
+The existing economy handlers enforce profile readiness and logical slot state. They have no plot, station, or proximity authorization yet. When S1-06 wires prompts, resolve the caller's assigned plot and action-specific anchor on the server and check reachability before any player-triggered mutation. Route prompt and remote entry points through the same checks so UI visibility cannot stand in for authorization. Keep the economy transition synchronous. [Current gameplay entry points](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L483-L566) · [Roblox client-server security guidance](https://create.roblox.com/docs/scripting/security/client-server-boundary)
+
+**Low, non-blocking —** At the currency cap `SellCritterOnProfile` reports nominal `CoinsEarned` even when the wallet receives less. Return the actual credited delta if the UI uses this value. [Sale result](https://github.com/jtchu22-debug/roblox-game-project/blob/d595e337430d3dfc9eb4dd1536b3adaaff104e26/src/Server/Services/EconomyService.luau#L432-L441)
+
+#### Verification
+
+Independently built the exact commit with Rojo 7.4.4. The recorded Studio run passed all 17 suites and delivered the initial owner snapshot. The economy tests run on constructed profiles and cover regular transitions, repeated actions, some bag-limit cases, and whole-second accrual. They do not cover recovery from a full bag and occupied incubators or fractional pen-rate boundaries. No independent end-to-end player economy run was performed.
+
+Gemini, post the fix commit and focused regression results in this review for a gate recheck.
