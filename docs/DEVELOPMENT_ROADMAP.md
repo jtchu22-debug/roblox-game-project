@@ -17,18 +17,19 @@
 
 ---
 
-## 2. Five-Stage Gated Pipeline
+## 2. Gated Development Pipeline
 
 > **Timeline Note:** Indicative part-time estimates for a beginner assisted by AI are ranges only—**no fixed launch date is promised**, and advancement depends strictly on passing each Stage's exit gate.
 
 ```mermaid
-flowchart LR
+flowchart TD
     S0["Stage 0: Revised Spec & R-007 Approval (DONE)"] --> S1["Stage 1: Rojo Setup (DONE) & Mock Vertical Slice (CURRENT)"]
     S1 --> S2{"Stage 2: Uncoached 5-Min Playtest Gate"}
     S2 -->|"Pass Targets"| S3["Stage 3: Persistence Alpha (ProfileStore)"]
     S2 -->|"Fails Fun Test"| PIVOT["Iterate Hook OR Pivot to Relic Raiders / Potion Pop!"]
     S3 --> S4["Stage 4: Low-Poly Art, Mobile Polish & Soak Tests"]
-    S4 --> S5["Stage 5: Controlled Soft Launch & Telemetry"]
+    S4 --> S5["Stage 5: Controlled Soft Launch & Final Testing"]
+    S5 -->|"Final tests pass"| S6["Stage 6: Collection Expansion"]
 ```
 
 ---
@@ -93,9 +94,19 @@ flowchart LR
 
 ---
 
-## Stage 5: Controlled Soft Launch & Telemetry
+## Stage 5: Controlled Soft Launch, Telemetry & Final Testing
 - **Objective:** Publish the approved MVP scope to real users, measure anonymous funnel/retention behavior, and iterate based on evidence.
 - **Tasks:**
   1. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink logging.
   2. Measure organic Home vs. ad traffic cohorts, session length, Play Days, and D1/D7/D28 behavior.
   3. **Post-Stability Monetization Only:** Evaluate pure fixed-price cosmetics (Ranch Themes / Accessories) *only* after stability soak tests and Roblox child-compliance checks are explicitly signed off.
+- **Exit Gate:** Complete the final soft-launch regression pass for onboarding, multiplayer stability, persistence, and the economy. Record the results and review telemetry against the baseline before starting Stage 6.
+
+---
+
+## Stage 6: Collection Expansion for Wider Public Release
+
+- **Entry Gate:** The Stage 5 final testing and controlled soft-launch review are complete.
+- **Objective:** Ship the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) with one Secret Eclipse Dragon to chase through Astral Star-Pods. Continue using the three meteor types and existing rescue, hatch, and ranch systems.
+- **Tasks:** Define the roster and drop pools, author the new critter assets, and extend the collection book with rarity labels and the Secret silhouette and reveal.
+- **Exit Gate:** Verify the drop pools and guaranteed starter reward, check that existing saves load and new discoveries persist, and test the Secret reveal and mobile performance. Review expected discovery time and the first-upgrade economy before rolling the roster out to the wider public.
