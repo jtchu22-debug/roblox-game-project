@@ -167,10 +167,11 @@ Every `OnServerEvent` and `OnServerInvoke` passes through a centralized validato
    - On `PlayerRemoving` and `game:BindToClose`: end sessions gracefully within the `BindToClose` shutdown window.
    - Use isolated DataStore scopes (`StarfallRanch_Alpha_v1` vs `StarfallRanch_Prod_v1`) so Studio tests never touch live player data.
 
-### 5.2 Offline Incubation Math (No Offline Coin Faucet)
+### 5.2 Offline Incubation and Stage 6 Coin Settlement
 - When a pod starts incubating, server records `MaturesAt = os.time() + SpeciesConfig.HatchSeconds`.
 - On profile load, **only `MaturesAt`** is checked on demand when hatching (`os.time() >= Item.MaturesAt`).
-- `LastAccrualTimestamp` is updated on logout and reset cleanly to `os.time()` on login **without** granting elapsed offline coin income—guaranteeing zero offline inflation and zero rejoin-spam exploits.
+- Through Stage 5, reset `LastAccrualTimestamp` on login with zero offline Coin payout.
+- In Stage 6, compute offline Coins from the durable logout pen rate and elapsed server time within configured caps. Resolve the 2× pass server-side and commit the credited balance and settlement checkpoint in one durable update. Start online accrual from the new session timestamp. Verify a failed save or repeated join cannot consume or duplicate the same interval. [Purchase and settlement contract](./MONETIZATION.md#4-purchase-delivery-and-receipt-durability)
 
 ### 5.3 Mandatory Adversarial & Persistence Test Matrix (Every Milestone)
 - **Stage 1 Tests:** 2-player simultaneous meteor finish race; expired/forged `AttemptNonce`; out-of-range finish; `NaN`/`nil`/wrong-type remote fuzzing; bag-full crack attempt; player leaving/respawning mid-crack; rapid plot upgrade spam.
