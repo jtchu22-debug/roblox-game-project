@@ -34,7 +34,7 @@ roblox-game-project/
 │   ├── CODING_STANDARDS.md            # Mandatory --!strict Luau rules, Init/Start pattern & Rojo ownership
 │   ├── GAME_DESIGN.md                 # Narrowed Prototype & MVP spec, bounded integer economy & 5-min simulation
 │   ├── TECHNICAL_ARCHITECTURE.md      # Single-item-map schema, nonce claim protocol, DTOs & ProfileStore lifecycle
-│   ├── DEVELOPMENT_ROADMAP.md         # 5-stage gated roadmap (Mock Vertical Slice -> Playtest -> Alpha -> Launch)
+│   ├── DEVELOPMENT_ROADMAP.md         # Gated roadmap from the mock vertical slice through Stage 6 collection expansion
 │   ├── ART_DIRECTION.md               # Low-poly style guide, accessibility, scale/instance budgets & Blender caveats
 │   ├── MONETIZATION.md                # Child-safe policy (Creator Rewards, zero paid random items, cosmetics-only)
 │   ├── MARKET_RESEARCH.md             # Verified 2025–2026 CCU snapshots, rivals, negative controls & hypotheses
