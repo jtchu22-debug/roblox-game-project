@@ -60,8 +60,19 @@ local assignmentsByPlotId: { [number]: PlotAssignment } = {}
 local plotIdByUserId: { [number]: number } = {}
 local plotRevisionByPlotId: { [number]: number } = {}
 local incubatorMatureNotified: { [number]: { [string]: boolean } } = {}
+local plotAssignedCallbacks: { (plotId: number, userId: number) -> () } = {}
+local plotReleasedCallbacks: { (plotId: number, userId: number) -> () } = {}
 local globalPlotsRevision = 0
 local incubatorWatcherRunning = false
+
+local function isFiniteVector3(v: Vector3): boolean
+	return v.X == v.X
+		and math.abs(v.X) ~= math.huge
+		and v.Y == v.Y
+		and math.abs(v.Y) ~= math.huge
+		and v.Z == v.Z
+		and math.abs(v.Z) ~= math.huge
+end
 
 local function getPlotModel(plotId: number): Model?
 	return plotModelsById[plotId]
@@ -184,8 +195,16 @@ function PlotService.AuthorizeStationAtPosition(
 		return false, "InvalidStationAnchor"
 	end
 
+	if not isFiniteVector3(worldPos) then
+		return false, "OutOfRange"
+	end
+
 	local distance = (worldPos - anchor.Position).Magnitude
-	if distance > Constants.MAX_STATION_INTERACT_DISTANCE then
+	if distance ~= distance
+		or math.abs(distance) == math.huge
+		or distance < 0
+		or distance > Constants.MAX_STATION_INTERACT_DISTANCE
+	then
 		return false, "OutOfRange"
 	end
 
@@ -495,7 +514,31 @@ function PlotService.AssignPlotForUserId(
 	plotRevisionByPlotId[assignedPlotId] = (plotRevisionByPlotId[assignedPlotId] or 0) + 1
 
 	PlotService.RefreshPlotWorldState(assignedPlotId)
+	for _, cb in ipairs(plotAssignedCallbacks) do
+		local ok, err = pcall(cb, assignedPlotId, userId)
+		if not ok then
+			warn("[PlotService] OnPlotAssigned callback error: " .. tostring(err))
+		end
+	end
 	return true, "Assigned", assignedPlotId
+end
+
+function PlotService.HandlePlayerReadyAdmission(
+	userId: number,
+	displayName: string,
+	profile: Types.PlayerProfileData,
+	player: Player?
+): (boolean, string, number?)
+	local ok, reason, plotId = PlotService.AssignPlotForUserId(userId, displayName, profile, player)
+	if not ok then
+		-- Never leave an excess player Ready without a Ranch; close session and reject cleanly.
+		DataService.EndMockSession(userId, player)
+		if player ~= nil and player.Parent ~= nil then
+			player:Kick("This prototype server is full (max 2 ranches). Please join another server.")
+		end
+		return false, reason, nil
+	end
+	return true, reason, plotId
 end
 
 function PlotService.ReleasePlotForUserId(userId: number): number?
@@ -526,7 +569,27 @@ function PlotService.ReleasePlotForUserId(userId: number): number?
 	plotRevisionByPlotId[plotId] = (plotRevisionByPlotId[plotId] or 0) + 1
 
 	PlotService.RefreshPlotWorldState(plotId)
+	for _, cb in ipairs(plotReleasedCallbacks) do
+		local ok, err = pcall(cb, plotId, userId)
+		if not ok then
+			warn("[PlotService] OnPlotReleased callback error: " .. tostring(err))
+		end
+	end
 	return plotId
+end
+
+function PlotService.OnPlotAssigned(callback: (plotId: number, userId: number) -> ()): ()
+	table.insert(plotAssignedCallbacks, callback)
+	for plotId, assignment in pairs(assignmentsByPlotId) do
+		local ok, err = pcall(callback, plotId, assignment.UserId)
+		if not ok then
+			warn("[PlotService] Late OnPlotAssigned callback error: " .. tostring(err))
+		end
+	end
+end
+
+function PlotService.OnPlotReleased(callback: (plotId: number, userId: number) -> ()): ()
+	table.insert(plotReleasedCallbacks, callback)
 end
 
 function PlotService.GetAssignedPlotId(userId: number): number?
@@ -669,9 +732,9 @@ function PlotService.Start(self: typeof(PlotService)): ()
 	end)
 
 	DataService.OnPlayerReady(function(player: Player, profile: Types.PlayerProfileData)
-		local ok, reason = PlotService.AssignPlotForUserId(player.UserId, player.DisplayName, profile, player)
+		local ok, reason = PlotService.HandlePlayerReadyAdmission(player.UserId, player.DisplayName, profile, player)
 		if not ok then
-			warn(string.format("[PlotService] Could not assign plot for %s: %s", player.Name, reason))
+			warn(string.format("[PlotService] Rejected excess player %s: %s", player.Name, reason))
 		else
 			broadcastAllPublicPlots()
 		end
@@ -687,7 +750,7 @@ function PlotService.Start(self: typeof(PlotService)): ()
 		NetworkService.SendPublicPlotsToPlayer(player, PlotService.BuildAllPublicPlotDTOs(), globalPlotsRevision)
 	end)
 
-	-- Refresh Incubator world prompts & labels when pods cross MaturesAt
+	-- Refresh Incubator world countdown labels every second while active and flip to HATCH at maturity
 	if not incubatorWatcherRunning then
 		incubatorWatcherRunning = true
 		task.spawn(function()
@@ -701,7 +764,7 @@ function PlotService.Start(self: typeof(PlotService)): ()
 						local uid = profile.Slots[slotId]
 						local item = if uid then profile.Items[uid] else nil
 						if item and item.State == "Incubating" and item.MaturesAt ~= nil then
-							if nowClock >= item.MaturesAt and not (incubatorMatureNotified[plotId] and incubatorMatureNotified[plotId][slotId]) then
+							if nowClock < item.MaturesAt or not (incubatorMatureNotified[plotId] and incubatorMatureNotified[plotId][slotId]) then
 								needsRefresh = true
 							end
 						end
@@ -762,9 +825,20 @@ function PlotService.RunSelfTest(): number
 	local farOk, farReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(0, 2, 0), "SellStand", "SellStand")
 	assert(not farOk and farReason == "OutOfRange", "Crater distance rejected for ranch station")
 
-	-- Unassigned player rejected
+	-- Unassigned player & non-finite coordinates rejected (Review #007)
 	local unOk, unReason = PlotService.AuthorizeStationAtPosition(u3, inc1Anchor.Position, "Incubator", "Incubator_1")
 	assert(not unOk and unReason == "NoAssignedPlot", "Unassigned player rejected")
+	local nanOk, nanReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(0 / 0, 0, 0), "Incubator", "Incubator_1")
+	assert(not nanOk and nanReason == "OutOfRange", "NaN coordinate must be rejected")
+	local infOk, infReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(math.huge, 0, 0), "Incubator", "Incubator_1")
+	assert(not infOk and infReason == "OutOfRange", "Infinite coordinate must be rejected")
+
+	-- Explicit NoFreePlot admission cleanup terminates excess Ready session
+	DataService.BeginMockSession(u3, nil)
+	assert(DataService.CompleteMockSession(u3, 1000) and DataService.IsUserIdReady(u3), "u3 ready before admission check")
+	local admOk, admReason = PlotService.HandlePlayerReadyAdmission(u3, "TesterThree", p3, nil)
+	assert(not admOk and admReason == "NoFreePlot", "Admission rejects 3rd user with NoFreePlot")
+	assert(not DataService.IsUserIdReady(u3), "Rejected 3rd user session must be ended cleanly")
 	passed += 1
 
 	-- 3. PublicPlotDTO projection & release revision increments

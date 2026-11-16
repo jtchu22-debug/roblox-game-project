@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.7-s1-06",
+	GAME_VERSION = "0.1.8-s1-07",
 	USE_MOCK_STORE = true,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true,
@@ -20,6 +20,8 @@ local Constants = {
 	STARTER_INCUBATOR_SLOTS = 1,
 	MAX_STATION_INTERACT_DISTANCE = 18,
 	PROMPT_ACTIVATION_DISTANCE = 12,
+	MAX_ACTIVE_WILD_METEORS = 4,
+	WILD_METEOR_RESPAWN_SECONDS = 6,
 
 	-- Greybox Map Identifiers & CollectionService Tags
 	GREYBOX_ROOT_NAME = "StarfallGreyboxRoot",
@@ -31,6 +33,7 @@ local Constants = {
 	TAG_UPGRADE_PAD = "StarfallUpgradePad",
 	TAG_SELL_STAND = "StarfallSellStand",
 	TAG_METEOR_NODE = "StarfallMeteorNode",
+	TAG_ACTIVE_METEOR = "StarfallActiveMeteor",
 
 	-- Inventory & Economy Safety Caps
 	MAX_BAG_CAPACITY = 10,

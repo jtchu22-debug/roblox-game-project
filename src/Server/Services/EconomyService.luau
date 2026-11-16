@@ -518,6 +518,17 @@ function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): Ec
 	return res
 end
 
+function EconomyService.CheckStationAuthorization(player: Player?, stationKind: string, targetId: string): (boolean, string)
+	-- Deny by default if PlotService has not registered an authorizer.
+	if stationAuthorizer == nil then
+		return false, "AuthorizerUnavailable"
+	end
+	if player == nil then
+		return false, "PlayerUnavailable"
+	end
+	return stationAuthorizer(player, stationKind, targetId)
+end
+
 function EconomyService.HandlePlotAction(
 	player: Player,
 	action: Types.PlotAction,
@@ -547,11 +558,9 @@ function EconomyService.HandlePlotAction(
 		return { Ok = false, Reason = "InvalidAction" }
 	end
 
-	if stationAuthorizer ~= nil then
-		local authOk, authReason = stationAuthorizer(player, stationKind, stationTargetId)
-		if not authOk then
-			return { Ok = false, Reason = authReason }
-		end
+	local authOk, authReason = EconomyService.CheckStationAuthorization(player, stationKind, stationTargetId)
+	if not authOk then
+		return { Ok = false, Reason = authReason }
 	end
 
 	local nowClock = workspace:GetServerTimeNow()
@@ -594,11 +603,9 @@ function EconomyService.HandleBuyUpgrade(player: Player, upgradeId: Types.Upgrad
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
-	if stationAuthorizer ~= nil then
-		local authOk, authReason = stationAuthorizer(player, "UpgradePad", upgradeId)
-		if not authOk then
-			return { Ok = false, Reason = authReason }
-		end
+	local authOk, authReason = EconomyService.CheckStationAuthorization(player, "UpgradePad", upgradeId)
+	if not authOk then
+		return { Ok = false, Reason = authReason }
 	end
 
 	local nowClock = workspace:GetServerTimeNow()
@@ -840,6 +847,19 @@ function EconomyService.RunSelfTest(): number
 	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 4/s + 0.6 = 1.6 -> credits 1 Coin")
 	assert(pSub.Coins == 1 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "Expected 1 Coin and 0.6 fraction after rate switch")
 	assert((EconomyService.ValidateProfileInvariants(pSub)), "Invariant valid after sub-second fractional rate change")
+	passed += 1
+
+	-- 6. Missing authorizer denies by default (Review #007)
+	local savedAuthorizer = stationAuthorizer
+	EconomyService.SetStationAuthorizer(nil)
+	local missingOk, missingReason = EconomyService.CheckStationAuthorization(nil, "UpgradePad", "PenSlot_2")
+	assert(not missingOk and missingReason == "AuthorizerUnavailable", "Missing authorizer must deny by default")
+	EconomyService.SetStationAuthorizer(function(_p, _k, _t)
+		return false, "MockDenied"
+	end)
+	local mockDeniedOk, mockDeniedReason = EconomyService.CheckStationAuthorization(nil, "UpgradePad", "PenSlot_2")
+	assert(not mockDeniedOk and mockDeniedReason == "PlayerUnavailable", "Nil player denied")
+	EconomyService.SetStationAuthorizer(savedAuthorizer)
 	passed += 1
 
 	return passed
