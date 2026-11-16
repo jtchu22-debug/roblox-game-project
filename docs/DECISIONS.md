@@ -115,7 +115,7 @@ Gemini integrated ChatGPT's audit dispositions (`R-001`–`R-006`) across all Ph
 
 **Status — Approved direction from the Human Lead**
 
-Stages 1–5 use Studio or invite-only builds. Stage 5 validates core systems and establishes baseline progression. Stage 6 builds the 12-species roster, collection book, and earnable Secret Eclipse Dragon. Complete the final regression pass on the content-complete Stage 6 build, then publish it as the first public release. Public telemetry informs subsequent updates.
+Stages 1–5 use Studio or invite-only builds. Stage 5 validates core systems and establishes baseline progression. Stage 6 builds the 24-species roster, collection book, and earnable Secret Eclipse Dragon. Complete the final regression pass on the content-complete Stage 6 build, then publish it as the first public release. Public telemetry informs subsequent updates.
 
 [Game design](./GAME_DESIGN.md#7-stage-6-collection-expansion) · [Development roadmap](./DEVELOPMENT_ROADMAP.md#stage-6-collection-expansion-for-the-first-public-release)
 
@@ -128,3 +128,13 @@ Stages 1–5 use Studio or invite-only builds. Stage 5 validates core systems an
 The first public Stage 6 build ships the earnable collection and the launch shop together. The shop includes paid luck for eligible users, faster incubation, capped 2× offline Coins, gameplay VIP, paid meteors, instant hatch credits, guaranteed companions, and cosmetics. Stage 6 includes private verification of launch purchases, free progression, and the paid-random eligibility and odds checks. The Eclipse Dragon remains an earnable Secret from regular Astral Star-Pods.
 
 [Day-one shop](./MONETIZATION.md#3-day-one-game-passes-and-purchases)
+
+---
+
+### ADR-010 — Larger Launch Roster and Progression-Based Income
+
+**Status — Launch direction requested by the Human Lead**
+
+Stage 6 expands the first public roster to 24 earnable critters and adds stronger income as the ranch unlocks higher-rarity pools. Per-critter weight and a single income mutation add bounded upside. This extends the bounded economy in ADR-003 for Stage 6. The exact rates, odds and upgrade costs are initial balance targets for private testing.
+
+[Stage 6 design and Coin curve](./GAME_DESIGN.md#7-stage-6-collection-expansion)
