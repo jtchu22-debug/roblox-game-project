@@ -1,16 +1,53 @@
 --!strict
 --[[
 	Module: UpgradeConfig
-	Purpose: Declarative registry of permanent Ranch upgrades (Stage 1 skeleton stub).
-	Connections: Populated during Stage 1 task S1-01; read by EconomyService, PlotService, and UIController.
-	How to Test in Studio: Require from Command Bar or Play mode and confirm table freezes cleanly.
+	Purpose: Declarative registry of the 3 visible Stage 1 Ranch Upgrades.
+	Connections: Read by EconomyService, PlotService, and UIController.
+	How to Test in Studio: Press Play (F5) to run SharedSelfTest verifying upgrade costs and slot mappings.
 ]]
 
 local Shared = script.Parent.Parent
-local Types = require(Shared.Types)
+local Types = require(Shared:WaitForChild("Types"))
 
-local UpgradeConfig: { [string]: Types.UpgradeDefinition } = {}
+local byId: { [Types.UpgradeId]: Types.UpgradeDefinition } = {
+	PenSlot_2 = table.freeze({
+		Id = "PenSlot_2",
+		DisplayName = "Habitat Slot #2",
+		Order = 1,
+		Cost = 60,
+		UnlocksSlotId = "Pen_2",
+		SlotCategory = "Pen",
+		Description = "Expands your Ranch Pen with a second active Critter slot.",
+	}),
+	Incubator_2 = table.freeze({
+		Id = "Incubator_2",
+		DisplayName = "Incubator Pad #2",
+		Order = 2,
+		Cost = 150,
+		UnlocksSlotId = "Incubator_2",
+		SlotCategory = "Incubator",
+		Description = "Builds a second Incubator Pad so you can hatch two pods at once.",
+	}),
+	PenSlot_3 = table.freeze({
+		Id = "PenSlot_3",
+		DisplayName = "Habitat Slot #3 & Ranch Arch",
+		Order = 3,
+		Cost = 320,
+		UnlocksSlotId = "Pen_3",
+		SlotCategory = "Pen",
+		Description = "Widens your Ranch Deck, illuminates the Ranch Arch, and adds Slot #3.",
+	}),
+}
 
--- Stage 1 (S1-01) will populate PenSlot_2, Incubator_2, and PenSlot_3 per docs/GAME_DESIGN.md.
+local orderedIds: { Types.UpgradeId } = table.freeze({
+	"PenSlot_2",
+	"Incubator_2",
+	"PenSlot_3",
+})
+
+local UpgradeConfig = {
+	OrderedIds = orderedIds,
+	ById = table.freeze(byId),
+}
 
 return table.freeze(UpgradeConfig)

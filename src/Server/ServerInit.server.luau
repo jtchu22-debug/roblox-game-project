@@ -1,9 +1,9 @@
 --!strict
 --[[
 	Script: ServerInit
-	Purpose: Single authoritative server entry point. Loads, initializes, and starts all Server Services in deterministic order.
+	Purpose: Single authoritative server entry point. Runs optional self-tests, then initializes and starts all Server Services.
 	Connections: Lives at ServerScriptService.Server.ServerInit via Rojo (default.project.json).
-	How to Test in Studio: Press Play (F5) and look for "[StarfallRanch][Server] ... initialized successfully." in Output.
+	How to Test in Studio: Press Play (F5) and look for "[StarfallRanch][SelfTest] PASS" and "[StarfallRanch][Server] ... initialized" in Output.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,6 +11,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
+local SharedSelfTest = require(Shared:WaitForChild("Util"):WaitForChild("SharedSelfTest"))
+
+if Constants.RUN_SELF_TESTS then
+	local passedCount = SharedSelfTest.RunAll()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d S1-01 shared unit test suites passed.", passedCount))
+end
 
 local ServicesFolder = script.Parent:WaitForChild("Services")
 

@@ -10,6 +10,10 @@ export type SpeciesId = "StarSlime" | "NebulaFox" | "SolarGolem"
 export type VariantId = "Normal" | "Radiant"
 export type MeteorTraitId = "Ember" | "Frost" | "Astral"
 export type ItemState = "PodInBag" | "Incubating" | "HatchedInBag" | "InPen"
+export type UpgradeId = "PenSlot_2" | "Incubator_2" | "PenSlot_3"
+export type PlotAction = "StartIncubate" | "Hatch" | "PlaceInPen" | "RemoveFromPen" | "SellCritter"
+export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
+export type SlotCategory = "Pen" | "Incubator"
 
 export type CritterItemRecord = {
 	UID: string,
@@ -69,6 +73,9 @@ export type SpeciesDefinition = {
 	HatchSeconds: number,
 	CoinsPerSecond: number,
 	SellPrice: number,
+	BodyColor: Color3,
+	AccentColor: Color3,
+	DisplayScale: Vector3,
 	Description: string,
 }
 
@@ -76,13 +83,20 @@ export type MeteorTraitDefinition = {
 	Id: MeteorTraitId,
 	DisplayName: string,
 	TrailColor: Color3,
+	RockColor: Color3,
+	CoreColor: Color3,
+	ShapeStyle: MeteorShapeStyle,
+	IconText: string,
 	DropWeights: { [SpeciesId]: number },
 }
 
 export type UpgradeDefinition = {
-	Id: string,
+	Id: UpgradeId,
 	DisplayName: string,
+	Order: number,
 	Cost: number,
+	UnlocksSlotId: string,
+	SlotCategory: SlotCategory,
 	Description: string,
 }
 
