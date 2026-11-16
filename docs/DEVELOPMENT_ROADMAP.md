@@ -98,7 +98,7 @@ flowchart TD
 ## Stage 5: Private Baseline Testing & Launch Preparation
 
 - **Objective:** Validate onboarding, multiplayer stability, persistence, and the economy with the baseline roster in an invite-only test build.
-- **Tasks:** Verify funnel instrumentation in the private build, run regression tests, and use private playtests to measure time to first hatch, first pen placement, first upgrade, and repeat rescue. Review any proposed launch cosmetics against the existing stability and Roblox compliance checks.
+- **Tasks:** Verify funnel instrumentation in the private build, run regression tests, and use private playtests to measure time to first hatch, first pen placement, first upgrade, and repeat rescue. Review the launch shop scope against the existing stability and Roblox compliance checks.
 - **Exit Gate:** Record baseline results and resolve core blockers before beginning Stage 6. Keep the public launch for Stage 6.
 
 ---
@@ -106,6 +106,6 @@ flowchart TD
 ## Stage 6: Collection Expansion for the First Public Release
 
 - **Entry Gate:** Stage 5 private baseline testing passes.
-- **Content Complete:** Build the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) across seven rarities, including the earnable Secret Eclipse Dragon. Finish critter assets, the collection book, rarity cues, the Secret reveal, and integration with the full ranch upgrade loop.
-- **Final Private Testing:** Test the actual release candidate with the full roster. Verify acquisition and discovery, the guaranteed starter reward, drop odds and hatch pacing, upgrade balance, multiplayer and persistence, and mobile performance and accessibility.
-- **First Public Release:** Publish the content-complete build after the final private checks pass. Monitor live results to inform future updates.
+- **Content Complete:** Build the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) across seven rarities, including the earnable Secret Eclipse Dragon. Finish critter assets, the collection book, rarity cues, the Secret reveal, and integration with the full ranch upgrade loop. Implement the [day-one passes and products](./MONETIZATION.md#3-day-one-game-passes-and-purchases), including capped offline Coins.
+- **Final Private Testing:** Test the actual release candidate with the full roster. Verify acquisition and discovery, the guaranteed starter reward, drop odds and hatch pacing, upgrade balance, multiplayer and persistence, mobile performance and accessibility, and the shop's entitlements, purchase recovery, offline settlement, pricing, and paid-random eligibility and disclosures.
+- **First Public Release:** Publish the content-complete build and verified shop together after the final private checks pass. Monitor live results to inform future updates.
