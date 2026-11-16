@@ -62,10 +62,10 @@ flowchart LR
 
 To eliminate runaway exponent inflation, conflicting multipliers, and tutorial/offline imbalances:
 - **Single Currency Only:** `Coins` (bounded integer $\ge 0$, capped cleanly below safe integer precision limits, e.g., `1,000,000,000`). No `StarGems` in prototype or MVP.
-- **No Exponential Weight Scaling, No Multi-Mutation Stacking, No Rebirths, No 5-to-1 Fusion.**
+- **Prototype economy:** Fixed species rates. Stage 6 adds bounded weight and single-mutation bonuses in Section 7.
 - **Forgiving Micro-Skill:** Standard tap/hold cracks the meteor cleanly in ~1.2 seconds and grants the full Pod reward. An optional visual timing ring lets players trigger an instant flashy finish (saving ~0.5s animation flourish + joyful audio chime) **without** inflating economy values or punishing mobile lag.
 
-### 4.1 Meteor Traits & Species Catalog (3 Prototype/MVP Species)
+### 4.1 Meteor Traits & Species Catalog (3 Prototype Species)
 
 | Meteor Type (Crater Choice) | Visual Sky Trail & Rock Color | Primary Drop Odds | Design Trade-off |
 | :--- | :--- | :--- | :--- |
@@ -122,7 +122,8 @@ To eliminate runaway exponent inflation, conflicting multipliers, and tutorial/o
 | Feature from v1 GDD | Revised Status | Reason |
 | :--- | :--- | :--- |
 | Separate **Crystal Geode** farming lane | **CUT** | Replaced by unified **Star-Pod $\rightarrow$ Cosmic Critter** pipeline (`ADR-002` Option B). |
-| Weight exponent (`Weight^1.25`), 8 stacking mutations, 5-to-1 Fusion, Rebirths | **DEFERRED / CUT** | Replaced by bounded integer income (`2/4/7 Coins/s`) and max 1 modest visual variant (`R-003`). |
+| Weight and income-changing mutations | **STAGE 6** | Add bounded weight and single-mutation bonuses to the public launch economy. |
+| Exponential weight scaling, mutation stacking, 5-to-1 fusion, and rebirths | **OUT OF LAUNCH SCOPE** | Launch progression uses the rates and limits in Section 7. |
 | 5-Min Supply Shop Clock & 6-Min Weather Clock | **DEFERRED** | Crater is always active; players are never blocked by arbitrary restock timers. |
 | Offline Coins | **STAGE 6** | Add capped offline settlement when the launch shop is built. |
 | Proximity Gifting, 2-Way Trading, Global Spend Broadcasts | **DEFERRED** | Eliminates cross-profile non-atomic data risks and social spending pressure (`ADR-005`). |
@@ -133,19 +134,33 @@ To eliminate runaway exponent inflation, conflicting multipliers, and tutorial/o
 
 ## 7. Stage 6 Collection Expansion
 
-After the Stage 5 private baseline passes, expand the roster to **12 species for the first public release**. Ship the full collection book, accessible hatch feedback, ranch progression, and the Secret chase together after private release-candidate testing. Give players several collection milestones after the first ranch upgrades and one long-term Secret to chase.
+After the Stage 5 private baseline passes, build **24 earnable species across seven rarities** for the first public release. Ship the roster, collection book, ranch progression, and Secret chase together with the launch shop after private release-candidate testing. Paid exclusives sit outside the 24 earnable species.
 
-| Critter rarity | Total species |
-| :--- | ---: |
-| Common | 3 |
-| Uncommon | 2 |
-| Rare | 2 |
-| Epic | 2 |
-| Legendary | 1 |
-| Mythic | 1 |
-| Secret | 1 |
-| **Total** | **12** |
+### 7.1 Launch Roster and Coin Curve
 
-- **Meteor pools.** Keep Ember, Frost, and Astral as the three meteor types. Each has a distinct server-owned drop pool. Critter rarity describes the hatch outcome, and multiple rarities can share a meteor pool. The starter meteor continues to guarantee Star-Slime. Radiant remains a cosmetic variant across the roster.
-- **Secret chase.** The **Eclipse Dragon** is the one Secret species and comes from Astral Star-Pods through normal play. Its collection entry shows a locked silhouette with the hint *“Something stirs inside Astral Star-Pods.”* Discovery reveals the species and its distinctive hatch animation and pen appearance. Respect Reduced Motion.
-- **Pacing and economy.** Use Stage 5 private pacing evidence for the baseline. Set drop weights and verify expected hatches, time to discovery, and progression with the full Stage 6 roster before release. Epic and Legendary should provide meaningful collection milestones while players chase the Secret. Keep income and sell-price increases modest enough to preserve the ranch upgrade curve.
+These starting bands are per species before weight and mutation bonuses. Tune them in the full Stage 6 build with hatch times, sell prices, upgrade costs, wallet caps, and offline payouts.
+
+| Critter rarity | Species | Draft base Coins/s |
+| :--- | ---: | ---: |
+| Common | 5 | 2–10 |
+| Uncommon | 5 | 12–40 |
+| Rare | 4 | 50–150 |
+| Epic | 4 | 200–600 |
+| Legendary | 3 | 800–2,500 |
+| Mythic | 2 | 3,500–10,000 |
+| Secret | 1 | 25,000 |
+| **Total** | **24** | |
+
+- **Ranch progression.** Assign explicit Starter, Expanded Ranch, and Observatory stages to visible ranch upgrades. Starter meteor pools favor Common and Uncommon. Later stages open more Rare/Epic opportunities, then Legendary/Mythic hunts. Use server-owned pool tables to define the changes per stage. The upgrade tiers affect access and odds, while each species sets its base rate. Preserve the guaranteed first Star-Slime at 2 Coins/s and privately test the early unlock times against the current baseline.
+- **Meteor types and Secret.** Keep Ember, Frost, and Astral with distinct pools. Eclipse Dragon is the single earnable Secret from regular Astral Star-Pods, with equal per-pod Secret odds for paid and free players at the same progression stage. The collection book shows a silhouette and the hint *“Something stirs inside Astral Star-Pods.”* Discovery reveals the critter with a Reduced Motion-compatible hatch animation.
+- **Late-game upgrades.** Add Coin sinks and ranch goals that justify high income, such as later habitats and the Observatory. Tune early, mid, and late costs alongside rates. Keep active rescues and incubation relevant, and test the combined effect of multiple active pens, the 2× offline pass, and the highest allowed critter rates.
+
+### 7.2 Weight and Income Mutations
+
+- **Weight:** Every species has a reference weight. Roll a discrete weight band per critter and show the resulting kilograms. The initial bands are Normal (1× reference weight, **1.00× income**), Heavy (2×, **1.50× income**), and Colossal (3×, **2.00× income**). Scale individual visuals within the existing mobile art limits.
+- **Mutations:** Each critter can hold one income mutation. Start with Gilded (**1.25×**), Frostbound (**1.75×**), and Prismatic (**2.50×**). Unmutated critters use **1.00×**. Radiant remains a cosmetic variant.
+- **Pen income:** Compute `floor(species base Coins/s × weight bonus × mutation bonus)` on the server, then enforce per-critter and total pen-rate caps. A 2,000 Coins/s Legendary with Colossal weight and Prismatic mutation earns **10,000 Coins/s** before a ranch-wide cap. The launch table's maximum combined bonus is **5×** the species base.
+- **Collection and saves:** Show rarity, weight in kg, mutation, and actual Coins/s on each critter card. Persist the server-rolled traits and use the same server calculation for pens, the displayed rate, and the offline rate snapshot. Give existing critters Normal weight and no income mutation when adding the fields.
+- **Verification:** Test every rarity's earnable path, weight and mutation bounds, saved critters, the top-end economy, and Secret discovery pacing on private builds. For paid products, verify that the displayed odds cover all randomized outcomes the offer can produce.
+
+Design reference for species, weight, and mutation as separate drivers of income. [Steal An Egg on Roblox](https://www.roblox.com/games/107778070777162/Steal-An-Egg) · [Community income calculator](https://stealnegg.com/income-calculator/)
