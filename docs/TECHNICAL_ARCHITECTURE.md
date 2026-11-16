@@ -19,7 +19,7 @@
 
 ## 2. Project Hierarchy (`default.project.json`)
 
-> *Note:* Actual `src/` files and mapped folders are created **only after `R-007` Human Lead authorization** (starting in `R-008` Stage 1 Smoke Test). Unmanaged 3D workspace templates and assets inside `.rbxl` live outside Rojo-managed code folders or are recreated idempotently by the tagged greybox generator.
+> *Status (Updated 2026-11-15):* Following `R-007` Human Lead approval, the `src/` ModuleScript skeleton (`S1-00`) has been initialized and Rojo smoke-tested (`build.rbxlx`). Unmanaged 3D workspace templates and assets inside `.rbxl` live outside Rojo-managed code folders or are recreated idempotently by the tagged greybox generator (`S1-02`).
 
 ```text
 src/

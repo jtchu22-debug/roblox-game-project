@@ -10,6 +10,7 @@ ServerPackages/
 DevPackages/
 build.rbxl
 build.rbxlx
+tools/bin/
 
 # OS & Editor files
 .DS_Store

@@ -1,0 +1,3 @@
+# Aftman tool version pinning (https://github.com/LPGhatguy/aftman)
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"

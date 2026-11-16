@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart LR
-    S0["Stage 0: Revised Spec & R-007 Approval (CURRENT)"] --> S1["Stage 1: Rojo Smoke Test & Mock Vertical Slice"]
+    S0["Stage 0: Revised Spec & R-007 Approval (DONE)"] --> S1["Stage 1: Rojo Setup (DONE) & Mock Vertical Slice (CURRENT)"]
     S1 --> S2{"Stage 2: Uncoached 5-Min Playtest Gate"}
     S2 -->|"Pass Targets"| S3["Stage 3: Persistence Alpha (ProfileStore)"]
     S2 -->|"Fails Fun Test"| PIVOT["Iterate Hook OR Pivot to Relic Raiders / Potion Pop!"]
@@ -33,15 +33,15 @@ flowchart LR
 
 ---
 
-## Stage 0: Research Correction, Narrowed Spec & Sign-Off *(Current Stage)*
+## Stage 0: Research Correction, Narrowed Spec & Sign-Off *(Completed)*
 - **Objective:** Address all Phase 0 audit findings (`R-001`–`R-006`), simplify *Starfall Ranch* to a unified single-pipeline prototype, and receive Human Lead + Technical Director approval before writing any `src/` code.
-- **Exit Gate (`R-007`):**
-  - `docs/MARKET_RESEARCH.md`, `TREND_ANALYSIS.md`, `GAME_DESIGN.md`, `TECHNICAL_ARCHITECTURE.md`, `MONETIZATION.md`, `ART_DIRECTION.md`, and `DEVELOPMENT_ROADMAP.md` reflect the narrowed post-audit baseline.
-  - Human Lead explicitly signs off on **ADR-001 through ADR-007** and authorizes Stage 1.
+- **Exit Gate (`R-007` — Signed Off 2026-11-15):**
+  - [x] `docs/MARKET_RESEARCH.md`, `TREND_ANALYSIS.md`, `GAME_DESIGN.md`, `TECHNICAL_ARCHITECTURE.md`, `MONETIZATION.md`, `ART_DIRECTION.md`, and `DEVELOPMENT_ROADMAP.md` reflect the narrowed post-audit baseline.
+  - [x] Human Lead explicitly approved **Starfall Ranch** (`ADR-001`–`ADR-007`) and authorized Stage 1 preparation.
 
 ---
 
-## Stage 1: Foundation + Mock Vertical Slice (`R-008` — ~1–2 Weeks Part-Time)
+## Stage 1: Foundation + Mock Vertical Slice (`R-008` — *Environment Ready; Implementation Next*)
 - **Objective:** Stand up pinned Rojo + isolated Studio place, build an idempotent tagged greybox map, and implement **one complete 5-minute playable loop** with in-memory `MockStore` profiles.
 - **Scope Limits (Strictly Enforced):**
   - `2` Prototype Ranch Plots + `1` Shared Meteor Crater (`MaxPlayers = 2` initially).
