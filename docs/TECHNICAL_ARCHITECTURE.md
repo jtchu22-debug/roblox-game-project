@@ -1,199 +1,177 @@
-# Technical Architecture & Engineering Plan
+# Technical Architecture & Engineering Plan (Post-Audit Revision)
 
-> **Last Updated:** November 15, 2026  
+> **Last Updated:** November 15, 2026 (Revised per Phase 0 Technical Director Audit — `R-004`)  
 > **Author:** Gemini (Primary Implementation Planner)  
-> **Reviewer:** ChatGPT (Independent Technical Director)  
-> **Target Stack:** Roblox Studio, Luau (`--!strict`), Rojo 7.x (`default.project.json`), `DataStoreService`  
+> **Auditor:** ChatGPT (Independent Technical Director)  
+> **Target Stack:** Roblox Studio, Luau (`--!strict`), pinned Rojo (`default.project.json`), pinned `ProfileStore` (Stage 3+)  
 
 ---
 
-## 1. Architectural Philosophy
+## 1. Architectural Philosophy & Core Invariants
 
-Because the human developer is a **beginner in Luau** and development is **AI-assisted (Gemini + ChatGPT)**, the codebase must follow four non-negotiable engineering rules:
-
-1. **100% Server-Authoritative Economy & State:** The client *never* tells the server how much money it earned, what mutation rolled, or whether a timer finished. The client only sends **intent requests** (e.g., `"AttemptCrackMeteor"`, `"RequestPlantGeode"`, `"RequestBuySupplyItem"`), and the server validates cooldowns, distances, prices, and timestamps.
-2. **Data-Driven Configuration (`src/Shared/Config`):** All Critter stats, Crystal growth times, Mutation multipliers, Weather weights, and Upgrade costs live in pure declarative Luau tables inside `ReplicatedStorage.Shared.Config`. Adding a new critter or tuning balance never requires editing core service logic.
-3. **Single-Script Entry Point Pattern (Modular Services & Controllers):** Instead of scattering dozens of loose `Script` instances inside `Workspace` parts (which causes race conditions and makes Git/AI collaboration impossible), we use **one server bootstrap script** (`ServerInit.server.luau`) and **one client bootstrap script** (`ClientInit.client.luau`) that require organized `ModuleScript`s.
-4. **Zero Server-Side Humanoid Physics for Pets/Critters:** Spawning 60 Roblox `Humanoid` models for ranch critters destroys server frame time and mobile battery. On the server, an active Critter is **purely a Luau table**. The client renders lightweight anchored `Model`s and animates their hopping via `TweenService` / `RunService.RenderStepped`.
+1. **100% Server-Authoritative State & Economy:** The client never determines currency amounts, species rolls, cooldowns, or timers. Client remotes only send intent requests with bounded primitives.
+2. **One Authority Per Entity (Single Item Map):** Every Pod/Critter exists in **one** authoritative `Items` table inside the player's session state, keyed by an immutable server UUID (`ItemUID`). A Critter cannot exist in two places at once (no separate `PlantedBeds` vs `Inventory` vs `ActivePenCritters` duplication).
+3. **Non-Yielding State Transitions:** All inventory, slot, upgrade, and meteor-claim transitions mutate server memory atomically **without yielding** between validation and state commit.
+4. **Stage-Appropriate Persistence:** Stages 1–2 run on an explicit `MockStore` adapter to validate fun and concurrency fast. Stage 3+ switches cleanly to pinned **`ProfileStore`** (`MadStudioRoblox/ProfileStore`)—never a custom handmade lock, and **never** falling back to a blank live profile on a DataStore read failure.
+5. **Lightweight Client-Only Critter Visuals:** Server stores zero `Humanoid` or `Model` physics for critters. The server replicates a minimal `PublicPlotDTO`; clients render anchored, non-colliding low-poly models (budgeted at $\le 30$ critters server-wide) driven by one centralized client manager.
 
 ---
 
-## 2. Roblox Studio & Rojo Project Hierarchy
+## 2. Project Hierarchy (`default.project.json`)
 
-Our repository maps directly into Roblox Studio via `default.project.json`:
+> *Note:* Actual `src/` files and mapped folders are created **only after `R-007` Human Lead authorization** (starting in `R-008` Stage 1 Smoke Test). Unmanaged 3D workspace templates and assets inside `.rbxl` live outside Rojo-managed code folders or are recreated idempotently by the tagged greybox generator.
 
 ```text
 src/
-├── Shared/                              # -> ReplicatedStorage.Shared
-│   ├── Types.luau                       # Exported Luau type definitions (--!strict)
-│   ├── Constants.luau                   # Game-wide constants (Max Offline Hours, Plot Count)
+├── Shared/                              # -> ReplicatedStorage.Shared (Public static definitions)
+│   ├── Types.luau                       # Strict Luau DTO, Item, Plot, and Config types
+│   ├── Constants.luau                   # Bounded caps (MAX_BAG=10, MAX_PLOTS=2..6, COIN_CAP)
 │   ├── Config/
-│   │   ├── CritterConfig.luau           # 8 MVP Critter definitions (BaseCoinsPerSec, GrowthTime, Rarity)
-│   │   ├── CrystalConfig.luau           # 6 MVP Crystal Geode definitions (BaseValue, GrowthTime, StockOdds)
-│   │   ├── MutationConfig.luau          # 8 MVP Mutations (Multiplier, WeatherSource, Color, Material)
-│   │   ├── WeatherConfig.luau           # 5 MVP Cosmic Weather events (Duration, Odds, Skybox, MutationChance)
-│   │   └── UpgradeConfig.luau           # Plot pad upgrades & Rebirth requirements
+│   │   ├── CritterConfig.luau           # 3 MVP Species (StarSlime, NebulaFox, SolarGolem) + Radiant cosmetic
+│   │   ├── MeteorConfig.luau            # 3 Meteor Traits (Ember, Frost, Astral) & drop weights
+│   │   └── UpgradeConfig.luau           # 3 Prototype Upgrades + Stage 3 alpha expansions
 │   └── Util/
-│       ├── EconomyMath.luau             # Pure deterministic functions for item value & offline earnings
-│       ├── FormatUtil.luau              # Number formatting (1,250 -> "1.25K", timer strings "04:12")
-│       └── WeightRoller.luau            # Deterministic weighted RNG table selector
+│       ├── EconomyMath.luau             # Bounded integer settlement with sub-second remainder
+│       ├── FormatUtil.luau              # Safe integer formatting & timer strings
+│       └── ValidationUtil.luau          # Finite number, integer, enum, and dense-array guards
 │
-├── Server/                              # -> ServerScriptService.Server
-│   ├── ServerInit.server.luau           # Ordered initialization of all Server Services
+├── Server/                              # -> ServerScriptService.Server (Authoritative game logic)
+│   ├── ServerInit.server.luau           # Ordered startup, readiness gates, shutdown handling
+│   ├── Libs/
+│   │   └── ProfileStore/                # Pinned upstream MadStudioRoblox/ProfileStore + MIT LICENSE (Stage 3)
 │   └── Services/
-│       ├── DataService.luau             # DataStore load/save, session-locking, auto-save loop, offline calc
-│       ├── PlotService.luau             # Plot assignment, Soil Beds, Incubator Pads, Habitat Pens, Upgrades
-│       ├── MeteorService.luau           # Crater meteor spawning, Critical Crack validation, Mega-Geode boss
-│       ├── WeatherService.luau          # 6-min global weather cycle, mutation application ticks, Beacons
-│       ├── SupplyShipService.luau       # Synchronized 5-min shop seed (`math.floor(os.time() / 300)`) & purchases
-│       ├── InventoryService.luau        # Item UUID management, Selling, Star-Fuser 5-to-1, Proximity Gifting
-│       └── MonetizationService.luau     # MarketplaceService ProcessReceipt & GamePass ownership caching
+│       ├── NetworkService.luau          # Remote creation, schema validation, per-player token-bucket limits
+│       ├── DataService.luau             # MockStore (Stages 1–2) / ProfileStore adapter (Stage 3+), reconciliation
+│       ├── EconomyService.luau          # Single state writer: bag, incubation, pen placement, sell, upgrades, accrual
+│       ├── PlotService.luau             # Plot allocation, idempotent slot nodes, release & cleanup
+│       └── MeteorService.luau           # Crater spawning, Nonce claim lifecycle, server-verified cracking
 │
 └── Client/                              # -> StarterPlayer.StarterPlayerScripts.Client
-    ├── ClientInit.client.luau           # Ordered initialization of all Client Controllers
+    ├── ClientInit.client.luau           # Subscribes listeners, then requests initial state snapshot
     └── Controllers/
-        ├── InputController.luau         # ProximityPrompts, mobile tap targets, Hotbar equipping
-        ├── CrackMinigameController.luau # 1.5s Critical Crack timing bar UI & camera feedback
-        ├── PlotVisualController.luau    # Renders growing crystals, hopping critters, and floating coin popups
-        ├── WeatherVisualController.luau # Smooth Lighting/Skybox tweens, rain/solar particle emitters
-        ├── UIController.luau            # Top HUD, Supply Ship Shop, Cosmic Bestiary, Offline Welcome Card
-        └── SoundController.luau         # Pitch-ascending combo chimes, weather sirens, UI clicks
+        ├── InputController.luau         # ProximityPrompt hooks + Touch/Keyboard/Gamepad bindings
+        ├── CrackController.luau         # Visual tap/optional feel ring + local feedback (no economy power)
+        ├── PlotVisualController.luau    # Centralized single-loop hopping critter visuals & revision cleanup
+        ├── UIController.luau            # Mobile-safe HUD, Bag/Keep-Sell UI, Upgrade prompts, Settings
+        └── SoundController.luau         # Accessible audio chimes with Mute & Reduced-Motion support
 ```
 
-> **Note on 3D Assets (`ReplicatedStorage.Assets`):** Models built in Roblox Studio (or imported from Blender) are stored in a folder `ReplicatedStorage.Assets` (`Crystals/`, `Critters/`, `Meteors/`, `VFX/`) inside the `.rbxl` place file and referenced by `ModelId` string from `Config`.
-
 ---
 
-## 3. Client / Server Responsibilities Matrix
+## 3. Single Authoritative Schema & Entity Lifecycle (`R-004`)
 
-| System | Server Responsibility (`ServerScriptService`) | Client Responsibility (`StarterPlayerScripts`) |
-| :--- | :--- | :--- |
-| **Meteor Cracking** | Spawns meteor ID + position; records `CrackStartTime`; validates when client sends `FinishCrack` that elapsed time matches the Green/Gold timing window; awards rolled item. | Displays 1.5s moving needle UI; plays hammer/laser swing animation, screen shake, and particle burst on completion. |
-| **Plot Growth & Weather** | Tracks `PlantedAt` Unix timestamp; rolls mutations on active plot items when weather ticks; calculates offline progress on `PlayerAdded`. | Scales 3D crystal/pod model smoothly from `0.2x` to `1.0x` based on `(workspace:GetServerTimeNow() - PlantedAt) / Duration`; applies mutation materials/particles. |
-| **Critter Habitat Pens** | Stores array of active Critter UUIDs in pen; computes exact `CoinsPerSecond` sum; adds accrued coins to plot vault. | Spawns low-poly Critter models inside the pen's bounding box; runs a lightweight client loop making them hop every 2–4 seconds and pop floating `+Coins` text. |
-| **Supply Ship Shop** | Generates deterministic stock every 300 seconds using `Random.new(math.floor(os.time() / 300))`; tracks per-player stock purchases per 5-min window; deducts coins. | Displays countdown timer (`300 - (os.time() % 300)`); renders item cards and stock remaining counts. |
+### 3.1 Valid Item Lifecycle State Machine
 
----
+```text
+[Cracked Meteor] -> "PodInBag" -> "Incubating" -> "HatchedInBag" -> "InPen"
+                                                        |               |
+                                                        +-----> [SOLD (Removed Permanently)]
+```
 
-## 4. Networking Architecture (`RemoteEvents` & `RemoteFunctions`)
+**Enforced Invariants (Checked in Unit Tests & Server Transitions):**
+1. Every `ItemUID` in `Profile.Items` has **one** valid `State` (`"PodInBag" | "Incubating" | "HatchedInBag" | "InPen"`).
+2. If `State == "Incubating"` or `"InPen"`, `AssignedSlot` points to **exactly one** slot ID (`"Incubator_1"`, `"Pen_1"`, etc.), and `Slots[AssignedSlot] == ItemUID`.
+3. Every slot ID holds **at most one** `ItemUID`.
+4. Only `State == "PodInBag"` can move to an open Incubator; only `State == "Incubating"` with `os.time() >= MaturesAt` can hatch to `"HatchedInBag"`; only `"HatchedInBag"` can move to an open Pen slot or be sold; `"InPen"` items **cannot** be sold directly (must be removed to Bag first, preventing accidental sale of active critters).
+5. `BagCount` (`PodInBag + HatchedInBag`) $\le$ `MaxBagCapacity`. Inventory capacity is checked **before** consuming any meteor claim or hatching.
+6. All currencies and counts are finite integers (`0 <= Coins <= 1_000_000_000`); no `Instance` objects, functions, or sparse mixed tables inside persisted data.
 
-All remotes are created programmatically at startup inside `ReplicatedStorage.Remotes` by a small `Network` wrapper module so no manual Studio setup can go out of sync.
-
-### Server-to-Client (`RemoteEvent:FireClient` / `FireAllClients`)
-| Remote Name | Payload Schema | Purpose |
-| :--- | :--- | :--- |
-| `SyncPlayerData` | `PlayerProfileData` (full table on join, delta patch on update) | Keeps client UI, inventory, Bestiary, and currency in sync. |
-| `OfflineReportReady` | `{ ElapsedSeconds: number, CoinsEarned: number, MaturedCount: number, NewMutations: number }` | Triggers the *"While You Were Away"* welcome modal on login. |
-| `PlotStateUpdated` | `{ PlotId: number, OwnerUserId: number, Beds: {...}, Pens: {...}, Upgrades: {...} }` | Replicates plot visuals so all 6 players see each other's growing crystals and giant critters. |
-| `WeatherChanged` | `{ WeatherId: string, EndsAtServerTime: number, TriggeredByPlayer: string? }` | Syncs skybox, ambient audio, and HUD timer across all clients. |
-| `MeteorEvent` | `{ Action: "Spawn" \| "Cracked" \| "Despawn", MeteorUID: string, Tier: string, Position: Vector3 }` | Spawns/removes wild meteors in the central Crater. |
-| `GlobalAnnouncement` | `{ Message: string, RarityColor: Color3, SoundId: string? }` | Broadcasts Mythic hatches, Supernova weather, and generous gifts. |
-
-### Client-to-Server (`RemoteEvent:FireServer` / `RemoteFunction:InvokeServer`)
-| Remote Name | Type | Arguments (Validated on Server) | Rate Limit |
-| :--- | :---: | :--- | :---: |
-| `RequestStartCrack` | `RemoteFunction` | `(MeteorUID: string)` $\rightarrow$ returns `{ Success: boolean, SeedTime: number }` | 3 calls / sec |
-| `RequestFinishCrack` | `RemoteFunction` | `(MeteorUID: string, ClientDelta: number)` $\rightarrow$ returns `{ Zone: "Gold" \| "Green", RewardItem: ItemData }` | 3 calls / sec |
-| `RequestPlotAction` | `RemoteEvent` | `(Action: "Plant" \| "Harvest" \| "PlaceCritter" \| "RemoveCritter" \| "CollectVault", SlotIndex: number, ItemUID: string?)` | 8 calls / sec |
-| `RequestShopPurchase` | `RemoteFunction` | `(ShopType: "SupplyShip" \| "PlotUpgrade" \| "Rebirth", ItemId: string)` $\rightarrow$ returns `{ Success: boolean, Reason: string? }` | 4 calls / sec |
-| `RequestSellItems` | `RemoteFunction` | `(Mode: "HeldItem" \| "AllUnlockedCrystals", ItemUID: string?)` $\rightarrow$ returns `{ CoinsEarned: number }` | 2 calls / sec |
-| `RequestFuseCritters` | `RemoteFunction` | `(CritterUIDs: {string})` (must be array of 5 valid UIDs) | 1 call / sec |
-| `RequestGiftItem` | `RemoteEvent` | `(TargetPlayer: Player, ItemUID: string)` | 1 call / 2 sec |
-| `RequestLikePlot` | `RemoteEvent` | `(TargetPlotId: number)` | 1 call / 3 sec |
-
----
-
-## 5. DataStore Schema & Offline Progression Math
-
-### 5.1 Player Profile Schema (`DataService.luau`)
-We use a clean, versioned schema (`SchemaVersion = 1`) backed by `DataStoreService` with **Session Locking** (preventing item duplication if a player rapidly hops servers) and a 60-second auto-save cycle plus `game:BindToClose` flush:
+### 3.2 Persisted Profile Schema (`SchemaVersion = 1`)
 
 ```luau
 --!strict
-export type MutationId = "Colossal" | "Wet" | "Solar" | "Frost" | "Shocked" | "Golden" | "Void" | "Prismatic"
+export type ItemState = "PodInBag" | "Incubating" | "HatchedInBag" | "InPen"
+export type SpeciesId = "StarSlime" | "NebulaFox" | "SolarGolem"
+export type VariantId = "Normal" | "Radiant"
 
-export type InventoryItem = {
-	UID: string,                   -- HttpService:GenerateGUID(false)
-	Category: "Geode" | "Crystal" | "Pod" | "Critter",
-	ItemId: string,                -- e.g., "StarSlime", "NebulaFox", "SunQuartz"
-	WeightKg: number,              -- Rolled weight (e.g., 14.2)
-	Mutations: { MutationId },     -- Array of applied mutations
-	IsStarforged: boolean,         -- True if created via 5-to-1 Star-Fuser
-	IsLocked: boolean,             -- Prevents accidental Bulk Sell / Fusion
+export type CritterItemRecord = {
+	UID: string,                  -- Immutable server GUID
+	SpeciesId: SpeciesId,
+	Variant: VariantId,           -- Assigned atomically on hatch on server
+	State: ItemState,
+	AssignedSlot: string?,        -- e.g. "Incubator_1" or "Pen_1" when active
+	PlantedAt: number?,           -- Server os.time() when incubation started
+	MaturesAt: number?,           -- Absolute server os.time() when ready to hatch
 	CreatedAt: number,
-}
-
-export type PlantedSlot = {
-	SlotIndex: number,
-	Category: "Geode" | "Pod",
-	ItemId: string,
-	WeightKg: number,
-	Mutations: { MutationId },
-	PlantedAt: number,             -- Unix timestamp (os.time())
-	GrowthDuration: number,        -- Required seconds to mature
 }
 
 export type PlayerProfileData = {
 	SchemaVersion: number,
-	Coins: number,
-	StarGems: number,
-	Rebirths: number,
-	LastSeenTimestamp: number,     -- Used for Offline Growth & Vault math
-	TotalPlaytimeSeconds: number,
-	LikesReceived: number,
-
-	Inventory: { [string]: InventoryItem }, -- Keyed by UID (Max 150 base slots)
-	PlantedBeds: { [number]: PlantedSlot }, -- Growing Crystal Geodes
-	Incubators: { [number]: PlantedSlot },  -- Growing Critter Pods
-	ActivePenCritters: { string },          -- Array of InventoryItem UIDs currently in Habitat Pen
-	TrophyPedestalUID: string?,             -- Critter UID displayed at plot front gate
-
-	UnlockedUpgrades: { [string]: number }, -- e.g., { SoilBeds = 2, PenSlots = 1, CollectorDrone = 1 }
-	Bestiary: {
-		[string]: {                         -- Keyed by ItemId
-			DiscoveredCount: number,
-			MaxWeightKg: number,
-			MutationsFound: { [MutationId]: boolean },
-		}
-	},
-	ShopPurchasesWindow: {
-		WindowSeed: number,                 -- math.floor(os.time() / 300)
-		Counts: { [string]: number },
-	},
-	GamePassesOwned: { [string]: boolean },
+	Coins: number,                -- Integer Coins >= 0
+	PendingFraction: number,      -- Carried fractional coin remainder (< 1.0)
+	LastAccrualTimestamp: number, -- Server epoch used for deterministic online settlement
+	Revision: number,             -- Monotonic state revision for client sync
+	Items: { [string]: CritterItemRecord },
+	Slots: { [string]: string },  -- SlotId -> ItemUID (e.g. ["Incubator_1"] = uid)
+	Upgrades: { [string]: boolean },
+	DiscoveredSpecies: { [SpeciesId]: boolean }, -- Stage 4 simple checklist (no stats)
 }
 ```
 
-### 5.2 Server-Authoritative Offline Progression Calculation
-When a player joins (`Players.PlayerAdded`) and their profile loads:
-1. Compute `ElapsedOffline = math.clamp(os.time() - Data.LastSeenTimestamp, 0, MaxOfflineSeconds)` (where `MaxOfflineSeconds = 12 * 3600` by default).
-2. **Plot Growth Advancement:** Because each `PlantedSlot` stores `PlantedAt` (a Unix timestamp), any Geode or Pod where `os.time() >= Slot.PlantedAt + Slot.GrowthDuration` is **already mature automatically** without needing a complex tick simulator!
-3. **Offline Weather Mutation Roll:** For every full 15-minute block in `ElapsedOffline` (up to 48 blocks), the server runs a lightweight deterministic roll for unmatured slots to receive 1–2 weather mutations (*Wet*, *Solar*, or *Frost*), ensuring offline players wake up to mutated crops just like online players.
-4. **Offline Critter Vault Earnings:**
-   $$\text{OfflineCoins} = \text{ TotalPenCoinsPerSec} \times \text{ElapsedOffline} \times \text{OfflineEfficiencyRate}$$
-   *(Where `OfflineEfficiencyRate` starts at `0.35` [35%] for starter ranches and scales to `0.75` [75%] once the player unlocks Collector Drones).*
+### 3.3 Whitelisted DTO Replication (Private vs. Public)
+- **`OwnerStateDTO` (Sent only to owning player via `SyncOwnerState`):** Contains `{ Revision, Coins, BagCap, Items, Slots, Upgrades, DiscoveredSpecies }`. Never sends internal server nonces, anti-abuse flags, or external telemetry IDs.
+- **`PublicPlotDTO` (Broadcast cleanly for all 6 plots via `SyncPublicPlots`):** Contains `{ PlotId, OwnerUserId, OwnerDisplayName, PlotRevision, UnlockedUpgrades, ActivePenVisuals = { [SlotId]: { SpeciesId, Variant } }, IncubatorVisuals = { [SlotId]: { MaturesAt } } }`.
+- **Late-Join & Resync:** Client connects listeners first, then fires `RequestInitialSnapshot`. Out-of-order revisions trigger a rate-limited resync request.
 
 ---
 
-## 6. Security & Exploit Prevention Checklist
+## 4. Server-Authoritative Protocols & Remote Validation
 
-Roblox simulators are frequent targets for client-side exploit scripts. Our architecture neutralizes common exploits by design:
+### 4.1 Meteor Cracking Nonce & Claim Protocol
+To eliminate replay exploits, double-claims, and latency-unfair client timers:
+1. **Claim Start (`RequestStartCrack`):**
+   - Server validates: `ProfileReady == true`, `CharacterAlive == true`, `(RootPos - MeteorPos).Magnitude <= 18`, `BagCount < BagCap`, player has no other active claim, and `Meteor.ClaimedBy == nil`.
+   - Server sets `Meteor.ClaimedBy = player.UserId`, generates a cryptographic-grade random `AttemptNonce = HttpService:GenerateGUID(false)`, records `Meteor.Generation`, `StartedAt = os.clock()`, and `Deadline = os.clock() + 6.0`.
+   - Returns `{ Ok = true, AttemptNonce = AttemptNonce, MeteorUID = MeteorUID }` (or safe failure reason).
+2. **Claim Finish (`RequestFinishCrack`):**
+   - Client sends `{ MeteorUID, AttemptNonce }` (**no `ClientDelta` parameter is trusted or used for economy**).
+   - Server validates: `ProfileReady == true`, `CharacterAlive == true`, active claim exists matching `(player.UserId, MeteorUID, AttemptNonce)`, `os.clock() <= Deadline`, `os.clock() - StartedAt >= 0.4` (prevents instant frame-0 macro), `(RootPos - MeteorPos).Magnitude <= 22`, and `BagCount < BagCap`.
+   - **Atomic Non-Yielding Commit:** Consumes `AttemptNonce`, deletes active meteor claim, creates 1 new `CritterItemRecord` (`State = "PodInBag"`) in `Profile.Items`, removes the meteor entity, and replicates updated `OwnerStateDTO`.
+   - **Failure / Timeout Cleanup:** If the player disconnects, dies, moves >28 studs away, or exceeds `Deadline`, a server heartbeat sweeps expired claims and frees the meteor cleanly.
 
-| Exploit Vector | How Exploiters Attempt It | Our Server-Side Prevention |
-| :--- | :--- | :--- |
-| **Remote Spam / Auto-Crack Anywhere** | Firing `RequestStartCrack` & `RequestFinishCrack` for every meteor on the map from 500 studs away in 0.01 seconds. | 1. Server verifies `(PlayerCharacterRoot.Position - MeteorPosition).Magnitude <= 18` studs.<br>2. Server records `ServerStartTime = os.clock()` on `RequestStartCrack` and verifies `RequestFinishCrack` arrives within the exact valid timing window (`0.65s`–`0.95s` for Gold Zone). |
-| **Negative Currency / NaN Injection** | Passing `-999999` or `0/0` (`NaN`) as a purchase count or item price. | Every remote argument undergoes strict `typeof()` validation, `arg == arg` (rejects `NaN`), and `math.floor(arg) > 0` checks. All prices are looked up exclusively from `Shared.Config` on the server. |
-| **Item Duplication via Trading/Gifting** | Dropping/gifting an item and immediately leaving the server before `SetAsync` completes. | 1. Gifting mutates both players' in-memory server tables atomically in the same thread before yielding.<br>2. Session lock metadata prevents a new server from loading an outdated profile until the previous server releases the lock on `PlayerRemoving`. |
-| **Plot Ownership Spoofing** | Firing `RequestPlotAction` for another player's `SlotIndex` or `ItemUID`. | `PlotService` resolves the caller's plot strictly via `PlotService:GetPlotByPlayer(player)`—the client cannot pass a `PlotId` parameter for mutations/harvests. |
+### 4.2 Complete Remote Contract & Rate Limits (MVP Scope)
+
+| Remote | Direction | Arguments (Strictly Validated) | Token Bucket Limit |
+| :--- | :---: | :--- | :---: |
+| `RequestInitialSnapshot` | `C -> S` (`RemoteEvent`) | *(None)* — triggers snapshot once per ready session + resync cooldown | `1 / 3s` |
+| `RequestStartCrack` | `C -> S` (`RemoteFunction`) | `(MeteorUID: string)` (`# <= 40`) | `4 / sec` |
+| `RequestFinishCrack` | `C -> S` (`RemoteFunction`) | `(MeteorUID: string, AttemptNonce: string)` (`# <= 40`) | `4 / sec` |
+| `RequestPlotAction` | `C -> S` (`RemoteEvent`) | `(Action: "StartIncubate" \| "Hatch" \| "PlaceInPen" \| "RemoveFromPen" \| "SellCritter", TargetSlotOrUID: string, ItemUID: string?)` | `8 / sec` |
+| `RequestBuyUpgrade` | `C -> S` (`RemoteFunction`) | `(UpgradeId: string)` (allowlisted against `UpgradeConfig`) | `3 / sec` |
+| `SyncOwnerState` | `S -> C` (`RemoteEvent`) | `OwnerStateDTO` | Server-driven |
+| `SyncPublicPlots` | `S -> C` (`RemoteEvent`) | `{ PublicPlotDTO }` + `PlotRevision` | Server-driven |
+| `MeteorLifecycle` | `S -> C` (`RemoteEvent`) | `{ Action: "Spawn" \| "Claimed" \| "Despawn", MeteorUID, Trait, Position, ClaimedBy? }` | Server-driven |
+
+*Note: Removed entirely from MVP: `RequestGiftItem`, `RequestFuseCritters`, `RequestLikePlot`, `WeatherChanged`, `OfflineReportReady`, and shop window remotes.*
+
+### 4.3 Inbound Validation & Rate-Limit Rules (`NetworkService.luau`)
+Every `OnServerEvent` and `OnServerInvoke` passes through a centralized validator:
+- Reject any non-matching argument count or type before reading fields.
+- Reject `NaN`, `±math.huge`, negative numbers, and non-integers where integers are expected.
+- Resolve caller strictly from Roblox's first argument (`player`)—never accept a `UserId` or `PlotId` from client payloads.
+- Charge the player's per-action token bucket **even on rejected/invalid calls**, and clean up buckets on `PlayerRemoving`.
 
 ---
 
-## 7. Performance & Mobile Optimization Guidelines
+## 5. Saving Lifecycle, Offline Safety & Testing Matrix
 
-1. **Client-Side Visual Culling & Animation Throttling:**
-   - Hopping Critters in all 6 plots are animated by a single centralized `RunService.RenderStepped` loop in `PlotVisualController.luau`.
-   - If a plot is more than **120 studs away** from `workspace.CurrentCamera`, its Critter hop updates throttle from 60 Hz down to **10 Hz**, and small particle emitters disable automatically.
-2. **Part Count Budgets:**
-   - Each Critter or Crystal model must use **$\le 12$ BaseParts/MeshParts** with `CastShadow = false` on small decorative attachments and `CanCollide = false`, `CanQuery = false`, `CanTouch = false` on all non-interactive visuals.
-3. **Object Pooling for Coins & Meteors:**
-   - Floating coin popups and crater meteors reuse a pre-allocated pool of 30 instances rather than calling `Instance.new()` / `:Destroy()` every second.
+### 5.1 Saving Rules (`DataService.luau`)
+1. **Explicit Readiness Gate:** Every gameplay remote handler checks `DataService:IsReady(player)` and rejects actions if a profile is still loading or closing.
+2. **Stage 1–2 (`MockStore`):** Explicitly guarded by `Constants.USE_MOCK_STORE == true` inside Studio/prototype mode. Cannot be accidentally enabled in live production.
+3. **Stage 3+ (`ProfileStore`):**
+   - Vendor pinned `MadStudioRoblox/ProfileStore` with `LICENSE` preserved and version tag recorded in `src/Server/Libs/ProfileStore/VERSION.md`.
+   - On `PlayerAdded`: `Store:StartSessionAsync("Player_" .. player.UserId, { Cancel = function() return player.Parent ~= Players end })`.
+   - If `StartSessionAsync` returns `nil` (load failed or session lock unrecoverable): **kick the player cleanly with a polite retry message**—**NEVER** initialize a temporary blank live profile!
+   - Listen to `Profile.OnSessionEnd`: immediately halt all gameplay mutations for that player and kick cleanly so stale sessions cannot mutate data.
+   - Reconcile missing keys using `Profile:Reconcile()` plus explicit schema migration that preserves existing valid items/coins.
+   - On `PlayerRemoving` and `game:BindToClose`: end sessions gracefully within the `BindToClose` shutdown window.
+   - Use isolated DataStore scopes (`StarfallRanch_Alpha_v1` vs `StarfallRanch_Prod_v1`) so Studio tests never touch live player data.
+
+### 5.2 Offline Incubation Math (No Offline Coin Faucet)
+- When a pod starts incubating, server records `MaturesAt = os.time() + SpeciesConfig.HatchSeconds`.
+- On profile load, **only `MaturesAt`** is checked on demand when hatching (`os.time() >= Item.MaturesAt`).
+- `LastAccrualTimestamp` is updated on logout and reset cleanly to `os.time()` on login **without** granting elapsed offline coin income—guaranteeing zero offline inflation and zero rejoin-spam exploits.
+
+### 5.3 Mandatory Adversarial & Persistence Test Matrix (Every Milestone)
+- **Stage 1 Tests:** 2-player simultaneous meteor finish race; expired/forged `AttemptNonce`; out-of-range finish; `NaN`/`nil`/wrong-type remote fuzzing; bag-full crack attempt; player leaving/respawning mid-crack; rapid plot upgrade spam.
+- **Stage 3 Tests:** Join/save/rejoin preservation; forced `DataStore` load failure (verifies clean kick without overwriting data); overlapping dual-server session lock recovery; `OnSessionEnd` lock theft handling; server `BindToClose` shutdown save completion; clock boundary tests (`MaturesAt` 1s before vs. 12h after).

@@ -258,16 +258,23 @@ Therefore, we evaluate all 12 concepts across five weighted dimensions:
 
 ---
 
-## 5. Final Selection: Why We Recommend **Starfall Ranch: Critter & Crystal Tycoon**
+## 5. Post-Audit Selection & Scope Narrowing (Updated 2026-11-15)
 
-We select **Concept #1: Starfall Ranch: Critter & Crystal Tycoon** as our primary project direction for four decisive reasons:
+> **Audit Correction (`docs/CHATGPT_REVIEW.md`):** The initial 100-point rubric above double-counted trend alignment/retention/clip-ability and understated beginner integration/testing difficulty—so `95/100` and `"Very Easy"` should be treated as relative comparisons, not predicted market success or trivial effort. Below is ChatGPT's qualitative E/P/S/D/F/X audit across Entry Fun (E), Sustained Progression (P), Positive Social Play (S), Distinctiveness (D), Beginner Delivery Feasibility (F), and Extensibility/Fair Monetization (X):
 
-1. **Highest Ratio of Player Depth to Implementation Simplicity:**  
-   In Luau, a growing Crystal Geode or Critter Pod on a ranch plot is purely a server table entry (`{SpeciesId, PlantedAt, GrowthDuration, WeightKg, Mutations = {}}`). Even when matured Critters hop around a player's pen, their movement is a simple client-side visual bounce between random points inside the pen box—meaning **zero server humanoid physics, zero navmesh pathfinding, and rock-solid 60 FPS on budget mobile devices**.
-2. **Immediate 15-Second Hook + 28-Day Offline Stickiness:**  
-   Unlike *Grow a Garden* where a player must wait when their plot is growing, *Starfall Ranch* surrounds the plots with an active **Meteor Crater** where wild Star-Meteors crash every 20–30 seconds. Players always have an active, tactile skill check (**Critical Crack**) to perform while their ranch plots grow and mutate.
-3. **Living Collectibles Beat Static Crops:**  
-   Younger players form stronger emotional bonds—and spend more willingly on convenience/storage—when the giant Rainbow item they grew has cute blocky eyes, hops behind them when equipped, and lives in their ranch pen.
-4. **Built-In Viral Hybrid Possibility (Incorporating Finalist #2 & #3 Strengths):**  
-   Notice how modular *Starfall Ranch* is:
-   - In Phase 3 (Post-MVP), we can easily add the **Crater Rift Vault** (borrowing *Relic Raiders*' 60-second timed meteor cavern rush) and **Starlight Elixirs** (borrowing *Potion Pop!*'s temporary avatar/luck buffs crafted from harvested crystals)!
+| Concept | E | P | S | D | F | X | Post-Audit Disposition |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **#1 Starfall Ranch** | H | H | M | M | **H*** | H | **Selected Prototype Candidate** (*strictly narrowed to a single Critter Rescue pipeline; see below*). |
+| **#2 Potion Pop!** | H | H | H | H | M | H | **Strongest Social-Creativity Backup** (3 known recipes + 1 cauldron if Starfall tests flat). |
+| **#3 Relic Raiders** | H | H | H | H | M/L | H | **Strongest Action Backup** (1 safe timed vault if passive collection tests boring). |
+| **#12 Fossil Park** | H | H | M/H | H | M | H | Close 4th (higher sculpting burden than cube critters). |
+| **#7 Gachapon Toy Factory** | H | M | M | M | H* | H | Viable only with deterministic chosen toy recipes (no paid blind boxes). |
+| **#4–#6, #8–#11** | M–H | L–H | M–H | M–H | L–M | L–H | Higher physics/NPC/balancing risk or unsuitable casino framing (#10); deferred. |
+
+*\*Feasibility (`H*`) holds **only** under drastic scope narrowing, not the full initial feature list.*
+
+### Final Prototype Decision: **Starfall Ranch (Narrowed Unified Critter Prototype)**
+We recommend **Starfall Ranch** solely as a **narrowly scoped, hypothesis-testing prototype** for three reasons:
+1. **Low Engine Risk:** Stationary plots, server-owned collectible state, and non-humanoid visual critters avoid combat AI, moving-platform physics, and complex trap-room level design.
+2. **Differentiated Active Choice (Addressing *Break and Steal an Egg*):** Because *Break and Steal an Egg* already offers cracking eggs for passive base income, our prototype differentiates through an **Active Meteor Rescue Choice**—players scan visible meteor trails in a non-griefing Crater and choose between distinct meteor types (*Ember*, *Frost*, *Astral*) representing clear hatch-time vs. income trade-offs, followed by a clear **Keep in Pen vs. Sell** decision.
+3. **Strict No-Merge Discipline:** We will **not** merge *Relic Raiders*' dungeon vault or *Potion Pop!*'s elixirs into MVP. If our Stage 2 uncoached playtest reveals players merely stand around waiting for passive coins instead of enthusiastically chasing meteors, we will pivot cleanly to **Relic Raiders** or **Potion Pop!**.

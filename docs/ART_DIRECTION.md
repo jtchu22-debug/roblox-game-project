@@ -1,78 +1,51 @@
-# Art Direction & Low-Poly Asset Pipeline
+# Art Direction & Low-Poly Asset Pipeline (Post-Audit Revision)
 
-> **Last Updated:** November 15, 2026  
+> **Last Updated:** November 15, 2026 (Revised per Phase 0 Technical Director Audit — `R-006` / `R-010`)  
 > **Author:** Gemini (Primary Art & Technical Planner)  
-> **Reviewer:** ChatGPT (Independent Technical Director)  
-> **Visual Pillar:** *"Toy-Box Cosmic Pastel"* — Chunky, high-saturation low-poly shapes with clean silhouettes, tactile materials, and unmistakable mutation shaders.
+> **Auditor:** ChatGPT (Independent Technical Director)  
+> **Visual Pillar:** *"Toy-Box Cosmic Pastel"* — Chunky, high-saturation low-poly shapes with readable silhouettes, accessible contrast, and strict mobile performance budgets.
 
 ---
 
-## 1. Visual Style & Color Palette
+## 1. Visual Style, Accessibility & Performance Budgets
 
-Younger Roblox players (ages 8–14) respond strongly to high-contrast, toy-like readability (similar to *Bee Swarm Simulator*, *Grow a Garden*, *Pet Simulator 99*, and *Slime Rancher*).
-
-### Core Aesthetic Rules
-1. **Chunky Proportions & Beveled Edges:** Avoid thin, sharp, realistic geometry. Every building, fence, crystal, and critter uses chunky proportions with soft `Bevel` edges so highlights catch the sun cleanly.
-2. **Flat Vertex / Gradient Coloring Over Noisy Textures:** Do not use photorealistic image textures. Use solid Roblox materials (`SmoothPlastic`, `Neon`, `Glass`, `Metal`, `ForceField`) paired with clean vertex colors or simple color-palette UV unwraps. This keeps memory usage near zero and lets our **Mutation System** dynamically recolor any model in code!
-3. **High-Readability Silhouette Rule:** A player standing 100 studs away must be able to tell the difference between a *Star-Slime*, a *Nebula Fox*, and a *Solar Golem* purely from its outer silhouette (ears, horns, floating rings) and size.
+1. **Readable Silhouettes + Color-Independent Cues:**  
+   Never rely on color alone to communicate gameplay choices. Each of the 3 meteor traits uses a distinct shape and icon alongside its trail color:
+   - **Ember Meteor:** Warm coral-orange + flame-horn crest silhouette + Flame icon.
+   - **Frost Meteor:** Sky-cyan + jagged ice-crystal spike silhouette + Snowflake icon.
+   - **Astral Meteor:** Violet-gold + orbiting star-ring silhouette + Star icon.
+2. **Strict Scale & Instance Budget (MVP):**
+   - **Max Display Height:** $\le 8$ studs inside `60x60` stud plots (35-stud giant models are **removed** from MVP to prevent camera occlusion and plot visual overlap).
+   - **Max Active Visual Critters Server-Wide:** `6 plots × 5 active critters = 30 models max`.
+   - **Part/Triangle Budget:** Each prototype Part critter uses $\le 8$ non-colliding `BasePart`s (`CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `CastShadow = false` on small parts). Each future Blender hero mesh targets $\le 400$ triangles.
+   - **Accessibility & Contrast:** High-contrast UI labels, light/dark surface readability, Touch/Keyboard/Gamepad button prompts, and a **Reduced Motion** setting that disables bounce tweens and particle flashes.
 
 ### Master Color Palette (`Color3.fromRGB`)
 | Palette Role | Color Name | RGB Values | Hex | Where Used |
 | :--- | :--- | :---: | :---: | :--- |
-| **Environment Base** | Meadow Mint / Sky Grass | `(95, 215, 145)` | `#5FD791` | Floating island grass tops |
-| **Environment Cliff** | Warm Lilac Stone | `(120, 105, 155)` | `#78699B` | Floating island rock undersides & Crater rim |
-| **Plot Structure** | Clean Cream Wood / Trim | `(245, 235, 220)` | `#F5EBDC` | Ranch fences, gates, and Incubator frames |
-| **Tech / Futuristic** | Orbital Cyan | `(65, 210, 255)` | `#41D2FF` | Supply Ship, Collector Drones, Upgrade Pads |
-| **Currency / Gold** | Starlight Gold | `(255, 205, 45)` | `#FFCD2D` | Coins, Golden Mutation, Critical Crack Zone |
-| **Epic / Cosmic** | Nebula Magenta | `(215, 75, 255)` | `#D74BFF` | Mythic Pods, Void/Nebula accents |
+| **Environment Base** | Meadow Mint | `(95, 215, 145)` | `#5FD791` | Floating island grass tops |
+| **Environment Cliff** | Warm Lilac Stone | `(120, 105, 155)` | `#78699B` | Island rock undersides & Crater rim |
+| **Plot Structure** | Clean Cream Trim | `(245, 235, 220)` | `#F5EBDC` | Ranch fences, gates, Incubator frames |
+| **Tech / Interactive** | Orbital Cyan | `(65, 210, 255)` | `#41D2FF` | Incubator pads, Upgrade indicators |
+| **Highlight / Radiant** | Starlight Gold | `(255, 205, 45)` | `#FFCD2D` | Coins, Radiant cosmetic variant |
 
 ---
 
-## 2. Asset Strategy: Roblox Parts First vs. Custom Blender Models Later
+## 2. Two-Stage Asset Strategy (Parts First, Blender Only After Stage 2 Fun Gate)
 
-Because the developer is a beginner in Blender, we follow a strict **two-stage asset strategy** so art creation never blocks gameplay programming:
-
-### Stage A: Assets Built Permanently (or Initially) with Native Roblox Parts & Unions
-These assets look great using native Roblox Studio primitives (`Part`, `WedgePart`, `Cylinder`, `Sphere`, `CornerWedgePart`) and **never need Blender**:
-1. **Ranch Plot Base & Fences:** Chunky `SmoothPlastic` blocks and cylinders with `Studs` or `SmoothPlastic` surfaces.
-2. **Crystal Soil Beds & Incubator Pads:** Concentric cylinders with a glowing `Neon` inner ring.
-3. **Tycoon Upgrade Buttons:** Classic beveled cylinder pads (Green = Buy, Blue = Drone Upgrade, Purple = Rebirth) with floating `BillboardGui` price labels.
-4. **Phase 1 Placeholder Critters ("Cube Critters"):** A `3x3x3` rounded cube (`Block` + `SpecialMesh` bevel or 3 stacked parts) with two black sphere eyes and `WedgePart` ears. *(Note: Cube-style pets are an iconic, beloved aesthetic on Roblox, meaning Phase 1 placeholders already look charming!)*
-
-### Stage B: Assets Upgraded to Custom Low-Poly Blender Meshes (Phase 5)
-Once the gameplay loop is proven in Phases 1–4, we replace only the hero collectible models with lightweight `.fbx` meshes (< 400 triangles each):
-
-| Asset Category | Count (MVP) | Triangle Budget | Why Blender Helps Here |
-| :--- | :---: | :---: | :--- |
-| **Wild Meteors & Geodes** | 4 tiers | `80 – 180 tris` | Procedural icosphere with flat-shaded crater indentations and glowing crystal veins poking out. |
-| **Crystal Crops** | 6 species | `100 – 250 tris` | Tapered hexagonal crystal clusters angled outward from a central cluster base. |
-| **Cosmic Critters** | 8 species | `200 – 450 tris` | Chibi-proportioned low-poly bodies with distinct ears, tails, wings, or floating crystal crowns. |
-| **Collector Drone** | 2 tiers | `150 – 300 tris` | Cute spherical sci-fi bot with angled thruster wings. |
+- **Stages 1–3 (Native Roblox Parts Only):**  
+  Build the entire vertical slice and persistence alpha using crisp native Roblox primitives (`Part`, `WedgePart`, `Cylinder`, `Sphere`). Prototype critters (*Star-Slime*, *Nebula Fox*, *Solar Golem*) use charming stylized blocky Part assemblies (cube body + sphere eyes + wedge ears/crown), letting us test the 5-minute gameplay loop immediately without Blender bottlenecks.
+- **Stage 4 (`R-010` — Custom Low-Poly Meshes After Fun Gate Passes):**  
+  Only *after* the Stage 2 uncoached playtest validates that players love rescuing meteors and collecting critters do we upgrade the 3 hero critters and 3 meteor rocks to custom Blender `.fbx` meshes.
 
 ---
 
-## 3. Blender Automation: Procedural Python (`bpy`) Generator Script
+## 3. Blender Automation Script Status & Required Fixes (`R-010` Caveats)
 
-Instead of modeling every crystal cluster, meteor geode, and blocky critter by hand in Blender, we have included an automated **Blender Python script** at [`tools/blender/generate_lowpoly_assets.py`](../tools/blender/generate_lowpoly_assets.py).
+The starter generator script at [`tools/blender/generate_lowpoly_assets.py`](../tools/blender/generate_lowpoly_assets.py) was statically inspected during the Phase 0 audit and **must not be used for production exports as-is** until `R-010` runs in Stage 4. Known gaps documented for `R-010`:
 
-### What the Python Script Automates for a Beginner
-1. **Procedural Crystal Cluster Generator (`create_crystal_cluster`):** Automatically spawns 5–9 hexagonal prisms, tapers their tips into sharp crystal points, angles them outward organically, applies a clean `Bevel` modifier, and combines them into a single export-ready mesh.
-2. **Procedural Meteor Geode Generator (`create_meteor_geode`):** Creates a low-poly subdivided icosphere, applies randomized rocky displacement, and embeds glowing crystal shards sticking out of its surface.
-3. **Procedural Chibi Critter Base Generator (`create_blocky_critter`):** Generates a symmetrical, rounded-cube critter body with ears, feet, and a tail attachment point—giving a beginner a 90%-finished base mesh for all 8 Critter species in 1 click!
-4. **Roblox-Correct Scale & Orientation Export:** Automatically sets scale and exports `.fbx` files with `apply_unit_scale=True` and `bake_space_transform=True` so models import into Roblox Studio at exact stud dimensions without being 100x too giant or sideways.
-
----
-
-## 4. How Mutations Transform Any Asset Dynamically in Luau
-
-To avoid making 8 separate 3D models in Blender for every single Critter (which would require $14 \times 8 = 112$ models!), we model **only 1 base mesh per species** (`14 models total`).
-
-Our Luau helper (`MutationVisuals.luau`) transforms any base model into any Mutation combination at runtime:
-1. **Size / Weight Scaling:** Calls `Model:ScaleTo(math.clamp((WeightKg / BaseWeightKg) ^ 0.6, 0.75, 8.0))` so heavier rolls are physically massive.
-2. **Material & Color Overrides:**
-   - *Wet:* Sets `Reflectance = 0.35`, attaches water droplet `ParticleEmitter`.
-   - *Solar-Charged:* Turns accent parts into `Enum.Material.Neon` with `Color3.fromRGB(255, 140, 20)`.
-   - *Frost-Crowned:* Clones a low-poly Ice Crown mesh onto the `HeadAttachment` and sets body material to translucent ice blue.
-   - *Golden:* Sets all body parts to `Enum.Material.Metal`, `Color3.fromRGB(255, 205, 45)`, `Reflectance = 0.25`.
-   - *Void-Touched:* Wraps primary parts in a dark purple `Highlight` / `ForceField` shell and attaches orbiting dark-matter ring particles.
-   - *Prismatic:* Attaches a client-side tag (`CollectionService:AddTag(model, "PrismaticCycle")`) so a single centralized client loop smoothly cycles its hue across the rainbow every 3 seconds.
+1. **Scope Mismatch:** Currently creates 3 sample crystal clusters (cut from MVP), 2 meteors, and 2 critters—not the 3 MVP species (*Star-Slime*, *Nebula Fox*, *Solar Golem*) + 3 meteor traits (*Ember*, *Frost*, *Astral*).
+2. **Incomplete Geometry:** `create_meteor_geode` currently ignores its `core_rgba` parameter and does not embed crystal shards; `create_blocky_critter` does not generate visible eyes or tail attachments.
+3. **Missing `.fbx` Exporter:** No automated `bpy.ops.export_scene.fbx` step is implemented yet.
+4. **Destructive Collection Cleanup:** `clear_generated_collections()` removes existing objects in `SR_Crystals`, `SR_Meteors`, and `SR_Critters` on rerun. **Never run this script inside an artist's main `.blend` scene**—use a dedicated clean generator `.blend` file only and add an explicit confirmation guard before `R-010`.
+5. **Single-Sample Validation First:** When `R-010` begins in Stage 4, export **one sample model (`StarSlime.fbx`)**, import it into an isolated Roblox Studio test place, and verify exact stud dimensions, face normals, ground-contact pivot, material assignment, and runtime `Radiant` recoloring before generating the rest of the catalog.

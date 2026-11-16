@@ -1,20 +1,22 @@
-# Starfall Ranch: Critter & Crystal Tycoon (`roblox-game-project`)
+# Starfall Ranch (`roblox-game-project`)
 
-> **Project Status:** Phase 0 — Market Research, Concept Selection & Architecture Planning (Awaiting Technical Director Review)  
+> **Project Status:** Phase 0 Audit Integrated — Awaiting Human Lead Sign-Off (`R-007`) Before Stage 1 Vertical Slice  
 > **Last Updated:** November 15, 2026  
-> **Primary Research & Planning Agent:** Gemini (Antigravity)  
+> **Primary Research & Implementation Agent:** Gemini (Antigravity)  
 > **Independent Technical Director & Reviewer:** ChatGPT  
 
 ---
 
 ## 1. Project Overview
 
-This repository houses the market research, game design documentation, technical architecture, and source code for an original Roblox Simulator/Tycoon hybrid experience targeting younger audiences (ages 8–14) with a vibrant, low-poly stylized art direction.
+This repository houses the market research, game design documentation, technical architecture, and forthcoming Luau source code for **Starfall Ranch**, an original non-griefing Roblox Meteor Rescue & Creature Habitat Tycoon designed for younger audiences (ages 8–14) with a bright, low-poly stylized aesthetic.
 
-Following a comprehensive analysis of the 2025–2026 Roblox market—including breakout phenomena such as *Grow a Garden*, *Fisch*, *Steal An Egg*, *Steal a Brainrot*, *Dead Rails*, *The Forge*, and *Restaurant Tycoon 3*—we evaluated **12 original game concepts** against a weighted scoring matrix prioritizing market opportunity, 28-day algorithmic retention, beginner development feasibility, and ethical monetization.
+Following Phase 0 market research and an independent Technical Director audit (`docs/CHATGPT_REVIEW.md`), the launch roadmap was intentionally **narrowed into a strict gated vertical-slice plan**: prove that our core 5-minute **Active Meteor Rescue Choice $\rightarrow$ Incubation $\rightarrow$ Keep-vs-Sell $\rightarrow$ Ranch Upgrade** loop is genuinely fun in an uncoached playtest *before* scaling persistence, custom Blender meshes, or optional pure cosmetics.
 
-### Recommended Concept: **Starfall Ranch: Critter & Crystal Tycoon**
-Players claim a customizable floating ranch plot surrounding a dynamic Meteor Crater. Every few minutes, cosmic meteors crash down and global supply ships restock. Players use a snappy timing minigame (**Critical Crack**) to harvest **Star-Pods and Crystal Geodes**, place them on their ranch to grow (including **full offline growth**), and watch server-wide **Cosmic Weather Events** (*Solar Flare*, *Frost Nebula*, *Aurora Storm*, *Void Eclipse*) stack exponential visual and value **Mutations** (*Golden*, *Prismatic*, *Giant*, *Galactic*) onto their critters and crystals. Matured critters hop around ranch pens generating passive currency, can be held overhead to flex or gifted in the central plaza, cataloged in a **Cosmic Bestiary**, and reinvested into automated tycoon upgrades and **Ranch Rebirths**.
+### Narrowed Prototype & MVP Loop (*Starfall Ranch*)
+- **Active Crater Choice:** Falling meteors leave distinct trails and shapes in a shared, non-griefing Crater (**Ember**, **Frost**, **Astral**), letting players choose between fast common hatches and slower high-value pods.
+- **Unified Critter Pipeline:** Rescued meteors yield **Star-Pods** that incubate on your Ranch Pad (supporting absolute-timestamp offline incubation in Stage 3+) and hatch into blocky **Cosmic Critters** (*Star-Slime*, *Nebula Fox*, *Solar Golem*).
+- **Keep vs. Sell Decision:** Place hatched critters inside your Habitat Pen for steady bounded integer `Coins/sec` (`2 / 4 / 7 Coins/s`) or sell duplicates at your Ranch Gate for instant coins toward visible Ranch upgrades.
 
 ---
 
@@ -22,51 +24,45 @@ Players claim a customizable floating ranch plot surrounding a dynamic Meteor Cr
 
 ```text
 roblox-game-project/
-├── README.md                          # Project overview, status, and navigation guide
-├── default.project.json               # Rojo project configuration mapping src/ to Roblox Studio
+├── README.md                          # Project overview, current gate status, and navigation guide
+├── default.project.json               # Rojo configuration mapping src/ to Roblox Studio (activated in R-008)
 ├── .gitignore                         # Ignore rules for Roblox Studio (.rbxlx.lock), OS, and build artifacts
 ├── docs/
-│   ├── MARKET_RESEARCH.md             # 2025–2026 Roblox market analysis, verified stats, and algorithm shifts
-│   ├── TREND_ANALYSIS.md              # 8 core gameplay, retention, social, and viral mechanics analyzed
-│   ├── GAME_CONCEPTS.md               # 12 original concepts, 100-point scoring matrix, and Top 3 deep dive
-│   ├── GAME_DESIGN.md                 # Full GDD & MVP scope for Starfall Ranch: Critter & Crystal Tycoon
-│   ├── TECHNICAL_ARCHITECTURE.md      # Server-authoritative Luau architecture, DataStores, networking, security
-│   ├── DEVELOPMENT_ROADMAP.md         # Beginner-friendly phased roadmap with testing & Definition of Done
-│   ├── ART_DIRECTION.md               # Low-poly style guide, Part-to-Blender pipeline, and Blender Python scripts
-│   ├── MONETIZATION.md                # Ethical, child-safe monetization strategy (GamePasses, DevProducts, Payouts)
+│   ├── MARKET_RESEARCH.md             # Verified 2025–2026 CCU snapshots, overlooked rivals, negative controls & hypotheses
+│   ├── TREND_ANALYSIS.md              # Post-audit disposition of 8 Roblox design trends (Prototype vs. Deferred)
+│   ├── GAME_CONCEPTS.md               # 12 original concepts, qualitative E/P/S/D/F/X audit & Top 3 selection
+│   ├── GAME_DESIGN.md                 # Narrowed Prototype & MVP spec, bounded integer economy & 5-min simulation
+│   ├── TECHNICAL_ARCHITECTURE.md      # Single-item-map schema, nonce claim protocol, DTOs & ProfileStore lifecycle
+│   ├── DEVELOPMENT_ROADMAP.md         # 5-stage gated roadmap (Mock Vertical Slice -> Playtest -> Alpha -> Launch)
+│   ├── ART_DIRECTION.md               # Low-poly style guide, accessibility, scale/instance budgets & Blender caveats
+│   ├── MONETIZATION.md                # Child-safe policy (Creator Rewards, zero paid random items, cosmetics-only post-stability)
+│   ├── CHATGPT_REVIEW.md              # Full independent Phase 0 Technical Director audit report
 │   ├── AGENT_RULES.md                 # Multi-agent collaboration protocol between Gemini and ChatGPT
-│   ├── AGENT_TASKS.md                 # Actionable task board and current execution status
-│   ├── AGENT_REVIEWS.md               # Structured review log and critique template for ChatGPT
-│   └── DECISIONS.md                   # Architecture & Design Decision Records (ADRs) + open questions
-├── src/                               # Luau source code (populated after Phase 0 review sign-off)
-│   ├── Client/                        # StarterPlayerScripts (UI controllers, VFX, input, client tweens)
-│   ├── Server/                        # ServerScriptService (PlotManager, DataService, WeatherService, Economy)
-│   └── Shared/                        # ReplicatedStorage (Config tables, Item/Mutation registries, Types)
+│   ├── AGENT_TASKS.md                 # Actionable task board and current execution gates (R-001 through R-010)
+│   ├── AGENT_REVIEWS.md               # Structured review log and audit trail
+│   └── DECISIONS.md                   # Architecture & Design Decision Records (ADR-001 to ADR-007)
+├── src/                               # Placeholder README until R-007 sign-off authorizes Stage 1 (R-008)
 └── tools/
-    └── blender/                       # Blender Python (bpy) procedural low-poly asset generation scripts
+    └── blender/                       # Blender Python starter generator (validation deferred to R-010 after Stage 2 fun gate)
 ```
 
 ---
 
-## 3. Documentation Reading Order (For Human Lead & ChatGPT Reviewer)
+## 3. Documentation Reading Order (For Human Lead Sign-Off `R-007`)
 
-If you are connecting to this repository as the **Technical Director / Reviewer (ChatGPT)** or reviewing the project as the **Project Owner**, follow this reading sequence:
-
-1. **[docs/MARKET_RESEARCH.md](./docs/MARKET_RESEARCH.md)** — Understand the empirical data (2025–2026 CCU peaks, evergreen benchmarks, player complaints, and the 28-day Roblox Recommended For You algorithm).
-2. **[docs/TREND_ANALYSIS.md](./docs/TREND_ANALYSIS.md)** — Review the 8 underlying psychological and mechanical trends extracted from top-performing games.
-3. **[docs/GAME_CONCEPTS.md](./docs/GAME_CONCEPTS.md)** — Examine all 12 generated concepts, the transparent scoring rubric, the Top 3 finalists, and challenge or validate the selection of *Starfall Ranch*.
-4. **[docs/GAME_DESIGN.md](./docs/GAME_DESIGN.md)** — Critique the core loop, math formulas, retention hooks, and strict MVP scope boundaries.
-5. **[docs/TECHNICAL_ARCHITECTURE.md](./docs/TECHNICAL_ARCHITECTURE.md)** — Audit the server-authoritative state management, `ProfileStore`/`DataStoreService` schema, RemoteEvent rate-limiting, and offline timestamp calculation.
-6. **[docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md)** — Verify whether the step-by-step milestones are realistic for a beginner developer assisted by AI agents.
-7. **[docs/ART_DIRECTION.md](./docs/ART_DIRECTION.md)** & **[docs/MONETIZATION.md](./docs/MONETIZATION.md)** — Evaluate the Part-first asset strategy, procedural Blender Python scripts, and child-safe monetization guardrails.
-8. **[docs/DECISIONS.md](./docs/DECISIONS.md)** & **[docs/AGENT_REVIEWS.md](./docs/AGENT_REVIEWS.md)** — Review open architectural/design questions awaiting ChatGPT's critique and log formal review findings.
+1. **[docs/CHATGPT_REVIEW.md](./docs/CHATGPT_REVIEW.md)** — ChatGPT's independent Phase 0 audit and rationale for scope narrowing.
+2. **[docs/DECISIONS.md](./docs/DECISIONS.md)** — Review **ADR-001 through ADR-007** and their resolved post-audit positions.
+3. **[docs/GAME_DESIGN.md](./docs/GAME_DESIGN.md)** & **[docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md)** — Verify the narrowed 3-species, 1-currency, 5-stage gated prototype plan.
+4. **[docs/TECHNICAL_ARCHITECTURE.md](./docs/TECHNICAL_ARCHITECTURE.md)** & **[docs/MONETIZATION.md](./docs/MONETIZATION.md)** — Verify the single-item-map schema, nonce security model, and child-safe Creator Rewards / cosmetics-only policy.
+5. **[docs/MARKET_RESEARCH.md](./docs/MARKET_RESEARCH.md)**, **[docs/TREND_ANALYSIS.md](./docs/TREND_ANALYSIS.md)**, **[docs/GAME_CONCEPTS.md](./docs/GAME_CONCEPTS.md)**, and **[docs/ART_DIRECTION.md](./docs/ART_DIRECTION.md)** — Supporting evidence and asset budgets.
 
 ---
 
-## 4. Multi-Agent Collaboration Workflow
+## 4. Multi-Agent Collaboration Workflow & Current Gate
 
-This project uses a dual-agent governance model documented in **[docs/AGENT_RULES.md](./docs/AGENT_RULES.md)**:
+Governed by **[docs/AGENT_RULES.md](./docs/AGENT_RULES.md)**:
 - **Gemini (Antigravity):** Primary Researcher, Game Designer, and Implementation Agent.
 - **ChatGPT:** Independent Technical Director, Systems Auditor, and Design Critic.
+- **Human Project Lead:** Product Owner and Final Gate Approver.
 
-**Current Gate:** No gameplay code (`src/`) will be implemented until ChatGPT completes the **Phase 0 Architecture & Concept Review** in [docs/AGENT_REVIEWS.md](./docs/AGENT_REVIEWS.md) and open questions in [docs/DECISIONS.md](./docs/DECISIONS.md) are resolved.
+**Current Gate (`R-007`):** `R-001` through `R-006` documentation revisions are complete. **No Luau gameplay code (`src/`) will be written until the Human Lead explicitly approves the revised `Starfall Ranch` prototype direction and authorizes Stage 1 (`R-008`).**

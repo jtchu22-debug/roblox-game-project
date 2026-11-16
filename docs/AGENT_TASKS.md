@@ -26,8 +26,8 @@
 | **T-008** | Gemini | Design child-safe, ethical monetization strategy (GamePasses, communal Weather Beacons, guardrails). | `docs/MONETIZATION.md` | `[x]` |
 | **T-009** | Gemini | Establish multi-agent governance (`AGENT_RULES.md`, `AGENT_TASKS.md`, `AGENT_REVIEWS.md`, `DECISIONS.md`) and initialize local Git repository. | `docs/AGENT_*.md`, `docs/DECISIONS.md` | `[x]` |
 | **T-010** | **Human Lead** | Authenticate GitHub remote and push local `main` branch to `roblox-game-project` on GitHub so ChatGPT can connect. | [GitHub Remote](https://github.com/jtchu22-debug/roblox-game-project) | `[x]` |
-| **T-011** | **ChatGPT** | Conduct independent Technical Director audit of all Phase 0 docs; critique concept selection, economy math, and technical architecture; answer open ADRs. | `docs/AGENT_REVIEWS.md`, `docs/DECISIONS.md` | `[~]` |
-| **T-012** | Gemini + Human | Incorporate ChatGPT's Phase 0 review feedback and lock final MVP spec before starting Phase 1 code. | `docs/**` | `[ ]` |
+| **T-011** | **ChatGPT** | Conduct independent Technical Director audit of all Phase 0 docs; critique concept selection, economy math, and technical architecture; answer open ADRs. | [CHATGPT_REVIEW.md](./CHATGPT_REVIEW.md), `docs/AGENT_REVIEWS.md`, `docs/DECISIONS.md` | `[x]` |
+| **T-012** | Gemini | Incorporate ChatGPT's Phase 0 review feedback (`R-001`–`R-006`) across all Phase 0 documentation ahead of Human Lead sign-off (`R-007`). | `docs/**`, `README.md` | `[x]` |
 
 ---
 
@@ -53,15 +53,15 @@ See [CHATGPT_REVIEW.md](./CHATGPT_REVIEW.md), Review #001 in [AGENT_REVIEWS.md](
 
 | ID | Priority | Owner | Action and acceptance criteria | Status |
 |---|---|---|---|---|
-| R-001 | P0 | Gemini | Correct market data with timestamped URLs, place IDs, comparable windows; include Break and Steal an Egg, Fish It!, Shovel It! and mid-tier/failed competitors. Separate telemetry, hypothesis and firsthand observation; fix RFY/retention claims. | [ ] |
-| R-002 | P0 | Gemini | Propose unified critter-only rescue/meteor loop with 3 species, one currency, keep-vs-sell decision and visible upgrade; first 5-minute experience and one differentiator. Remove crystal lane, weather/shop timers, fusion/rebirth, bosses, transfers, paid progression, streaks and secondary worlds from prototype. | [ ] |
-| R-003 | P0 | Gemini | Replace multiplicative economy with bounded simple integer income; align tutorial, prices, probabilities and terminology. Include time-to-upgrade, starter/average/best-case simulation, inventory/capacity tests; offline growth only initially. | [ ] |
-| R-004 | P0 | Gemini | Revise architecture: authoritative item lifecycle and unique IDs, non-yield atomic transitions, server nonce/claim validation, finite/bounded remote payloads, readiness, rate limits, public/private DTOs and late-join resync; document ProfileStore pin/license, save/session failure and checkpoint tests. | [ ] |
-| R-005 | P0 | Gemini | Revise monetization doc: Creator Rewards replaces EBP, no paid random item/currency/odds modifiers or social spending pressure; cosmetics only after stability and review. Specify ProcessReceipt durable recovery strategy if products ever added. | [ ] |
-| R-006 | P0 | Gemini + human lead | Revise roadmap into mock vertical slice → observed 5-minute playtest → persistence alpha → mobile polish → controlled launch. Agree acceptance targets and all ADRs before Phase 1. | [ ] |
-| R-007 | P0 | Human lead | Approve narrowed Starfall prototype or request alternate concept. Review R-001–006 deliverables, then explicitly authorize Phase 1. | [ ] |
-| R-008 | P1 | Gemini | After R-007: pin Rojo, create mapped paths, test isolated Studio place, tagged idempotent greybox map, one vertical slice with mock profiles; verify 2-player concurrency and remote abuse. No additional systems yet. | [ ] |
-| R-009 | P1 | Human lead + ChatGPT | After prototype: unguided playtest and evidence-based go/iterate/pivot decision, code/security review, real device checks. | [ ] |
-| R-010 | P2 | Gemini | After fun gate: validate one Blender export/import, fix generator discrepancies and safe reruns; performance/asset license budget. | [ ] |
+| R-001 | P0 | Gemini | Correct market data with timestamped URLs, place IDs, comparable windows; include Break and Steal an Egg, Fish It!, Shovel It! and mid-tier/failed competitors. Separate telemetry, hypothesis and firsthand observation; fix RFY/retention claims. | `[x]` |
+| R-002 | P0 | Gemini | Propose unified critter-only rescue/meteor loop with 3 species, one currency, keep-vs-sell decision and visible upgrade; first 5-minute experience and one differentiator. Remove crystal lane, weather/shop timers, fusion/rebirth, bosses, transfers, paid progression, streaks and secondary worlds from prototype. | `[x]` |
+| R-003 | P0 | Gemini | Replace multiplicative economy with bounded simple integer income; align tutorial, prices, probabilities and terminology. Include time-to-upgrade, starter/average/best-case simulation, inventory/capacity tests; offline growth only initially. | `[x]` |
+| R-004 | P0 | Gemini | Revise architecture: authoritative item lifecycle and unique IDs, non-yield atomic transitions, server nonce/claim validation, finite/bounded remote payloads, readiness, rate limits, public/private DTOs and late-join resync; document ProfileStore pin/license, save/session failure and checkpoint tests. | `[x]` |
+| R-005 | P0 | Gemini | Revise monetization doc: Creator Rewards replaces EBP, no paid random item/currency/odds modifiers or social spending pressure; cosmetics only after stability and review. Specify ProcessReceipt durable recovery strategy if products ever added. | `[x]` |
+| R-006 | P0 | Gemini + human lead | Revise roadmap into mock vertical slice → observed 5-minute playtest → persistence alpha → mobile polish → controlled launch. Agree acceptance targets and all ADRs before Phase 1. | `[x]` |
+| R-007 | P0 | Human lead | Approve narrowed Starfall prototype or request alternate concept. Review R-001–006 deliverables, then explicitly authorize Phase 1. | `[~]` |
+| R-008 | P1 | Gemini | After R-007: pin Rojo, create mapped paths, test isolated Studio place, tagged idempotent greybox map, one vertical slice with mock profiles; verify 2-player concurrency and remote abuse. No additional systems yet. | `[ ]` |
+| R-009 | P1 | Human lead + ChatGPT | After prototype: unguided playtest and evidence-based go/iterate/pivot decision, code/security review, real device checks. | `[ ]` |
+| R-010 | P2 | Gemini | After fun gate: validate one Blender export/import, fix generator discrepancies and safe reruns; performance/asset license budget. | `[ ]` |
 
 **Gate sequence:** R-001 → R-002/R-003/R-004/R-005 → R-006 → R-007 → R-008 → R-009; R-010 only after prototype proves useful. R-001–006 may be coordinated without overlapping edits. Do not mark any gameplay implementation complete based on planning alone.

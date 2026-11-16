@@ -1,230 +1,45 @@
-# Roblox Trend Analysis: Mechanics, Retention & Virality (2025–2026)
+# Roblox Trend Analysis & Prototype Filtering (Post-Audit Revision)
 
-> **Last Updated:** November 15, 2026  
+> **Last Updated:** November 15, 2026 (Revised per Phase 0 Technical Director Audit)  
 > **Author:** Gemini (Primary Research Agent)  
-> **Purpose:** Distill recurring patterns from the top-performing Roblox experiences of 2025–2026 into actionable, original mechanics for our game.
+> **Auditor:** ChatGPT (Independent Technical Director)  
+> **Purpose:** Filter the 8 observed market trends through beginner feasibility, scope control, and child-safe design—separating what belongs in our **Stage 1–2 Prototype** vs. **Deferred Post-Validation Features**.
 
 ---
 
-## Overview
+## 1. Post-Audit Trend Disposition Matrix
 
-Rather than copying the surface theme of a hit game (e.g., making another garden clone or another fishing clone), our objective is to extract the **underlying psychological and mechanical engines** that drive:
-1. **Immediate Comprehension & Fun (First 60 Seconds)**
-2. **Session Depth & Micro-Goal Chaining (15–45 Minutes)**
-3. **28-Day Return Frequency (D1, D7, D28 Retention)**
-4. **Social Co-Play & Short-Form Video Shareability (TikTok / YouTube Shorts)**
+Our initial analysis identified 8 prominent trends across 2025–2026 hits. As ChatGPT's Phase 0 audit emphasized, **attempting to ship all 8 trends simultaneously in v1 creates severe state-interaction bugs, economy hyper-inflation, and solo-developer burnout** (as demonstrated by negative controls like *Shovel It!*, which stacked weather and mutations yet still stalled).
 
-Below are the **8 Core Trends** dominating the 2025–2026 Roblox market, structured with concrete examples, psychological drivers, retention impact, and our original adaptation strategy.
+Below is the strict architectural disposition for each trend:
 
----
-
-## Trend 1: Multiplicative Mutation & Size Stacking on Tangible 3D Objects
-
-### 1. What the Trend Is
-Instead of rewarding players with flat currency numbers or static items, modern hits generate items with **independent, stackable modifier rolls**:
-$$\text{Final Item Value} = \text{Base Value} \times \text{Weight Multiplier} \times \prod (\text{Mutation Multipliers})$$
-Crucially, these modifiers are **visually represented on the 3D model**—via scale (`kg` / stud size), material shaders (`Neon`, `ForceField`, `Glass`, `Metal`), color palettes (`Gold`, `Rainbow`, `Void`), and particle emitters (`Sparks`, `Frost`, `Starlight`).
-
-### 2. Which Successful Games Demonstrate It
-- ***Grow a Garden*:** Crops roll weight (`kg`) plus environmental mutations (*Wet* 2x, *Chilled* 2x, *Frozen* 10x, *Shocked* 50x, *Gold* 20x, *Rainbow* 50x, *Celestial* 120x).
-- ***Fisch*:** Fish roll weight (`kg`), *Shiny/Sparkling* attributes, and mutations (*Abyssal*, *Lunar*, *Aurora* 6.5x).
-- ***Throw Food For Animals*:** Animals spawn in *Gold*, *Diamond*, *Rainbow*, and giant *Infinite* mutations.
-
-### 3. Why It Works Psychologically
-Variable-ratio reinforcement works best when the reward is **combinatorial and visible**. Even a starter-tier item can suddenly roll a **Giant + Prismatic + Storm-Struck** combination, making every single harvest or hatch exciting for both new and veteran players.
-
-### 4. How It Affects Engagement & Retention
-- Eliminates "dead zones" where early-game actions feel worthless.
-- Drives collection depth: players don't just want *one* Crystal Fox; they want a **Giant Aurora Crystal Fox**.
-
-### 5. How We Will Adapt It Originally
-In **Starfall Ranch**, every **Star-Pod (Critter)** and **Geode (Crystal Crop)** placed on a player's ranch has two mutation phases:
-1. **Extraction Roll (Active Skill):** Hitting the golden sweet spot on the 2-second **Critical Crack** bar boosts initial **Base Weight (`kg`)** by `+25%` to `+100%`.
-2. **Cosmic Exposure (Plot Growth):** While growing on the ranch, server-wide **Cosmic Weather Events** apply stackable **Elemental Infusions** (*Solar-Charged*, *Frost-Crowned*, *Nebula-Touched*, *Supernova*, *Prismatic*) that physically alter the model's procedural attachments, material glow, and passive coin output.
+| Trend Identified | What Top Games Do | Stage 1–2 Prototype Disposition | Stage 3+ / Post-Validation Plan |
+| :--- | :--- | :--- | :--- |
+| **1. Size & Mutation Stacking** | Exponential multi-layer multipliers (`Weight × Weather × Gold × Rainbow`) + 35-stud giants. | **CUT EXPONENTS & STACKING.** Keep at most **ONE** modest, readable visual variant (*Radiant* trim, bounded $\le +1\text{ Coin/s}$ or cosmetic-only) and standard $\le 8$-stud scale. | Re-evaluate additional cosmetic variants only after bounded integer economy proves stable in playtests. |
+| **2. Synchronized Weather & Shop Timers** | 5-min global shop restock clocks + 6-min skybox weather shifts. | **DEFER BOTH CLOCKS.** Keep a common Meteor Crater **always active** so players are never locked out by an arbitrary shop timer. | Optionally test **one** atmospheric Meteor Shower event later with **zero** FOMO or missable exclusive rewards. |
+| **3. Offline Progression** | Full offline crop growth + offline coin vaults + welcome banners. | **KEEP OFFLINE INCUBATION ONLY (Stage 3).** Store simple server `MaturesAt` Unix timestamps on incubating pods. **CUT offline passive coin faucets** and streak loss penalties. | Never punish missed days; keep returning players welcomed by ready-to-hatch pods without inflating coins. |
+| **4. Tactile Micro-Skill** | 1.5s–3s timing bars (*Fisch*, *The Forge*, *Dandy's World*). | **HIGH PRIORITY — TEST CAREFULLY.** Forgiving single tap grants full standard progression; an optional timing zone gives crisp visual/audio feel and tiny speed convenience (never huge economic bonus or latency punishment). | Ensure mobile/desktop parity and zero repetitive 100x mandatory timing grind. |
+| **5. Hold-to-Flex, Gifting & Trophy Likes** | Carrying giant items overhead, proximity gifting, and like counters. | **KEEP INSPECTABLE RANCH DISPLAYS ONLY.** Players can visit neighboring ranches and admire placed critters. **DEFER gifting, trading, like rewards, and friend buffs.** | Cross-player transfers require atomic transaction journals and policy checks—explicitly deferred past MVP. |
+| **6. Bestiaries & 5-to-1 Fusion** | Completionist indexes + merging 5 commons into 1 glowing tier. | **DEFER BOTH.** Test whether collecting 3 distinct species (*Slime*, *Fox*, *Golem*) and choosing Keep vs. Sell is inherently fun first. | Add a simple **Discovered Species Checklist** (cosmetic tracking, no stat stacking) in Stage 4 Polish/Beta. |
+| **7. Manual-to-Automated Tycoon & Rebirths** | Drones, sprinklers, and multi-tier prestige resets. | **KEEP VISIBLE PERMANENT UPGRADES ONLY.** Show 3 clear, physical ranch upgrades (`+Habitat Slot`, `+Incubator Pad`, `Ranch Arch & Pen Expansion`). **DEFER Rebirths & Automation Drones.** | Automation must never automate away the most fun active loop (choosing & rescuing meteors). |
+| **8. Short-Form Visual Spectacle** | Screen flashes, huge scale jumps, global server broadcasts. | **DELIGHTFUL, RESTRAINED HATCHES.** Cute bounce tween, clean sparkles, and an accessible **Reduced Motion** toggle. **CUT full-screen flashes, camera shake locks, and social spending broadcasts.** | Use honest thumbnails showing a player rescuing an adorable Star Critter from a glowing meteor. |
 
 ---
 
-## Trend 2: Synchronized Server-Wide Weather & Global Stock Cycles
+## 2. Our Differentiated Core Hook: Active Meteor Rescue Choice
 
-### 1. What the Trend Is
-Shared world timers that change the game's economy or environment every **5 to 15 minutes** for everyone simultaneously—combining rotating merchant stock with dynamic environmental events.
+Because *Break and Steal an Egg* (`Place 114326934417838`) already exists with an *"eggs + base income + upgrades"* pitch, *Starfall Ranch* cannot rely on generic egg-cracking alone.
 
-### 2. Which Successful Games Demonstrate It
-- ***Grow a Garden*:** Synchronized 5-minute seed shop restocks + server weather events (*Rain*, *Thunderstorm*, *Blood Moon*).
-- ***Blox Fruits*:** 4-hour Fruit Dealer stock rotation.
-- ***Fisch*:** Day/Night cycles, Whirlpool spawns, and player-triggered **Aurora Totems**.
-- ***Steal An Egg* / *99 Nights in the Forest*:** Day/Night transition sirens that change world rules and spawn rare loot.
-
-### 3. Why It Works Psychologically
-- **"Just 2 More Minutes" Hook:** When a top-screen HUD countdown says `Next Supply Ship & Cosmic Weather in 01:42`, players rarely log off before seeing what spawns.
-- **Shared Community Excitement:** When a rare 5% weather event (*Void Eclipse*) or rare stock item drops, the entire server chat lights up simultaneously.
-
-### 4. How It Affects Engagement & Retention
-Directly increases **Average Session Time** (stretching 8-minute sessions into 25-minute sessions) and drives external community engagement (players telling friends in group chats when a rare event is happening).
-
-### 5. How We Will Adapt It Originally
-We will implement a dual-clock system:
-- **Every 5 Minutes (Supply Ship Dock):** The *Orbital Supply Ship* lands at the central Plaza with a fresh roll of Pod & Geode stock (with server-wide announcements if a Mythic pod is in stock).
-- **Every 6 Minutes (Cosmic Weather Shift):** The skybox, lighting, and ambient audio transition into a 2-minute **Cosmic Phenomenon** (*Meteor Shower*, *Solar Flare*, *Ion Storm*, *Frost Nebula*, or the rare *Supernova*). Players can also craft or buy **Weather Beacons** to trigger an immediate event for the whole server.
+Instead, we combine the **survived trends** into one cohesive, positive loop tailored for younger players:
+1. **Visible Choice in the Crater:** Falling meteors leave distinct colored sky trails and land in the Crater with readable traits (*Ember*, *Frost*, *Astral*) representing clear speed-vs-reward trade-offs (fast common hatch vs. slower high-value pod).
+2. **Zero-Griefing Cooperative Space:** Players share the Crater and see each other's rescues and ranches, without stealing or blocking another player's meteor claim.
+3. **Meaningful Keep-vs-Sell Decision:** Every hatched Critter presents an immediate, understandable decision: place it in a limited **Habitat Pen slot** for steady integer `Coins/sec`, or sell it at the Ranch Gate for instant coins to unlock your next **visible Habitat Upgrade**.
 
 ---
 
-## Trend 3: Offline Progression ("Welcome Back" Loop) Over Forced Overnight AFK
+## 3. Detailed Trend Notes (Preserved Context & Caveats)
 
-### 1. What the Trend Is
-Calculating elapsed real-world time (`os.time() - lastLogoutTimestamp`) when a player joins a server and advancing their plot's growth timers, passive collectors, and deterministic weather mutation rolls accordingly.
+*(Retained from Phase 0 research with post-audit guardrails applied)*
 
-### 2. Which Successful Games Demonstrate It
-- ***Grow a Garden*:** Crops mature while the player is offline, greeting them with a *"Your garden grew while you were gone!"* banner and a plot full of ready-to-harvest produce.
-- **Mobile Idle Tycoons (e.g., *Egg, Inc.*, *Slime Rancher* conservatories):** Proven mobile-first retention staple now breaking out on Roblox.
-
-### 3. Why It Works Psychologically
-- **Zero Mobile Friction:** Over 70% of younger Roblox players play on mobile/tablet devices and cannot run PC macro tools overnight (unlike *Sol's RNG* or *Pet Simulator 99*).
-- **Guaranteed High-Dopamine Session Start:** Instead of logging in to an empty state or a grind wall, the first 60 seconds of every new session is a **massive reward payout** (harvesting matured pods, discovering offline mutations, and claiming collector vaults).
-
-### 4. How It Affects Engagement & Retention
-Directly maximizes **Play Days per User (D1, D7, D28)**—the #1 long-term ranking signal in Roblox's 28-day RFY algorithm—because checking your ranch before/after school takes 2 minutes and always feels rewarding.
-
-### 5. How We Will Adapt It Originally
-When a player joins **Starfall Ranch**:
-1. The server compares `os.time()` against `Profile.Data.LastSeenTimestamp` (capped at a generous 12 hours of offline simulation, extendable via Ranch upgrades).
-2. All planted **Crystal Geodes** and incubating **Star-Pods** advance their growth by the elapsed seconds and roll a fair baseline offline mutation chance.
-3. A sleek, celebratory **"While You Were Away..."** card pops up for 4 seconds showing: Time Elapsed, Coins Gathered by Ranch Drones, and Pods Ready to Crack—with a single `[Collect & View Ranch!]` button.
-
----
-
-## Trend 4: Tactile Micro-Skill Minigames Replacing Mindless Clicking
-
-### 1. What the Trend Is
-Replacing repetitive left-clicking (or holding down a button) with a snappy, 1.5-to-3-second timing or control minigame accompanied by crisp audio-visual feedback (screen shake, pitch-rising sound effects, particle bursts).
-
-### 2. Which Successful Games Demonstrate It
-- ***Fisch*:** Cast meter + tension reel bar.
-- ***The Forge*:** Timed anvil hammering and quenching.
-- ***Dandy's World*:** Skill-check timing rings on machines.
-- ***Bee Swarm Simulator*:** Catching falling tokens, beam combos, and precise field positioning.
-
-### 3. Why It Works Psychologically
-Easy to understand in 2 seconds (*"Tap when the bar hits the gold zone!"*), yet creates a genuine sense of mastery and agency. When a player hits a **Perfect Critical Crack**, they feel *they* caused the giant rare drop.
-
-### 4. How It Affects Engagement & Retention
-Prevents boredom during active play while still coexisting peacefully with tycoon automation (once players automate low-tier pods, they save their active skill checks for high-tier Meteor Pods).
-
-### 5. How We Will Adapt It Originally
-Our signature active interaction is the **Critical Crack Bar**:
-- When cracking a wild **Falling Meteor** in the Crater or opening a matured **Star-Pod**, a curved 1.5-second timing arc appears beside the object.
-- **Green Zone (60% width):** Standard Crack (`1.0x` weight).
-- **Gold Zone (15% width):** Critical Crack (`1.35x` weight + `+15%` Twin-Drop chance + dramatic camera zoom & chime).
-- **Accessibility / Convenience:** Players who prefer purely relaxed play can still tap once for an instant standard crack, or unlock **Auto-Crack Drones** via mid-game tycoon progression.
-
----
-
-## Trend 5: Physical "Hold-to-Flex", Gifting & Safe Social Interaction
-
-### 1. What the Trend Is
-Turning rare drops and mutated items into **physical 3D objects held above the player's avatar**, paired with one-click player-to-player **Gifting** and public **Showcase Pedestals**—while removing non-consensual griefing.
-
-### 2. Which Successful Games Demonstrate It
-- ***Grow a Garden*:** Holding giant mutated fruits in hand; gifting fruits to new players.
-- ***Fisch*:** Holding a massive 5,000kg Megalodon or Aurora fish in the hub; Appraisal NPC flexing.
-- ***Dress To Impress*:** The Runway evaluation loop.
-- ***Steal a Brainrot* / *Steal An Egg*:** Carrying rare units physically across the map (though non-consensual base stealing causes rage-quits among younger kids).
-
-### 3. Why It Works Psychologically
-Younger players care deeply about **social identity and peer recognition**. Numbers in a corner leaderboard (`1.42M Coins`) are invisible and abstract; carrying a glowing, 30-stud-tall **Prismatic Nebula Dragon-Slime** through the central Plaza makes every player on the server stop and stare.
-
-### 4. How It Affects Engagement & Retention
-- **Intentional Co-Play Days:** Friends join to show off their latest mutated critters, gift starter items to help a friend catch up, and pose on showcase podiums.
-- **Eliminates Rage-Quit Churn:** By replacing non-consensual plot theft with **cooperative Meteor Boss/Crater scrambles** and **voluntary Gifting/Trading**, we keep the social excitement of *Steal An Egg* without the D1 rage-quits.
-
-### 5. How We Will Adapt It Originally
-- **Overhead Carry Pose:** Any harvested Crystal or hatched Critter in the player's hotbar is held overhead with both hands using a simple procedural upper-torso/arm weld and displays a clean floating nametag (`[Giant Solar Star-Pup • 142.5 kg • 45x Value]`).
-- **One-Click Proximity Gifting:** Holding an item near another player displays a `ProximityPrompt` (`Gift to [PlayerName]`) with a confirmation check for Mythic items—enabling wholesome YouTube/TikTok "Making a Noob Rich!" moments.
-- **Ranch Showcase Pedestal:** Each plot has a front-gate **Trophy Pedestal** that displays the player's highest-value Critter at `1.5x` visual scale with a visitor "Like / Inspect" button (rewarding the plot owner with minor Friendship Tokens per unique visitor like).
-
----
-
-## Trend 6: Collection Bestiaries, Fusion Tiers & Permanent Mastery
-
-### 1. What the Trend Is
-A structured visual catalog (**Index / Bestiary**) tracking every discovered species, weight record, and mutation variant—paired with a **3-to-1 or 4-to-1 Fusion machine** that lets players combine duplicate commons into higher-tier glowing variants.
-
-### 2. Which Successful Games Demonstrate It
-- ***Fisch*:** Island Bestiaries that gate progression and reward badges/rods.
-- ***Adopt Me!*:** Combining 4 full-grown pets into a **Neon** pet, and 4 Neons into a **Mega-Neon**.
-- ***Pet Simulator 99* / *Sol's RNG*:** Gold/Rainbow pet upgrading machines and aura collection indexes.
-
-### 3. Why It Works Psychologically
-- **Turns "Bad RNG" into Progress:** In a well-designed simulator, rolling a common item is never wasted if 5 commons can be fused into a **Radiant** variant, or if catching a new mutation checks off a slot in the **Bestiary** toward a permanent `+10% Ranch Income` milestone.
-- **Clear Mid-Term Goals:** Answers the question *"What should I do next?"* at every stage of the game.
-
-### 4. How It Affects Engagement & Retention
-Drives **D7–D28 retention** for completionists and prevents inventory bloat.
-
-### 5. How We Will Adapt It Originally
-- **The Cosmic Bestiary UI:** A clean, visual grid showing silhouettes of undiscovered Critters and Crystals, plus checkboxes for each Mutation discovered on that species (`Normal`, `Golden`, `Solar`, `Frost`, `Nebula`, `Prismatic`). Every 10% completion grants a permanent **Starlight Mastery Boost**.
-- **The Star-Fuser Station:** Located on the player's plot (unlocked at Rebirth 1), allowing players to fuse **5 identical Critters** into a **Starforged (Neon-glowing)** tier with `3.5x` passive income—keeping common pods valuable forever.
-
----
-
-## Trend 7: Manual-to-Automated Tycoon Progression & Meaningful Rebirths
-
-### 1. What the Trend Is
-Blending active simulator collection with physical tycoon plot building—where upgrades unlock **visible automation** (drones, conveyors, auto-incubators, weather shields) and **Rebirths** unlock structural plot expansions and new mechanics rather than just flat stat numbers.
-
-### 2. Which Successful Games Demonstrate It
-- ***Restaurant Tycoon 3* & *Ultimate Mining Tycoon*:** Transitioning from manual actions to automated staff/machinery.
-- ***Steal a Brainrot*:** Rebirthing unlocks plot capacity, base defense upgrades, and permanent multipliers.
-
-### 3. Why It Works Psychologically
-- **Tangible Sense of Growth:** Watching an empty dirt island transform into a multi-tiered neon Starfall Sanctuary with hovering collector drones, crystal conduits, and bustling critter habitats provides lasting visual satisfaction.
-- **Anti-Stagnation Reset:** Rebirthing wipes short-term cash and basic pods right when numbers start getting inflated, trading them for a permanent multiplier **and** a brand-new gadget or biome bridge.
-
-### 4. How It Affects Engagement & Retention
-Provides the structural backbone for **multi-week progression (D8–D28)** and creates natural sinks for currency.
-
-### 5. How We Will Adapt It Originally
-In **Starfall Ranch**, each plot progresses through **4 Visual Tiers** and **Rebirth Ranks**:
-- **Stage 1 (Manual Rancher):** Crack meteors by hand, plant geodes in 4 starter beds, collect coins dropped by 3 starter critters.
-- **Stage 2 (Automated Outpost):** Unlock **Collector Drones** (which fly around your pens scooping up coins into a central vault) and **Sprinkler Conduits** (which speed up pod growth).
-- **Stage 3 (Cosmic Observatory — Rebirth 1+):** Unlock the **Star-Fuser**, **Auto-Cracker Turret**, expanded habitat pens (up to 12 active critters), and access to the **Crystal Caverns & Sky Archipelago** biomes.
-
----
-
-## Trend 8: "Short-Form Ready" Visual Spectacle (TikTok / YouTube Shorts Virality)
-
-### 1. What the Trend Is
-Designing visual moments, scale contrasts, and server broadcasts specifically so that a 15-second screen recording immediately hooks viewers scrolling TikTok or YouTube Shorts.
-
-### 2. Which Successful Games Demonstrate It
-- ***Grow a Garden*:** *"I grew a 10,000kg Rainbow Shocked Beanstalk that reached the skybox!"* or *"Giving a 1 Billion Sheckle Fruit to a Noob!"*
-- ***Sol's RNG*:** Full-screen cinematic cutscenes when rolling a 1-in-1,000,000+ drop + global chat panic.
-- ***Steal An Egg* / *Dead Rails*:** Last-second narrow escapes with high-value loot.
-
-### 3. Why It Works Psychologically
-Organic discovery on external platforms is driven by **visual absurdity, generosity, and suspense**. If a 10-year-old can immediately tell how rare something is just by how huge and flashy it looks on screen, the clip shares itself.
-
-### 4. How It Affects Engagement & Retention
-Lowers user acquisition cost to zero and feeds new cohorts of players into the game's organic discovery funnel.
-
-### 5. How We Will Adapt It Originally
-1. **Unapologetic Scale Scaling:** A `1.0x` weight Critter is 3 studs tall; a `100x` **Colossal Mutation** Critter or Crystal scales up to **35+ studs tall**, towering over the player's plot fence so everyone in the server can see it from the central hub.
-2. **2.5-Second Mythic Reveal Cutscene:** Cracking a **Mythic or Prismatic** pod triggers a dramatic 2.5-second screen flash, rising orchestral synth chord, and a server-wide banner (`🌟 [Player] just cracked a 185kg PRISMATIC COSMIC DRAGON!`).
-3. **Generosity Broadcasts:** Gifting an item worth over 50,000 Starlight Coins triggers a celebratory heart/star firework above both players and a chat toast (`💝 [PlayerA] gifted a Golden Star-Golem to [PlayerB]!`).
-
----
-
-## Summary Matrix: How the 8 Trends Interlock in Our Design
-
-```mermaid
-flowchart TD
-    A["Global 5-Min Supply Ship & Falling Meteors (Trend 2)"] --> B["Active 'Critical Crack' 2s Timing Bar (Trend 4)"]
-    B --> C["Plant/Incubate on Ranch Plot (Trend 7)"]
-    C --> D["Offline Growth & Server Cosmic Weather Events (Trends 2 & 3)"]
-    D --> E["Multiplicative Size + Visual Mutation Roll (Trend 1)"]
-    E --> F["Mature Critter Generates Passive Tycoon Income (Trend 7)"]
-    E --> G["Hold Overhead to Flex, Gift to Friends, or Trophy Showcase (Trends 5 & 8)"]
-    E --> H["Catalog in Cosmic Bestiary & Fuse 5x Duplicates (Trend 6)"]
-    F --> I["Rebirth Ranch -> Unlock Drones, New Biomes & Higher Multipliers"]
-    I --> A
-```
+- **Why Active Timing Must Not Gate Latency-Prone Mobile Users:** Server validation cannot trust exact client millisecond timing (`ClientDelta`) due to ping variance and exploits. Therefore, any timing bar in *Starfall Ranch* acts strictly as **feel/feedback** (or a minor server-plausible animation flourish), while the base tap guarantees full pod progression.
+- **Why Bounded Integers Beat Multiplicative Scaling Early:** A runaway economy (`10^9` coins in 20 minutes) makes early upgrades meaningless and turns playtesting into spreadsheet firefighting. Starting with `2`, `4`, and `7` Coins/sec lets us verify exact time-to-upgrade pacing (`60–90 seconds` to Upgrade #1) deterministically.
