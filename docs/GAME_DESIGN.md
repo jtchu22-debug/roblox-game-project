@@ -99,7 +99,7 @@ To eliminate runaway exponent inflation, conflicting multipliers, and tutorial/o
 | **Average (Active)** | Keeps Slime #1 (`2/s`), chases Frost Meteor (`35s` hatch $\rightarrow$ Fox `4/s`), sells duplicate Slime (`+40`) while incubating. | **~50s** | **~2m 10s** | **~4m 15s** | `10 – 13 Coins/s` |
 | **Lucky (Astral Early)** | Spots Astral Meteor early, incubates Solar Golem (`7/s`), fills Pen #2 & #3 with Foxes/Golems. | **~50s** | **~1m 50s** | **~3m 40s** | `15 – 21 Coins/s` |
 
-- **Capacity & Inventory Rules:** Base Bag Capacity is `10` total unplaced items (`PodInBag + HatchedInBag`). Attempting to crack a meteor when Bag is full is **rejected before meteor claim consumption** with a clear UI hint (`Bag Full! Incubate a Pod or Sell a Critter at your Gate`). Favorited/active `InPen` critters cannot be accidentally sold.
+- **Capacity & Inventory Rules:** Base Bag Capacity is `10` total committed slots (`PodInBag + HatchedInBag + reserved Incubating slots`). Attempting to crack a meteor when committed capacity is full is **rejected before meteor claim consumption** with a clear UI hint (`Bag Full! Place a hatched Critter in your Pen or Sell one at your Gate`). Favorited/active `InPen` critters cannot be accidentally sold.
 - **Offline Rule (Stage 3+):** Only **pod incubation** advances offline by comparing `os.time() >= MaturesAt` on join. **There is zero passive offline coin generation**, eliminating the `75,600` coin faucet bug identified in the Phase 0 audit.
 
 ---

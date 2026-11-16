@@ -38,6 +38,7 @@ local sessions: { [number]: PlayerSession } = {}
 local pendingEarlySnapshots: { [number]: boolean } = {}
 local readyCallbacks: { (player: Player, profile: Types.PlayerProfileData) -> () } = {}
 local closingCallbacks: { (player: Player) -> () } = {}
+local snapshotRequestedCallbacks: { (player: Player) -> () } = {}
 local playerAddedConn: RBXScriptConnection? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
 
@@ -180,6 +181,10 @@ function DataService.SendOwnerStateSnapshot(player: Player): boolean
 	return true
 end
 
+function DataService.OnSnapshotDelivered(callback: (player: Player) -> ()): ()
+	table.insert(snapshotRequestedCallbacks, callback)
+end
+
 function DataService.BeginMockSession(userId: number, player: Player?): PlayerSession
 	local existing = sessions[userId]
 	if existing ~= nil then
@@ -226,7 +231,14 @@ function DataService.CompleteMockSession(userId: number, nowEpoch: number?): boo
 
 		if session.PendingSnapshotRequest then
 			session.PendingSnapshotRequest = false
-			DataService.SendOwnerStateSnapshot(player)
+			if DataService.SendOwnerStateSnapshot(player) then
+				for _, snapCb in ipairs(snapshotRequestedCallbacks) do
+					local ok, err = pcall(snapCb, player)
+					if not ok then
+						warn("[DataService] OnSnapshotDelivered error: " .. tostring(err))
+					end
+				end
+			end
 		end
 	end
 
@@ -274,7 +286,14 @@ function DataService.HandleSnapshotRequestForUserId(userId: number, player: Play
 		return "QueuedLoading"
 	elseif session.Status == "Ready" then
 		if player ~= nil and session.Player == player then
-			DataService.SendOwnerStateSnapshot(player)
+			if DataService.SendOwnerStateSnapshot(player) then
+				for _, snapCb in ipairs(snapshotRequestedCallbacks) do
+					local ok, err = pcall(snapCb, player)
+					if not ok then
+						warn("[DataService] OnSnapshotDelivered error: " .. tostring(err))
+					end
+				end
+			end
 			return "Delivered"
 		elseif player == nil then
 			return "DeliveredMock"

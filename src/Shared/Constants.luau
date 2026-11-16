@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.6-s1-05-fix",
+	GAME_VERSION = "0.1.7-s1-06",
 	USE_MOCK_STORE = true,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true,
@@ -18,6 +18,8 @@ local Constants = {
 	MAX_PLOTS_ALPHA = 6,
 	STARTER_PEN_SLOTS = 1,
 	STARTER_INCUBATOR_SLOTS = 1,
+	MAX_STATION_INTERACT_DISTANCE = 18,
+	PROMPT_ACTIVATION_DISTANCE = 12,
 
 	-- Greybox Map Identifiers & CollectionService Tags
 	GREYBOX_ROOT_NAME = "StarfallGreyboxRoot",

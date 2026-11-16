@@ -59,8 +59,11 @@ local EconomyService = {
 	Name = "EconomyService",
 }
 
+export type StationAuthorizer = (player: Player, stationKind: string, targetId: string) -> (boolean, string)
+
 local serverRng = Random.new()
 local plotStateListeners: { (player: Player) -> () } = {}
+local stationAuthorizer: StationAuthorizer? = nil
 local accrualRunning = false
 
 local function notifyPlotChanged(player: Player): ()
@@ -529,6 +532,28 @@ function EconomyService.HandlePlotAction(
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
+	local stationKind: string
+	local stationTargetId: string
+	if action == "StartIncubate" or action == "Hatch" then
+		stationKind = "Incubator"
+		stationTargetId = targetSlotOrUID
+	elseif action == "PlaceInPen" or action == "RemoveFromPen" then
+		stationKind = "Pen"
+		stationTargetId = targetSlotOrUID
+	elseif action == "SellCritter" then
+		stationKind = "SellStand"
+		stationTargetId = "SellStand"
+	else
+		return { Ok = false, Reason = "InvalidAction" }
+	end
+
+	if stationAuthorizer ~= nil then
+		local authOk, authReason = stationAuthorizer(player, stationKind, stationTargetId)
+		if not authOk then
+			return { Ok = false, Reason = authReason }
+		end
+	end
+
 	local nowClock = workspace:GetServerTimeNow()
 	local res: EconomyResult
 	local affectsPublicPlot = false
@@ -569,6 +594,13 @@ function EconomyService.HandleBuyUpgrade(player: Player, upgradeId: Types.Upgrad
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
+	if stationAuthorizer ~= nil then
+		local authOk, authReason = stationAuthorizer(player, "UpgradePad", upgradeId)
+		if not authOk then
+			return { Ok = false, Reason = authReason }
+		end
+	end
+
 	local nowClock = workspace:GetServerTimeNow()
 	local settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
 	local res = EconomyService.BuyUpgradeOnProfile(profile, upgradeId, nowClock)
@@ -580,6 +612,10 @@ function EconomyService.HandleBuyUpgrade(player: Player, upgradeId: Types.Upgrad
 		DataService.SendOwnerStateSnapshot(player)
 	end
 	return res
+end
+
+function EconomyService.SetStationAuthorizer(authorizer: StationAuthorizer?): ()
+	stationAuthorizer = authorizer
 end
 
 function EconomyService.OnPlotStateChanged(callback: (player: Player) -> ()): ()
