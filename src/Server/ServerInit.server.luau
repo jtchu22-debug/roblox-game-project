@@ -21,11 +21,12 @@ end
 local ServicesFolder = script.Parent:WaitForChild("Services")
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
+local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 
 local serviceOrder: { Types.Service } = {
 	NetworkService :: Types.Service,
 	DataService :: Types.Service,
-	require(ServicesFolder:WaitForChild("EconomyService")) :: Types.Service,
+	EconomyService :: Types.Service,
 	require(ServicesFolder:WaitForChild("PlotService")) :: Types.Service,
 	require(ServicesFolder:WaitForChild("MeteorService")) :: Types.Service,
 }
@@ -40,6 +41,9 @@ if Constants.RUN_SELF_TESTS then
 
 	local dataPassed = DataService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d DataService test suites passed.", dataPassed))
+
+	local econPassed = EconomyService.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d EconomyService test suites passed.", econPassed))
 end
 
 for _, service in ipairs(serviceOrder) do

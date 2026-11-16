@@ -1,8 +1,8 @@
 --!strict
 --[[
 	Service: DataService
-	Purpose: Manages Stage 1 MockStore player profile lifecycle (Loading -> Ready -> Closing), readiness checks,
-	         and strictly scoped single-player OwnerStateDTO snapshot delivery.
+	Purpose: Manages Stage 1 MockStore player profile lifecycle (Loading -> Ready -> Closing), environment guards,
+	         readiness checks, and strictly scoped single-player OwnerStateDTO snapshot delivery.
 	Connections: Binds NetworkService.BindSnapshotHandler; enforces IsReady(player) boundary for EconomyService,
 	             PlotService, and MeteorService. Stage 3 swaps MockStore cleanly to pinned ProfileStore.
 	How to Test in Studio: Press Play (F5) and 2-Player Local Server; verify DataService self-tests pass
@@ -11,6 +11,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -39,7 +40,6 @@ local readyCallbacks: { (player: Player, profile: Types.PlayerProfileData) -> ()
 local closingCallbacks: { (player: Player) -> () } = {}
 local playerAddedConn: RBXScriptConnection? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
-local mockSessionCounter = 0
 
 local function cloneCritterRecord(src: Types.CritterItemRecord): Types.CritterItemRecord
 	return {
@@ -78,6 +78,24 @@ local function cloneDiscoveredMap(src: { [Types.SpeciesId]: boolean }): { [Types
 	return out
 end
 
+function DataService.CanUseMockStoreInEnvironment(
+	isStudio: boolean,
+	placeId: number,
+	useMockStore: boolean,
+	allowedPrototypePlaceId: number
+): (boolean, string)
+	if not useMockStore then
+		return false, "USE_MOCK_STORE is disabled"
+	end
+	if isStudio then
+		return true, "StudioEnvironment"
+	end
+	if allowedPrototypePlaceId > 0 and placeId == allowedPrototypePlaceId then
+		return true, "DesignatedPrototypePlace"
+	end
+	return false, string.format("MockStore blocked on published PlaceId %d", placeId)
+end
+
 function DataService.CreateDefaultProfile(nowEpoch: number?): Types.PlayerProfileData
 	local epoch = if nowEpoch ~= nil then math.floor(nowEpoch) else os.time()
 	return {
@@ -91,62 +109,6 @@ function DataService.CreateDefaultProfile(nowEpoch: number?): Types.PlayerProfil
 		Upgrades = {},
 		DiscoveredSpecies = {},
 	}
-end
-
-function DataService.ReconcileProfile(raw: any, nowEpoch: number?): Types.PlayerProfileData
-	local fresh = DataService.CreateDefaultProfile(nowEpoch)
-	if typeof(raw) ~= "table" then
-		return fresh
-	end
-
-	if typeof(raw.SchemaVersion) == "number" and raw.SchemaVersion >= 1 then
-		fresh.SchemaVersion = math.floor(raw.SchemaVersion)
-	end
-	if typeof(raw.Coins) == "number" and raw.Coins == raw.Coins and math.abs(raw.Coins) ~= math.huge then
-		fresh.Coins = math.clamp(math.floor(raw.Coins), 0, Constants.MAX_COINS)
-	end
-	if typeof(raw.PendingFraction) == "number" and raw.PendingFraction == raw.PendingFraction then
-		if raw.PendingFraction >= 0 and raw.PendingFraction < 1 then
-			fresh.PendingFraction = raw.PendingFraction
-		end
-	end
-	if typeof(raw.LastAccrualTimestamp) == "number" and raw.LastAccrualTimestamp == raw.LastAccrualTimestamp then
-		fresh.LastAccrualTimestamp = math.max(0, math.floor(raw.LastAccrualTimestamp))
-	end
-	if typeof(raw.Revision) == "number" and raw.Revision >= 1 then
-		fresh.Revision = math.floor(raw.Revision)
-	end
-
-	if typeof(raw.Items) == "table" then
-		for uid, rec in pairs(raw.Items) do
-			if typeof(uid) == "string" and typeof(rec) == "table" and typeof(rec.UID) == "string" then
-				fresh.Items[uid] = cloneCritterRecord(rec :: Types.CritterItemRecord)
-			end
-		end
-	end
-	if typeof(raw.Slots) == "table" then
-		for slotId, itemUid in pairs(raw.Slots) do
-			if typeof(slotId) == "string" and typeof(itemUid) == "string" then
-				fresh.Slots[slotId] = itemUid
-			end
-		end
-	end
-	if typeof(raw.Upgrades) == "table" then
-		for upgradeId, unlocked in pairs(raw.Upgrades) do
-			if typeof(upgradeId) == "string" and typeof(unlocked) == "boolean" then
-				fresh.Upgrades[upgradeId] = unlocked
-			end
-		end
-	end
-	if typeof(raw.DiscoveredSpecies) == "table" then
-		for speciesId, discovered in pairs(raw.DiscoveredSpecies) do
-			if typeof(speciesId) == "string" and typeof(discovered) == "boolean" then
-				fresh.DiscoveredSpecies[speciesId :: Types.SpeciesId] = discovered
-			end
-		end
-	end
-
-	return fresh
 end
 
 function DataService.BuildOwnerStateDTO(profile: Types.PlayerProfileData): Types.OwnerStateDTO
@@ -195,6 +157,14 @@ function DataService.GetProfile(player: Player): Types.PlayerProfileData?
 	return nil
 end
 
+function DataService.ForEachReadyPlayer(callback: (player: Player, profile: Types.PlayerProfileData) -> ()): ()
+	for _, session in pairs(sessions) do
+		if session.Status == "Ready" and session.Player ~= nil and session.Profile ~= nil then
+			callback(session.Player, session.Profile)
+		end
+	end
+end
+
 function DataService.SendOwnerStateSnapshot(player: Player): boolean
 	local profile = DataService.GetProfile(player)
 	if profile == nil then
@@ -239,7 +209,6 @@ function DataService.CompleteMockSession(userId: number, nowEpoch: number?): boo
 	local profile = DataService.CreateDefaultProfile(nowEpoch)
 	session.Profile = profile
 	session.Status = "Ready"
-	mockSessionCounter += 1
 
 	local player = session.Player
 	if player ~= nil then
@@ -312,7 +281,6 @@ end
 
 function DataService.OnPlayerReady(callback: (player: Player, profile: Types.PlayerProfileData) -> ()): ()
 	table.insert(readyCallbacks, callback)
-	-- Also invoke immediately for any players already Ready.
 	for _, session in pairs(sessions) do
 		if session.Status == "Ready" and session.Player ~= nil and session.Profile ~= nil then
 			local ok, err = pcall(callback, session.Player, session.Profile)
@@ -332,7 +300,6 @@ local function onPlayerAdded(player: Player): ()
 		return
 	end
 	DataService.BeginMockSession(player.UserId, player)
-	-- Stage 1 MockStore completes synchronously after the Loading phase so readiness boundaries remain explicit.
 	DataService.CompleteMockSession(player.UserId)
 end
 
@@ -341,11 +308,14 @@ local function onPlayerRemoving(player: Player): ()
 end
 
 function DataService.Init(self: typeof(DataService)): ()
-	assert(
-		Constants.USE_MOCK_STORE == true,
-		"[DataService] Stage 1 DataService requires USE_MOCK_STORE == true; never fall back to mock profiles in live mode."
+	local ok, reason = DataService.CanUseMockStoreInEnvironment(
+		RunService:IsStudio(),
+		game.PlaceId,
+		Constants.USE_MOCK_STORE,
+		Constants.ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID
 	)
-	print("[DataService] Initialized in Stage 1 MockStore mode (in-memory session profiles).")
+	assert(ok, "[DataService] MockStore rejected by environment guard: " .. reason)
+	print(string.format("[DataService] Initialized in Stage 1 MockStore mode (%s).", reason))
 end
 
 function DataService.Start(self: typeof(DataService)): ()
@@ -361,7 +331,6 @@ function DataService.Start(self: typeof(DataService)): ()
 		playerAddedConn = Players.PlayerAdded:Connect(onPlayerAdded)
 	end
 
-	-- Initialize any players already present before DataService:Start() connected PlayerAdded.
 	for _, existingPlayer in ipairs(Players:GetPlayers()) do
 		if sessions[existingPlayer.UserId] == nil then
 			onPlayerAdded(existingPlayer)
@@ -371,18 +340,31 @@ end
 
 function DataService.RunSelfTest(): number
 	local passed = 0
+
+	-- 1. Environment guard checks (never run MockStore on unauthorized published servers)
+	local studioOk = DataService.CanUseMockStoreInEnvironment(true, 0, true, 0)
+	assert(studioOk, "MockStore allowed in Studio")
+	local pubBlocked = DataService.CanUseMockStoreInEnvironment(false, 999999, true, 0)
+	assert(not pubBlocked, "MockStore blocked on published server without prototype PlaceId")
+	local pubMismatch = DataService.CanUseMockStoreInEnvironment(false, 999999, true, 123456)
+	assert(not pubMismatch, "MockStore blocked on mismatched published PlaceId")
+	local pubAllowed = DataService.CanUseMockStoreInEnvironment(false, 123456, true, 123456)
+	assert(pubAllowed, "MockStore allowed only on designated prototype PlaceId")
+	local flagOff = DataService.CanUseMockStoreInEnvironment(true, 0, false, 0)
+	assert(not flagOff, "MockStore disabled when USE_MOCK_STORE=false")
+	passed += 1
+
 	local userA = -910001
 	local userB = -910002
 
 	DataService.EndMockSession(userA)
 	DataService.EndMockSession(userB)
 
-	-- 1. Enforce Loading -> Ready -> Closing readiness boundaries and independent profile state
+	-- 2. Enforce Loading -> Ready -> Closing readiness boundaries and independent profile state
 	DataService.BeginMockSession(userA, nil)
 	assert(not DataService.IsUserIdReady(userA), "Profile must NOT be ready while Loading")
 	assert(DataService.GetProfileByUserId(userA) == nil, "GetProfileByUserId must return nil while Loading")
 
-	-- Request snapshot before readiness -> queued cleanly
 	local queueState = DataService.HandleSnapshotRequestForUserId(userA, nil)
 	assert(queueState == "QueuedLoading", "Pre-ready snapshot request must queue while Loading")
 
@@ -396,7 +378,6 @@ function DataService.RunSelfTest(): number
 	local profileB = DataService.GetProfileByUserId(userB) :: Types.PlayerProfileData
 	assert(profileA ~= nil and profileB ~= nil and profileA ~= profileB, "Each player needs distinct profile table")
 
-	-- Mutating player A's profile tables must never leak to player B
 	profileA.Coins = 250
 	profileA.Upgrades["PenSlot_2"] = true
 	profileA.Items["uid-1"] = {
@@ -412,7 +393,7 @@ function DataService.RunSelfTest(): number
 	assert(profileB.Coins == 0 and profileB.Upgrades["PenSlot_2"] == nil and profileB.Items["uid-1"] == nil, "Player B state must stay isolated")
 	passed += 1
 
-	-- 2. Verify OwnerStateDTO whitelisting and deep-copy isolation
+	-- 3. Verify OwnerStateDTO whitelisting and deep-copy isolation
 	local dtoA = DataService.BuildOwnerStateDTO(profileA)
 	assert(dtoA.Coins == 250 and dtoA.BagCap == Constants.MAX_BAG_CAPACITY, "DTO exposes owner fields")
 	assert((dtoA :: any).SchemaVersion == nil, "DTO must strip SchemaVersion")
@@ -424,7 +405,7 @@ function DataService.RunSelfTest(): number
 	assert(profileA.Coins == 250 and profileA.Upgrades["PenSlot_3"] == nil, "Mutating DTO copy must not affect server profile")
 	passed += 1
 
-	-- 3. Verify leave clears session/readiness and rejoin starts fresh mock state
+	-- 4. Verify leave clears session/readiness and rejoin starts fresh mock state
 	DataService.EndMockSession(userA)
 	assert(not DataService.IsUserIdReady(userA), "Readiness must clear on leave")
 	assert(DataService.GetProfileByUserId(userA) == nil, "Profile must clear on leave")
