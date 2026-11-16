@@ -1,0 +1,25 @@
+# Roblox Studio files & lock files
+*.rbxlx.lock
+*.rbxl.lock
+*.tmp
+
+# Rojo / Wally / Aftman / Rokit build & package artifacts
+sourcemap.json
+Packages/
+ServerPackages/
+DevPackages/
+build.rbxl
+build.rbxlx
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+
+# Python / Blender temp files
+__pycache__/
+*.pyc
+*.blend1
+*.blend2
