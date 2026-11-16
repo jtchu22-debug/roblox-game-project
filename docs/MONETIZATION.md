@@ -28,13 +28,14 @@ Following our Phase 0 Technical Director audit and review of Roblox's [Paid Rand
 | :--- | :---: | :--- |
 | **Stages 1–2 (Prototype & Discovery Playtest)** | **ZERO Monetization** | Prove the core 5-minute Meteor Rescue & Ranch loop is genuinely fun on its own. |
 | **Stage 3 (Persistence Alpha)** | **ZERO Monetization** | Focus 100% on DataStore stability, session locking, offline incubation, and exploit testing. |
-| **Stage 4–5 (Polish & Soft Launch)** | **ZERO or Fixed Cosmetics Only (Post-Review)** | Monetization can only activate *after* stability soak tests pass, privacy/policy checks are verified, and the Human Lead + Technical Director sign off. |
+| **Stages 4–5 (Private Polish & Testing)** | **ZERO Monetization** | Validate the game in private builds. Review proposed launch cosmetics after stability soak tests and Roblox policy checks. |
+| **Stage 6 (First Public Release)** | **ZERO or Fixed Cosmetics Only (Post-Review)** | Activate only offerings signed off by the Human Lead and Technical Director after stability and compliance verification. |
 
 ---
 
 ## 3. Approved Future Monetization Scope (Pure Cosmetics Only — Post-Stability)
 
-If and when monetization is enabled after Stage 5 stability and compliance verification, every offering must satisfy **all four rules**:
+Any monetization enabled for the Stage 6 public release or later must satisfy **all four rules**:
 - **Fixed, upfront Robux price** (no bundles masking unit cost, no escalating packs).
 - **Zero gameplay stats, speed, income, luck, or slot advantages.**
 - **100% deterministic preview** (the player sees the exact 3D decoration or trail before clicking buy).
