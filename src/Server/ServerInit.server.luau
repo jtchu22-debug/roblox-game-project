@@ -20,10 +20,11 @@ end
 
 local ServicesFolder = script.Parent:WaitForChild("Services")
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
+local DataService = require(ServicesFolder:WaitForChild("DataService"))
 
 local serviceOrder: { Types.Service } = {
 	NetworkService :: Types.Service,
-	require(ServicesFolder:WaitForChild("DataService")) :: Types.Service,
+	DataService :: Types.Service,
 	require(ServicesFolder:WaitForChild("EconomyService")) :: Types.Service,
 	require(ServicesFolder:WaitForChild("PlotService")) :: Types.Service,
 	require(ServicesFolder:WaitForChild("MeteorService")) :: Types.Service,
@@ -36,10 +37,13 @@ end
 if Constants.RUN_SELF_TESTS then
 	local netPassed = NetworkService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d NetworkService test suites passed.", netPassed))
+
+	local dataPassed = DataService.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d DataService test suites passed.", dataPassed))
 end
 
 for _, service in ipairs(serviceOrder) do
 	service:Start()
 end
 
-print(string.format("[StarfallRanch][Server] v%s skeleton initialized (%d services).", Constants.GAME_VERSION, #serviceOrder))
+print(string.format("[StarfallRanch][Server] v%s server initialized (%d services).", Constants.GAME_VERSION, #serviceOrder))

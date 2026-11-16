@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.3-s1-03",
+	GAME_VERSION = "0.1.4-s1-04",
 	USE_MOCK_STORE = true,
 	RUN_SELF_TESTS = true,
 	SCHEMA_VERSION = 1,
