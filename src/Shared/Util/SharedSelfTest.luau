@@ -17,6 +17,7 @@ local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 local UtilFolder = script.Parent
 local EconomyMath = require(UtilFolder:WaitForChild("EconomyMath"))
 local FormatUtil = require(UtilFolder:WaitForChild("FormatUtil"))
+local GreyboxBuilder = require(UtilFolder:WaitForChild("GreyboxBuilder"))
 local ValidationUtil = require(UtilFolder:WaitForChild("ValidationUtil"))
 
 local SharedSelfTest = {}
@@ -182,6 +183,43 @@ function SharedSelfTest.RunAll(): number
 		assert(not ValidationUtil.IsValidUpgradeId("Rebirth_1"), "Invalid upgrade rejected")
 		assert(ValidationUtil.IsValidPlotAction("PlaceInPen"), "Valid action accepted")
 		assert(not ValidationUtil.IsValidPlotAction("GiftItem"), "Cut gifting action rejected")
+	end)
+	passedCount += 1
+
+	runTest("GreyboxBuilder_Hierarchy_And_Idempotency", function()
+		local testContainer = Instance.new("Folder")
+		testContainer.Name = "_GreyboxSelfTestContainer"
+
+		local unrelatedPart = Instance.new("Part")
+		unrelatedPart.Name = "UnrelatedUserPart"
+		unrelatedPart.Parent = testContainer
+
+		local created, status, root = GreyboxBuilder.Generate({
+			ConfirmReplace = false,
+			Parent = testContainer,
+		})
+		assert(created and status == "Created" and root ~= nil, "Initial greybox generation must succeed")
+
+		local valid, reason = GreyboxBuilder.ValidateHierarchy(root)
+		assert(valid, "Hierarchy validation failed: " .. reason)
+
+		-- Second run without ConfirmReplace must NOT destroy or replace existing root
+		local secondCreated, secondStatus, secondRoot = GreyboxBuilder.Generate({
+			ConfirmReplace = false,
+			Parent = testContainer,
+		})
+		assert(not secondCreated and secondStatus == "ExistingPresent", "Should refuse overwrite when ConfirmReplace=false")
+		assert(secondRoot == root, "Existing root instance must remain untouched")
+
+		-- Explicit ConfirmReplace=true must rebuild root WITHOUT removing unrelated sibling objects
+		local replaced, replaceStatus, newRoot = GreyboxBuilder.Generate({
+			ConfirmReplace = true,
+			Parent = testContainer,
+		})
+		assert(replaced and replaceStatus == "Created" and newRoot ~= nil and newRoot ~= root, "ConfirmReplace=true must rebuild root")
+		assert(testContainer:FindFirstChild("UnrelatedUserPart") == unrelatedPart, "Unrelated sibling objects must be preserved")
+
+		testContainer:Destroy()
 	end)
 	passedCount += 1
 

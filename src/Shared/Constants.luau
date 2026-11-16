@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.1-s1-01",
+	GAME_VERSION = "0.1.2-s1-02",
 	USE_MOCK_STORE = true,
 	RUN_SELF_TESTS = true,
 	SCHEMA_VERSION = 1,
@@ -17,6 +17,17 @@ local Constants = {
 	MAX_PLOTS_ALPHA = 6,
 	STARTER_PEN_SLOTS = 1,
 	STARTER_INCUBATOR_SLOTS = 1,
+
+	-- Greybox Map Identifiers & CollectionService Tags
+	GREYBOX_ROOT_NAME = "StarfallGreyboxRoot",
+	GREYBOX_VERSION = "1.0.0-s1-02",
+	TAG_GREYBOX_ROOT = "StarfallGreyboxRoot",
+	TAG_PLOT = "StarfallPlot",
+	TAG_INCUBATOR_SLOT = "StarfallIncubatorSlot",
+	TAG_PEN_SLOT = "StarfallPenSlot",
+	TAG_UPGRADE_PAD = "StarfallUpgradePad",
+	TAG_SELL_STAND = "StarfallSellStand",
+	TAG_METEOR_NODE = "StarfallMeteorNode",
 
 	-- Inventory & Economy Safety Caps
 	MAX_BAG_CAPACITY = 10,

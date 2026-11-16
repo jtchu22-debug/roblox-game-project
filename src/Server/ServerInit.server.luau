@@ -15,7 +15,7 @@ local SharedSelfTest = require(Shared:WaitForChild("Util"):WaitForChild("SharedS
 
 if Constants.RUN_SELF_TESTS then
 	local passedCount = SharedSelfTest.RunAll()
-	print(string.format("[StarfallRanch][SelfTest] PASS: All %d S1-01 shared unit test suites passed.", passedCount))
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d Stage 1 shared unit test suites passed.", passedCount))
 end
 
 local ServicesFolder = script.Parent:WaitForChild("Services")

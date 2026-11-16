@@ -1,24 +1,38 @@
 --!strict
 --[[
 	Service: PlotService
-	Purpose: Assigns and releases Ranch Plots for joining/leaving players and manages public plot DTO replication.
-	Connections: Coordinates with DataService readiness and EconomyService slot/upgrade state.
-	How to Test in Studio: Tested in Stage 1 with Test -> Local Server (2 Players) verifying unique plot assignment.
+	Purpose: Ensures the Stage 1 greybox map exists on Init, then assigns/releases Ranch Plots and manages public plot DTO replication.
+	Connections: Uses Shared.Util.GreyboxBuilder in Init(); coordinates with DataService and EconomyService in S1-06.
+	How to Test in Studio: Press Play (F5) and inspect Workspace.StarfallGreyboxRoot in Explorer and Viewport.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local _Shared = ReplicatedStorage:WaitForChild("Shared")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local GreyboxBuilder = require(Shared:WaitForChild("Util"):WaitForChild("GreyboxBuilder"))
 
 local PlotService = {
 	Name = "PlotService",
 }
 
+local greyboxRoot: Folder? = nil
+
 function PlotService.Init(self: typeof(PlotService)): ()
-	-- Stage 1 (S1-06): Discover tagged greybox plots inside Workspace.StarfallGreyboxRoot.
+	local root = GreyboxBuilder.EnsureExists(workspace)
+	local valid, reason = GreyboxBuilder.ValidateHierarchy(root)
+	assert(valid, "Greybox hierarchy invalid after EnsureExists: " .. reason)
+
+	greyboxRoot = root
+	print(string.format("[PlotService] Greybox map ready and validated (%s).", root.Name))
 end
 
 function PlotService.Start(self: typeof(PlotService)): ()
-	-- Stage 1 (S1-06): Assign free plots on ready and clean up cleanly on PlayerRemoving.
+	-- Stage 1 (S1-06): Assign free plots on player ready and clean up cleanly on PlayerRemoving.
+end
+
+function PlotService.GetGreyboxRoot(): Folder
+	assert(greyboxRoot ~= nil, "PlotService.Init() must run before GetGreyboxRoot()")
+	return greyboxRoot :: Folder
 end
 
 return PlotService
