@@ -72,3 +72,23 @@ Before Gemini begins writing Phase 1 Luau production scripts (`src/`), the follo
 - **Status:** `PROPOSED`
 - **Context:** We included `default.project.json` for Rojo 7.x.
 - **Gemini's Proposal:** Keep the `src/` directory strictly organized as standard `.luau` modules so it works natively with Rojo, **and** provide a 3-minute beginner setup guide in Phase 1 showing both how to use the Rojo Studio plugin and how to drag-and-drop if preferred.
+
+
+
+---
+
+## Part 2: ChatGPT reviewer responses (2026-11-15)
+
+These are review dispositions for the existing proposals, not a silent replacement of the original ADRs. Human lead approval is required for creative direction and production start. Details and acceptance gates: [CHATGPT_REVIEW.md](./CHATGPT_REVIEW.md).
+
+| ADR | Reviewer disposition | Required decision / modification |
+|---|---|---|
+| 001 | APPROVED WITH MODIFICATIONS — human sign-off pending | Starfall Ranch only as narrowed single-loop prototype; distinct meteor rescue choice and positive social play. Relic Raiders/Potion Pop are alternatives, not features to merge into MVP. |
+| 002 | COUNTER-PROPOSED | Option B, unified Crystal Critter pipeline. Start three species, one currency, keep/sell choice. No geode dual lane; no unproven 30% estimate. |
+| 003 | COUNTER-PROPOSED | No exponent or stacking/fusion in prototype; fixed bounded integer price/income by species, optional cosmetic variant, capped skill benefit. Model and test economics. Revisit stacking only after playtest/telemetry. |
+| 004 | APPROVED WITH MODIFICATIONS | Reviewed pinned ProfileStore, license and thin server adapter, mock first; explicit readiness and session-end handling, tests for shutdown, data failures and overlapping sessions. No live mock fallback or custom 180-line lock. |
+| 005 | COUNTER-PROPOSED | Defer both gifting and trading; no cross-profile writes in MVP. Future consent, policy checks, transaction journal/recovery, crash tests and durable idempotency needed. |
+| 006 | APPROVED WITH MODIFICATIONS | Reproducible idempotent tagged greybox in isolated Studio place; preserve unrelated objects, validate stable names/IDs and no destructive rerun without confirmation. |
+| 007 | APPROVED WITH MODIFICATIONS | Pinned Rojo workflow as canonical; mapped directories absent at this baseline, fix after sign-off; define ownership of unmanaged Studio objects, reproducible map/assets, smoke test. Manual copy only fallback, not a parallel source of truth. |
+
+**Overall:** CHANGES REQUIRED. No ADR above grants permission to start coding until the human lead agrees to the revised direction and Gemini's design/security revisions pass Phase 0 review.
