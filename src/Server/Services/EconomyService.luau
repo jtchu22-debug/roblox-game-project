@@ -1,8 +1,8 @@
 --!strict
 --[[
 	Service: EconomyService
-	Purpose: Single authoritative state writer for player Items, Slots, Coins, Upgrades, elapsed coin settlement,
-	         and Keep-vs-Sell transitions. All validation-to-commit transitions are strictly synchronous (no yields).
+	Purpose: Single authoritative state writer for player Items, Slots, Coins, Upgrades, fractional elapsed
+	         coin settlement, reserved incubator hatch capacity, and Keep-vs-Sell transitions.
 	Connections: Reads DataService ready profiles and Shared Config; binds NetworkService PlotAction/BuyUpgrade
 	             handlers; notifies PlotService via OnPlotStateChanged when public plot visuals change.
 	How to Test in Studio: Press Play (F5) to run EconomyService.RunSelfTest() and inspect Output.
@@ -72,13 +72,16 @@ local function notifyPlotChanged(player: Player): ()
 	end
 end
 
-local function isFiniteIntInRange(value: number, minVal: number, maxVal: number): boolean
+local function isFiniteInRange(value: number, minVal: number, maxVal: number): boolean
 	return typeof(value) == "number"
 		and value == value
 		and math.abs(value) ~= math.huge
-		and value % 1 == 0
 		and value >= minVal
 		and value <= maxVal
+end
+
+local function isFiniteIntInRange(value: number, minVal: number, maxVal: number): boolean
+	return isFiniteInRange(value, minVal, maxVal) and value % 1 == 0
 end
 
 function EconomyService.IsUnlockedIncubatorSlot(profile: Types.PlayerProfileData, slotId: string): boolean
@@ -111,6 +114,24 @@ function EconomyService.GetBagCount(profile: Types.PlayerProfileData): number
 	return count
 end
 
+function EconomyService.GetOccupiedIncubatorCount(profile: Types.PlayerProfileData): number
+	local count = 0
+	for _, item in pairs(profile.Items) do
+		if item.State == "Incubating" then
+			count += 1
+		end
+	end
+	return count
+end
+
+function EconomyService.GetCommittedBagCount(profile: Types.PlayerProfileData): number
+	return EconomyService.GetBagCount(profile) + EconomyService.GetOccupiedIncubatorCount(profile)
+end
+
+function EconomyService.HasUnreservedBagSpace(profile: Types.PlayerProfileData): boolean
+	return EconomyService.GetCommittedBagCount(profile) < Constants.MAX_BAG_CAPACITY
+end
+
 function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileData): (boolean, string)
 	if not isFiniteIntInRange(profile.Coins, 0, Constants.MAX_COINS) then
 		return false, "Coins out of bounds"
@@ -122,7 +143,7 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 	then
 		return false, "PendingFraction invalid"
 	end
-	if not isFiniteIntInRange(profile.LastAccrualTimestamp, 0, 10_000_000_000) then
+	if not isFiniteInRange(profile.LastAccrualTimestamp, 0, 10_000_000_000) then
 		return false, "LastAccrualTimestamp invalid"
 	end
 	if not isFiniteIntInRange(profile.Revision, 1, 1_000_000_000) then
@@ -130,6 +151,7 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 	end
 
 	local bagCount = 0
+	local incubatingCount = 0
 	for itemKey, item in pairs(profile.Items) do
 		if item.UID ~= itemKey then
 			return false, "Item UID key mismatch: " .. tostring(itemKey)
@@ -150,6 +172,7 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 				return false, "Bag item must not have AssignedSlot: " .. item.UID
 			end
 		elseif item.State == "Incubating" then
+			incubatingCount += 1
 			local slotId = item.AssignedSlot
 			if slotId == nil or not EconomyService.IsUnlockedIncubatorSlot(profile, slotId) then
 				return false, "Incubating item in invalid/locked slot: " .. item.UID
@@ -170,6 +193,9 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 
 	if bagCount > Constants.MAX_BAG_CAPACITY then
 		return false, "BagCount exceeds MAX_BAG_CAPACITY"
+	end
+	if (bagCount + incubatingCount) > Constants.MAX_BAG_CAPACITY then
+		return false, "Committed bag + incubating slots exceed MAX_BAG_CAPACITY"
 	end
 
 	for slotId, itemUID in pairs(profile.Slots) do
@@ -196,15 +222,18 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 	return true, "Valid"
 end
 
-function EconomyService.SettleProfileCoins(profile: Types.PlayerProfileData, nowEpoch: number): boolean
-	local flooredNow = math.floor(nowEpoch)
-	local elapsed = flooredNow - profile.LastAccrualTimestamp
+function EconomyService.SettleProfileCoins(profile: Types.PlayerProfileData, nowClock: number): boolean
+	if not isFiniteInRange(nowClock, 0, 10_000_000_000) then
+		return false
+	end
+
+	local elapsed = nowClock - profile.LastAccrualTimestamp
 	if elapsed <= 0 then
 		return false
 	end
 
 	local rate = EconomyMath.CalculateActivePenRate(profile.Items)
-	profile.LastAccrualTimestamp = flooredNow
+	profile.LastAccrualTimestamp = nowClock
 
 	if rate <= 0 then
 		return false
@@ -232,13 +261,14 @@ end
 function EconomyService.GrantPodToProfile(
 	profile: Types.PlayerProfileData,
 	speciesId: Types.SpeciesId,
-	nowEpoch: number,
+	nowClock: number,
 	customUid: string?
 ): EconomyResult
 	if (CritterConfig.ById :: { [string]: any })[speciesId] == nil then
 		return { Ok = false, Reason = "InvalidSpecies" }
 	end
-	if EconomyService.GetBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
+	-- Reserve hatch space for every occupied incubator so bag+incubators can never deadlock.
+	if not EconomyService.HasUnreservedBagSpace(profile) then
 		return { Ok = false, Reason = "BagFull" }
 	end
 
@@ -255,7 +285,7 @@ function EconomyService.GrantPodToProfile(
 		AssignedSlot = nil,
 		PlantedAt = nil,
 		MaturesAt = nil,
-		CreatedAt = math.floor(nowEpoch),
+		CreatedAt = math.floor(nowClock),
 	}
 	profile.Revision += 1
 
@@ -270,7 +300,7 @@ function EconomyService.StartIncubateOnProfile(
 	profile: Types.PlayerProfileData,
 	slotId: string,
 	itemUID: string,
-	nowEpoch: number
+	nowClock: number
 ): EconomyResult
 	if not INCUBATOR_SLOTS[slotId] then
 		return { Ok = false, Reason = "InvalidSlot" }
@@ -291,7 +321,7 @@ function EconomyService.StartIncubateOnProfile(
 	end
 
 	local speciesDef = CritterConfig.ById[item.SpeciesId]
-	local plantedAt = math.floor(nowEpoch)
+	local plantedAt = math.floor(nowClock)
 
 	item.State = "Incubating"
 	item.AssignedSlot = slotId
@@ -306,7 +336,7 @@ end
 function EconomyService.HatchFromSlotOnProfile(
 	profile: Types.PlayerProfileData,
 	slotId: string,
-	nowEpoch: number,
+	nowClock: number,
 	customRng: Random?
 ): EconomyResult
 	if not INCUBATOR_SLOTS[slotId] then
@@ -321,7 +351,7 @@ function EconomyService.HatchFromSlotOnProfile(
 	if item == nil or item.State ~= "Incubating" or item.AssignedSlot ~= slotId then
 		return { Ok = false, Reason = "InvalidIncubatorState" }
 	end
-	if item.MaturesAt == nil or math.floor(nowEpoch) < item.MaturesAt then
+	if item.MaturesAt == nil or nowClock < item.MaturesAt then
 		return { Ok = false, Reason = "NotMature" }
 	end
 	if EconomyService.GetBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
@@ -350,7 +380,7 @@ function EconomyService.PlaceInPenOnProfile(
 	profile: Types.PlayerProfileData,
 	slotId: string,
 	itemUID: string,
-	nowEpoch: number
+	nowClock: number
 ): EconomyResult
 	if not PEN_SLOTS[slotId] then
 		return { Ok = false, Reason = "InvalidSlot" }
@@ -370,8 +400,8 @@ function EconomyService.PlaceInPenOnProfile(
 		return { Ok = false, Reason = "ItemNotHatchedInBag" }
 	end
 
-	-- Settle elapsed coins at the OLD pen rate before changing active pen occupants.
-	EconomyService.SettleProfileCoins(profile, nowEpoch)
+	-- Settle elapsed coins using fractional clock at the OLD pen rate before adding critter.
+	EconomyService.SettleProfileCoins(profile, nowClock)
 
 	item.State = "InPen"
 	item.AssignedSlot = slotId
@@ -384,7 +414,7 @@ end
 function EconomyService.RemoveFromPenOnProfile(
 	profile: Types.PlayerProfileData,
 	slotId: string,
-	nowEpoch: number
+	nowClock: number
 ): EconomyResult
 	if not PEN_SLOTS[slotId] then
 		return { Ok = false, Reason = "InvalidSlot" }
@@ -398,12 +428,13 @@ function EconomyService.RemoveFromPenOnProfile(
 	if item == nil or item.State ~= "InPen" or item.AssignedSlot ~= slotId then
 		return { Ok = false, Reason = "InvalidPenState" }
 	end
-	if EconomyService.GetBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
+	-- Shared capacity check respects bag spaces reserved for incubating pods.
+	if not EconomyService.HasUnreservedBagSpace(profile) then
 		return { Ok = false, Reason = "BagFull" }
 	end
 
-	-- Settle elapsed coins at the OLD pen rate before removing this critter.
-	EconomyService.SettleProfileCoins(profile, nowEpoch)
+	-- Settle elapsed coins using fractional clock at the OLD pen rate before removing critter.
+	EconomyService.SettleProfileCoins(profile, nowClock)
 
 	item.State = "HatchedInBag"
 	item.AssignedSlot = nil
@@ -416,7 +447,7 @@ end
 function EconomyService.SellCritterOnProfile(
 	profile: Types.PlayerProfileData,
 	itemUID: string,
-	_nowEpoch: number
+	_nowClock: number
 ): EconomyResult
 	local item = profile.Items[itemUID]
 	if item == nil then
@@ -430,21 +461,25 @@ function EconomyService.SellCritterOnProfile(
 	end
 
 	local sellPrice = EconomyMath.GetCritterSellPrice(item.SpeciesId, item.Variant)
+	local previousCoins = profile.Coins
+	local nextCoins = math.min(Constants.MAX_COINS, previousCoins + sellPrice)
+	local actualCredited = nextCoins - previousCoins
+
 	profile.Items[itemUID] = nil
-	profile.Coins = math.min(Constants.MAX_COINS, profile.Coins + sellPrice)
+	profile.Coins = nextCoins
 	profile.Revision += 1
 
 	return {
 		Ok = true,
 		ItemUID = itemUID,
-		CoinsEarned = sellPrice,
+		CoinsEarned = actualCredited,
 	}
 end
 
 function EconomyService.BuyUpgradeOnProfile(
 	profile: Types.PlayerProfileData,
 	upgradeId: Types.UpgradeId,
-	_nowEpoch: number
+	_nowClock: number
 ): EconomyResult
 	local def = UpgradeConfig.ById[upgradeId]
 	if def == nil then
@@ -473,7 +508,7 @@ function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): Ec
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
-	local res = EconomyService.GrantPodToProfile(profile, speciesId, os.time())
+	local res = EconomyService.GrantPodToProfile(profile, speciesId, workspace:GetServerTimeNow())
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
 	end
@@ -494,24 +529,24 @@ function EconomyService.HandlePlotAction(
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
-	local nowEpoch = os.time()
+	local nowClock = workspace:GetServerTimeNow()
 	local res: EconomyResult
 	local affectsPublicPlot = false
 
 	if action == "StartIncubate" then
-		res = EconomyService.StartIncubateOnProfile(profile, targetSlotOrUID, itemUID :: string, nowEpoch)
+		res = EconomyService.StartIncubateOnProfile(profile, targetSlotOrUID, itemUID :: string, nowClock)
 		affectsPublicPlot = true
 	elseif action == "Hatch" then
-		res = EconomyService.HatchFromSlotOnProfile(profile, targetSlotOrUID, nowEpoch)
+		res = EconomyService.HatchFromSlotOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
 	elseif action == "PlaceInPen" then
-		res = EconomyService.PlaceInPenOnProfile(profile, targetSlotOrUID, itemUID :: string, nowEpoch)
+		res = EconomyService.PlaceInPenOnProfile(profile, targetSlotOrUID, itemUID :: string, nowClock)
 		affectsPublicPlot = true
 	elseif action == "RemoveFromPen" then
-		res = EconomyService.RemoveFromPenOnProfile(profile, targetSlotOrUID, nowEpoch)
+		res = EconomyService.RemoveFromPenOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
 	elseif action == "SellCritter" then
-		res = EconomyService.SellCritterOnProfile(profile, targetSlotOrUID, nowEpoch)
+		res = EconomyService.SellCritterOnProfile(profile, targetSlotOrUID, nowClock)
 	else
 		return { Ok = false, Reason = "InvalidAction" }
 	end
@@ -534,10 +569,9 @@ function EconomyService.HandleBuyUpgrade(player: Player, upgradeId: Types.Upgrad
 		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 
-	local nowEpoch = os.time()
-	-- Settle any accumulated pen income before checking cost so online earnings count immediately.
-	local settledChanged = EconomyService.SettleProfileCoins(profile, nowEpoch)
-	local res = EconomyService.BuyUpgradeOnProfile(profile, upgradeId, nowEpoch)
+	local nowClock = workspace:GetServerTimeNow()
+	local settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+	local res = EconomyService.BuyUpgradeOnProfile(profile, upgradeId, nowClock)
 
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
@@ -570,9 +604,9 @@ function EconomyService.Start(self: typeof(EconomyService)): ()
 		task.spawn(function()
 			while accrualRunning do
 				task.wait(1)
-				local nowEpoch = os.time()
+				local nowClock = workspace:GetServerTimeNow()
 				DataService.ForEachReadyPlayer(function(player: Player, profile: Types.PlayerProfileData)
-					if EconomyService.SettleProfileCoins(profile, nowEpoch) then
+					if EconomyService.SettleProfileCoins(profile, nowClock) then
 						DataService.SendOwnerStateSnapshot(player)
 					end
 				end)
@@ -594,7 +628,7 @@ function EconomyService.RunSelfTest(): number
 	assert((EconomyService.ValidateProfileInvariants(profile)), "Invariant valid after grant")
 
 	local incRes = EconomyService.StartIncubateOnProfile(profile, "Incubator_1", "pod-1", 1005)
-	assert(incRes.Ok and EconomyService.GetBagCount(profile) == 0, "Incubate moves pod out of bag")
+	assert(incRes.Ok and EconomyService.GetBagCount(profile) == 0 and EconomyService.GetOccupiedIncubatorCount(profile) == 1, "Incubate moves pod to reserved slot")
 	assert(profile.Items["pod-1"].MaturesAt == 1020, "StarSlime matures in 15s")
 	assert((EconomyService.ValidateProfileInvariants(profile)), "Invariant valid after start incubate")
 
@@ -645,20 +679,34 @@ function EconomyService.RunSelfTest(): number
 	assert(not poorBuy.Ok and poorBuy.Reason == "InsufficientCoins", "59 Coins < 60 cost rejected")
 	assert(pFail.Coins == snapCoins and pFail.Revision == snapRev and pFail.Upgrades["PenSlot_2"] == nil, "Failed operations change zero state")
 
-	-- BagFull checks (fill bag to 10 items)
-	for i = 1, Constants.MAX_BAG_CAPACITY do
+	-- Fill remaining unreserved bag capacity (9 + 1 incubating = 10 committed), verify overflow blocked
+	for i = 1, Constants.MAX_BAG_CAPACITY - 1 do
 		local g = EconomyService.GrantPodToProfile(pFail, "StarSlime", 2000, "fill-" .. tostring(i))
-		assert(g.Ok, "Filling bag up to cap")
+		assert(g.Ok, "Filling unreserved bag up to committed cap")
 	end
 	local revAtFull = pFail.Revision
 	local overGrant = EconomyService.GrantPodToProfile(pFail, "StarSlime", 2000, "overflow")
 	assert(not overGrant.Ok and overGrant.Reason == "BagFull" and pFail.Revision == revAtFull, "BagFull blocks GrantPod with zero changes")
-	local fullHatch = EconomyService.HatchFromSlotOnProfile(pFail, "Incubator_1", 2020, rng)
-	assert(not fullHatch.Ok and fullHatch.Reason == "BagFull" and pFail.Revision == revAtFull and pFail.Slots["Incubator_1"] == "p-1", "BagFull blocks Hatch with zero changes")
 
-	-- Selling unhatched pod or active pen critter rejected
+	-- Selling unhatched pod rejected
 	local sellPod = EconomyService.SellCritterOnProfile(pFail, "fill-1", 2020)
 	assert(not sellPod.Ok and sellPod.Reason == "CannotSellUnhatched" and pFail.Revision == revAtFull, "Cannot sell PodInBag")
+
+	-- Cap-clamped CoinsEarned on sale
+	local pCap = DataService.CreateDefaultProfile(2500)
+	pCap.Coins = Constants.MAX_COINS - 15
+	pCap.Items["cap-1"] = {
+		UID = "cap-1",
+		SpeciesId = "StarSlime",
+		Variant = "Normal",
+		State = "HatchedInBag",
+		AssignedSlot = nil,
+		PlantedAt = nil,
+		MaturesAt = nil,
+		CreatedAt = 2500,
+	}
+	local capSell = EconomyService.SellCritterOnProfile(pCap, "cap-1", 2501)
+	assert(capSell.Ok and capSell.CoinsEarned == 15 and pCap.Coins == Constants.MAX_COINS, "CoinsEarned reports actual credited delta at MAX_COINS")
 	passed += 1
 
 	-- 3. Duplicate transitions apply only once
@@ -688,39 +736,74 @@ function EconomyService.RunSelfTest(): number
 	assert(not EconomyService.SellCritterOnProfile(pDup, "dup-1", 3015).Ok and pDup.Revision == dupSellRev, "Duplicate sell fails cleanly")
 	passed += 1
 
-	-- 4. Elapsed settlement before pen rate changes (2/s for 30s -> add 4/s -> 6/s for 10s -> remove 2/s -> 4/s for 10s)
-	local pRate = DataService.CreateDefaultProfile(4000)
-	pRate.Upgrades["PenSlot_2"] = true
-	pRate.Items["slime"] = {
-		UID = "slime",
+	-- 4. Regression: Full unlocked incubators + full bag never deadlocks progression
+	local pLock = DataService.CreateDefaultProfile(3500)
+	pLock.Coins = 500
+	assert(EconomyService.BuyUpgradeOnProfile(pLock, "Incubator_2", 3500).Ok, "Unlock Incubator_2")
+	assert(EconomyService.GrantPodToProfile(pLock, "StarSlime", 3500, "inc-pod-1").Ok, "Grant pod 1")
+	assert(EconomyService.GrantPodToProfile(pLock, "NebulaFox", 3500, "inc-pod-2").Ok, "Grant pod 2")
+	assert(EconomyService.StartIncubateOnProfile(pLock, "Incubator_1", "inc-pod-1", 3500).Ok, "Incubate pod 1")
+	assert(EconomyService.StartIncubateOnProfile(pLock, "Incubator_2", "inc-pod-2", 3500).Ok, "Incubate pod 2")
+
+	-- Put an active critter in Pen_1 so we also verify RemoveFromPen respects reserved hatch capacity
+	pLock.Items["pen-occupant"] = {
+		UID = "pen-occupant",
 		SpeciesId = "StarSlime",
 		Variant = "Normal",
-		State = "HatchedInBag",
-		AssignedSlot = nil,
+		State = "InPen",
+		AssignedSlot = "Pen_1",
 		PlantedAt = nil,
 		MaturesAt = nil,
-		CreatedAt = 4000,
+		CreatedAt = 3500,
 	}
-	pRate.Items["fox"] = {
-		UID = "fox",
-		SpeciesId = "NebulaFox",
+	pLock.Slots["Pen_1"] = "pen-occupant"
+
+	for i = 1, Constants.MAX_BAG_CAPACITY - 2 do
+		assert(EconomyService.GrantPodToProfile(pLock, "StarSlime", 3500, "bag-pod-" .. tostring(i)).Ok, "Fill remaining unreserved bag slot")
+	end
+	assert(EconomyService.GetBagCount(pLock) == 8 and EconomyService.GetOccupiedIncubatorCount(pLock) == 2, "8 in bag + 2 reserved incubating")
+	assert(not EconomyService.GrantPodToProfile(pLock, "StarSlime", 3500, "extra-pod").Ok, "GrantPod blocked when 10 slots committed")
+	assert(not EconomyService.RemoveFromPenOnProfile(pLock, "Pen_1", 3510).Ok, "RemoveFromPen blocked when 10 slots committed")
+
+	-- Both incubating pods MUST still hatch cleanly at maturity
+	local h1 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_1", 3535, rng)
+	local h2 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_2", 3535, rng)
+	assert(h1.Ok and h2.Ok, "Both occupied incubators must hatch cleanly despite full unreserved bag")
+	assert(EconomyService.GetBagCount(pLock) == 10 and EconomyService.GetOccupiedIncubatorCount(pLock) == 0, "All 10 slots now in bag cleanly")
+	assert(EconomyService.SellCritterOnProfile(pLock, "inc-pod-1", 3535).Ok, "Player can immediately sell hatched critter to recover bag space")
+	assert((EconomyService.ValidateProfileInvariants(pLock)), "Invariants valid after full-bag hatch recovery")
+	passed += 1
+
+	-- 5. Regression: Sub-second fractional accrual across second boundary & rate changes
+	local pSub = DataService.CreateDefaultProfile(10.8)
+	pSub.Items["slime2"] = {
+		UID = "slime2",
+		SpeciesId = "StarSlime", -- 2/s
 		Variant = "Normal",
 		State = "HatchedInBag",
 		AssignedSlot = nil,
 		PlantedAt = nil,
 		MaturesAt = nil,
-		CreatedAt = 4000,
+		CreatedAt = 10,
 	}
-	assert(EconomyService.PlaceInPenOnProfile(pRate, "Pen_1", "slime", 4000).Ok, "Place slime at t=4000")
-	assert(EconomyService.PlaceInPenOnProfile(pRate, "Pen_2", "fox", 4030).Ok, "Place fox at t=4030")
-	assert(pRate.Coins == 60, string.format("Expected 60 Coins settled before fox added, got %d", pRate.Coins))
+	pSub.Items["fox2"] = {
+		UID = "fox2",
+		SpeciesId = "NebulaFox", -- 4/s
+		Variant = "Normal",
+		State = "HatchedInBag",
+		AssignedSlot = nil,
+		PlantedAt = nil,
+		MaturesAt = nil,
+		CreatedAt = 10,
+	}
+	assert(EconomyService.PlaceInPenOnProfile(pSub, "Pen_1", "slime2", 10.8).Ok, "Place StarSlime at t=10.8")
+	assert(EconomyService.RemoveFromPenOnProfile(pSub, "Pen_1", 11.1).Ok, "Remove StarSlime at t=11.1 (0.3s across boundary)")
+	assert(pSub.Coins == 0 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "0.3s at 2/s across 11.0 boundary must carry 0.6 fraction with 0 Coins")
 
-	assert(EconomyService.RemoveFromPenOnProfile(pRate, "Pen_1", 4040).Ok, "Remove slime at t=4040")
-	assert(pRate.Coins == 120, string.format("Expected 120 Coins settled at 6/s before slime removed, got %d", pRate.Coins))
-
-	EconomyService.SettleProfileCoins(pRate, 4050)
-	assert(pRate.Coins == 160, string.format("Expected 160 Coins after 10s at 4/s, got %d", pRate.Coins))
-	assert((EconomyService.ValidateProfileInvariants(pRate)), "Invariant valid after multi-rate settlements")
+	assert(EconomyService.PlaceInPenOnProfile(pSub, "Pen_1", "fox2", 11.1).Ok, "Place NebulaFox at t=11.1")
+	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 4/s + 0.6 = 1.6 -> credits 1 Coin")
+	assert(pSub.Coins == 1 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "Expected 1 Coin and 0.6 fraction after rate switch")
+	assert((EconomyService.ValidateProfileInvariants(pSub)), "Invariant valid after sub-second fractional rate change")
 	passed += 1
 
 	return passed

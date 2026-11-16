@@ -42,6 +42,7 @@ export type OwnerStateDTO = {
 	Revision: number,
 	Coins: number,
 	BagCap: number,
+	ReservedBagSlots: number,
 	Items: { [string]: CritterItemRecord },
 	Slots: { [string]: string },
 	Upgrades: { [string]: boolean },

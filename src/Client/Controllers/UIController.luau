@@ -38,10 +38,11 @@ function UIController.Start(self: typeof(UIController)): ()
 			end
 			latestOwnerState = dto
 			print(string.format(
-				"[UIController] Synced OwnerStateDTO (Revision %d, Coins %d, BagCap %d).",
+				"[UIController] Synced OwnerStateDTO (Revision %d, Coins %d, BagCap %d, Reserved %d).",
 				dto.Revision,
 				dto.Coins,
-				dto.BagCap
+				dto.BagCap,
+				dto.ReservedBagSlots or 0
 			))
 
 			for _, cb in ipairs(stateChangedCallbacks) do

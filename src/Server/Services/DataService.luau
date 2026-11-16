@@ -96,13 +96,13 @@ function DataService.CanUseMockStoreInEnvironment(
 	return false, string.format("MockStore blocked on published PlaceId %d", placeId)
 end
 
-function DataService.CreateDefaultProfile(nowEpoch: number?): Types.PlayerProfileData
-	local epoch = if nowEpoch ~= nil then math.floor(nowEpoch) else os.time()
+function DataService.CreateDefaultProfile(nowClock: number?): Types.PlayerProfileData
+	local clockTime = if nowClock ~= nil then nowClock else workspace:GetServerTimeNow()
 	return {
 		SchemaVersion = Constants.SCHEMA_VERSION,
 		Coins = 0,
 		PendingFraction = 0,
-		LastAccrualTimestamp = epoch,
+		LastAccrualTimestamp = clockTime,
 		Revision = 1,
 		Items = {},
 		Slots = {},
@@ -113,14 +113,19 @@ end
 
 function DataService.BuildOwnerStateDTO(profile: Types.PlayerProfileData): Types.OwnerStateDTO
 	local copiedItems: { [string]: Types.CritterItemRecord } = {}
+	local reservedSlots = 0
 	for uid, rec in pairs(profile.Items) do
 		copiedItems[uid] = cloneCritterRecord(rec)
+		if rec.State == "Incubating" then
+			reservedSlots += 1
+		end
 	end
 
 	return {
 		Revision = profile.Revision,
 		Coins = profile.Coins,
 		BagCap = Constants.MAX_BAG_CAPACITY,
+		ReservedBagSlots = reservedSlots,
 		Items = copiedItems,
 		Slots = cloneStringMap(profile.Slots),
 		Upgrades = cloneBoolMap(profile.Upgrades),
@@ -395,7 +400,7 @@ function DataService.RunSelfTest(): number
 
 	-- 3. Verify OwnerStateDTO whitelisting and deep-copy isolation
 	local dtoA = DataService.BuildOwnerStateDTO(profileA)
-	assert(dtoA.Coins == 250 and dtoA.BagCap == Constants.MAX_BAG_CAPACITY, "DTO exposes owner fields")
+	assert(dtoA.Coins == 250 and dtoA.BagCap == Constants.MAX_BAG_CAPACITY and dtoA.ReservedBagSlots == 0, "DTO exposes owner fields")
 	assert((dtoA :: any).SchemaVersion == nil, "DTO must strip SchemaVersion")
 	assert((dtoA :: any).PendingFraction == nil, "DTO must strip PendingFraction")
 	assert((dtoA :: any).LastAccrualTimestamp == nil, "DTO must strip LastAccrualTimestamp")
