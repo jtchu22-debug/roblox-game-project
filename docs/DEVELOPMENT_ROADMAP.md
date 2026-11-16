@@ -28,8 +28,9 @@ flowchart TD
     S2 -->|"Pass Targets"| S3["Stage 3: Persistence Alpha (ProfileStore)"]
     S2 -->|"Fails Fun Test"| PIVOT["Iterate Hook OR Pivot to Relic Raiders / Potion Pop!"]
     S3 --> S4["Stage 4: Low-Poly Art, Mobile Polish & Soak Tests"]
-    S4 --> S5["Stage 5: Controlled Soft Launch & Final Testing"]
-    S5 -->|"Final tests pass"| S6["Stage 6: Collection Expansion"]
+    S4 --> S5["Stage 5: Private Baseline Testing"]
+    S5 -->|"Core checks pass"| S6["Stage 6: Complete Content & Final Private Tests"]
+    S6 -->|"Release candidate passes"| LIVE["First Public Release"]
 ```
 
 ---
@@ -90,23 +91,21 @@ flowchart TD
   2. Add simple **Discovered Species Checklist** UI (cosmetic progress only, zero stat multipliers), **Radiant** cosmetic hatch variant (within strict $\le 30$ critters, $\le 8$ studs budget), and non-economic ranch inspection polish.
   3. Audit Touch/Keyboard/Gamepad focus navigation, mobile Safe Areas, color-blind trait icons, and `Reduced Motion` toggles.
 - **Verification & Exit Criteria:**
-  - 15–30 minute published full-server soak test on real low-end phone/tablet hardware passes initial **sustained $\ge 30$ FPS** target and memory baseline without frame spikes or leaks. *(Studio Device Emulator validates layout/input only, never hardware performance).*
+  - 15–30 minute full-server soak test in a published private test place on real low-end phone/tablet hardware passes initial **sustained $\ge 30$ FPS** target and memory baseline without frame spikes or leaks. *(Studio Device Emulator validates layout/input only, never hardware performance).*
 
 ---
 
-## Stage 5: Controlled Soft Launch, Telemetry & Final Testing
-- **Objective:** Publish the approved MVP scope to real users, measure anonymous funnel/retention behavior, and iterate based on evidence.
-- **Tasks:**
-  1. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink logging.
-  2. Measure organic Home vs. ad traffic cohorts, session length, Play Days, and D1/D7/D28 behavior.
-  3. **Post-Stability Monetization Only:** Evaluate pure fixed-price cosmetics (Ranch Themes / Accessories) *only* after stability soak tests and Roblox child-compliance checks are explicitly signed off.
-- **Exit Gate:** Complete the final soft-launch regression pass for onboarding, multiplayer stability, persistence, and the economy. Record the results and review telemetry against the baseline before starting Stage 6.
+## Stage 5: Private Baseline Testing & Launch Preparation
+
+- **Objective:** Validate onboarding, multiplayer stability, persistence, and the economy with the baseline roster in an invite-only test build.
+- **Tasks:** Verify funnel instrumentation in the private build, run regression tests, and use private playtests to measure time to first hatch, first pen placement, first upgrade, and repeat rescue. Review any proposed launch cosmetics against the existing stability and Roblox compliance checks.
+- **Exit Gate:** Record baseline results and resolve core blockers before beginning Stage 6. Keep the public launch for Stage 6.
 
 ---
 
-## Stage 6: Collection Expansion for Wider Public Release
+## Stage 6: Collection Expansion for the First Public Release
 
-- **Entry Gate:** The Stage 5 final testing and controlled soft-launch review are complete.
-- **Objective:** Ship the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) with one Secret Eclipse Dragon to chase through Astral Star-Pods. Continue using the three meteor types and existing rescue, hatch, and ranch systems.
-- **Tasks:** Define the roster and drop pools, author the new critter assets, and extend the collection book with rarity labels and the Secret silhouette and reveal.
-- **Exit Gate:** Verify the drop pools and guaranteed starter reward, check that existing saves load and new discoveries persist, and test the Secret reveal and mobile performance. Review expected discovery time and the first-upgrade economy before rolling the roster out to the wider public.
+- **Entry Gate:** Stage 5 private baseline testing passes.
+- **Content Complete:** Build the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) across seven rarities, including the earnable Secret Eclipse Dragon. Finish critter assets, the collection book, rarity cues, the Secret reveal, and integration with the full ranch upgrade loop.
+- **Final Private Testing:** Test the actual release candidate with the full roster. Verify acquisition and discovery, the guaranteed starter reward, drop odds and hatch pacing, upgrade balance, multiplayer and persistence, and mobile performance and accessibility.
+- **First Public Release:** Publish the content-complete build after the final private checks pass. Monitor live results to inform future updates.
