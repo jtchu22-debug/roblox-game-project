@@ -14,8 +14,8 @@ Per our Phase 0 audit (`docs/CHATGPT_REVIEW.md`), attempting to build a dual cry
 The release plan has four gated product layers.
 1. **Stage 1–2 Vertical Slice Prototype (Build & Playtest First):** Proves the 5-minute **Meteor Rescue $\rightarrow$ Incubate $\rightarrow$ Keep-vs-Sell $\rightarrow$ Ranch Upgrade** loop with 2 plots, mock persistence, 3 species, 1 currency, and zero monetization.
 2. **Stage 3 Persistence Alpha:** Adds pinned `ProfileStore` persistence, offline pod incubation (using absolute timestamps), 2–6 plots, and adversarial 2-player/6-player security testing.
-3. **Stage 4–5 Controlled Release:** Adds mobile and accessibility polish, low-poly hero meshes, a Discovered Species checklist, and the optional Radiant cosmetic variant. Stage 5 runs the controlled soft launch and final testing with the three-species baseline.
-4. **Stage 6 Collection Expansion:** Begins after the Stage 5 gate passes. Adds the launch roster and one Secret chase critter for the wider public release.
+3. **Stage 4–5 Private Beta & Validation:** Adds mobile and accessibility polish, low-poly hero meshes, a Discovered Species checklist, and the optional Radiant cosmetic variant. Stage 5 validates the core systems and first-session pacing in a private build.
+4. **Stage 6 Launch Content & First Public Release:** Builds the full launch roster and Secret chase after Stage 5. Run the final integrated test on the content-complete private build, then open that build to the public.
 
 ---
 
@@ -133,7 +133,7 @@ To eliminate runaway exponent inflation, conflicting multipliers, and tutorial/o
 
 ## 7. Stage 6 Collection Expansion
 
-After Stage 5 final testing and the controlled soft launch, expand the three-species roster to **12 species for the wider public release**. Give players several collection milestones after the first ranch upgrades and one long-term Secret to chase.
+After the Stage 5 private baseline passes, expand the roster to **12 species for the first public release**. Ship the full collection book, accessible hatch feedback, ranch progression, and the Secret chase together after private release-candidate testing. Give players several collection milestones after the first ranch upgrades and one long-term Secret to chase.
 
 | Critter rarity | Total species |
 | :--- | ---: |
@@ -148,4 +148,4 @@ After Stage 5 final testing and the controlled soft launch, expand the three-spe
 
 - **Meteor pools.** Keep Ember, Frost, and Astral as the three meteor types. Each has a distinct server-owned drop pool. Critter rarity describes the hatch outcome, and multiple rarities can share a meteor pool. The starter meteor continues to guarantee Star-Slime. Radiant remains a cosmetic variant across the roster.
 - **Secret chase.** The **Eclipse Dragon** is the one Secret species and comes from Astral Star-Pods through normal play. Its collection entry shows a locked silhouette with the hint *“Something stirs inside Astral Star-Pods.”* Discovery reveals the species and its distinctive hatch animation and pen appearance. Respect Reduced Motion.
-- **Pacing and economy.** Tune drop weights using Stage 5 pacing evidence and check the expected hatches and time to discovery before release. Epic and Legendary should provide meaningful collection milestones while players chase the Secret. Keep income and sell-price increases modest enough to preserve the ranch upgrade curve.
+- **Pacing and economy.** Use Stage 5 private pacing evidence for the baseline. Set drop weights and verify expected hatches, time to discovery, and progression with the full Stage 6 roster before release. Epic and Legendary should provide meaningful collection milestones while players chase the Secret. Keep income and sell-price increases modest enough to preserve the ranch upgrade curve.
