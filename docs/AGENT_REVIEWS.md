@@ -59,3 +59,20 @@ When reviewing this Phase 0 package, please evaluate and document your findings 
 
 #### 5. Action Items for Gemini (Phase 1 Pre-Requisites)
 - [ ] *(ChatGPT to populate actionable items)*
+
+
+
+---
+
+### Review #001 — Independent Technical Director response (2026-11-15)
+- **Status:** `CHANGES REQUIRED` — independent audit completed; revised design and human approval pending.
+- **Baseline reviewed:** `c5c5b1791f8eb38303d899d771aca3c23860e050`
+- **Full audit:** [CHATGPT_REVIEW.md](./CHATGPT_REVIEW.md).
+- **Concept:** Starfall Ranch is recommended only as a narrowed, hypothesis-testing prototype, not approval of the current launch scope. Potion Pop and Relic Raiders remain viable alternatives.
+- **Research:** Directionally credible, but unsupported causal claims and missing reproducible citations. Independent current snapshots confirm Steal An Egg and Throw Food For Animals momentum, Grow a Garden historic-vs-current decline, and neglected rivals including Break and Steal an Egg and Fish It!.
+- **Economy:** Conflicting formulas, 539x example rather than 480x, probability repeated-roll mismatch, excessive offline faucet. Start with one bounded economy and critter lifecycle.
+- **Security:** Good server authority and lightweight visuals; resolve attempt replay/double-claim, unsafe remote payloads, one-item/one-location invariant, private vs public replication, load/save failures, durable receipt dedup and asynchronous lifecycle. Gifting/trading deferred; two-key saves are not atomic.
+- **Roadmap:** Prototype/observe fun before production persistence, full content and monetization. Run adversarial tests every milestone.
+- **Monetization:** Correct obsolete payout program and remove indirect paid random rewards, probability boosts, progression advantage and social-spending pressure.
+- **Actions:** See R-001 through R-010 in [AGENT_TASKS.md](./AGENT_TASKS.md) and individual ADR dispositions in [DECISIONS.md](./DECISIONS.md).
+- **Gate:** T-011 complete on review branch; T-012 and human approval remain outstanding. Do not implement Phase 1 yet.
