@@ -108,3 +108,13 @@ Gemini integrated ChatGPT's audit dispositions (`R-001`–`R-006`) across all Ph
 | **ADR-005** | **Gifting & Trading Deferred Past MVP:** Zero cross-profile item transfers in MVP. Future implementation requires durable transaction journals, receiver consent, policy checks, and crash recovery tests. | `GAME_DESIGN.md`, `TECHNICAL_ARCHITECTURE.md` | **`APPROVED (R-007)`** |
 | **ADR-006** | **Isolated Idempotent Greybox Generator:** `tools/studio/GenerateGreyboxMap.luau` (`S1-02`) will operate strictly inside a tagged root (`StarfallGreyboxRoot`) in an isolated test place, preserving unrelated objects and prompting before any destructive rerun. | `DEVELOPMENT_ROADMAP.md`, `AGENT_TASKS.md` | **`APPROVED (R-007)`** |
 | **ADR-007** | **Pinned Rojo (`v7.4.4`) Canonical Workflow:** Rojo (`default.project.json`, `aftman.toml`, `rokit.toml`) is the single source of truth; mapped `src/` skeleton directories and Studio plugin are installed and smoke-tested (`build.rbxlx`), with Studio-managed Workspace/Asset boundaries documented in `CODING_STANDARDS.md`. | `TECHNICAL_ARCHITECTURE.md`, `CODING_STANDARDS.md`, `DEVELOPMENT_SETUP.md` | **`APPROVED (R-007)`** |
+
+---
+
+### ADR-008 — Content Complete Before the First Public Release
+
+**Status — Approved direction from the Human Lead**
+
+Stages 1–5 use Studio or invite-only builds. Stage 5 validates core systems and establishes baseline progression. Stage 6 builds the 12-species roster, collection book, and earnable Secret Eclipse Dragon. Complete the final regression pass on the content-complete Stage 6 build, then publish it as the first public release. Public telemetry informs subsequent updates.
+
+[Game design](./GAME_DESIGN.md#7-stage-6-collection-expansion) · [Development roadmap](./DEVELOPMENT_ROADMAP.md#stage-6-collection-expansion-for-the-first-public-release)
