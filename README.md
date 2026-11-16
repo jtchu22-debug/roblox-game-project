@@ -36,7 +36,7 @@ roblox-game-project/
 │   ├── TECHNICAL_ARCHITECTURE.md      # Single-item-map schema, nonce claim protocol, DTOs & ProfileStore lifecycle
 │   ├── DEVELOPMENT_ROADMAP.md         # Gated roadmap from the mock vertical slice to the Stage 6 public launch
 │   ├── ART_DIRECTION.md               # Low-poly style guide, accessibility, scale/instance budgets & Blender caveats
-│   ├── MONETIZATION.md                # Child-safe policy (Creator Rewards, zero paid random items, cosmetics-only)
+│   ├── MONETIZATION.md                # Stage 6 launch passes, Developer Products, cosmetics, and purchase guardrails
 │   ├── MARKET_RESEARCH.md             # Verified 2025–2026 CCU snapshots, rivals, negative controls & hypotheses
 │   ├── TREND_ANALYSIS.md              # Post-audit disposition of 8 Roblox design trends
 │   ├── GAME_CONCEPTS.md               # 12 original concepts, qualitative audit & Top 3 selection
