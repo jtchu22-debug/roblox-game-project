@@ -1,9 +1,9 @@
 --!strict
 --[[
 	Module: GreyboxBuilder
-	Purpose: Idempotently creates and validates the tagged Stage 1 Starfall Ranch greybox map in Workspace.
+	Purpose: Idempotently creates, preserves, and strictly validates the tagged Stage 1 Starfall Ranch greybox map.
 	Connections: Called on server Init by PlotService.EnsureExists(workspace) and manually via tools/studio/GenerateGreyboxMap.luau.
-	How to Test in Studio: Press Play (F5) to auto-generate StarfallGreyboxRoot or run tools/studio/GenerateGreyboxMap.luau in Command Bar.
+	How to Test in Studio: Press Play (F5) or run tools/studio/GenerateGreyboxMap.luau in Command Bar.
 ]]
 
 local CollectionService = game:GetService("CollectionService")
@@ -32,6 +32,16 @@ local PALETTE = {
 }
 
 local GreyboxBuilder = {}
+
+local function isOwnedGreyboxFolder(instance: Instance?): boolean
+	return instance ~= nil
+		and instance:IsA("Folder")
+		and CollectionService:HasTag(instance, Constants.TAG_GREYBOX_ROOT)
+end
+
+local function failAt(path: string, reason: string): (boolean, string)
+	return false, string.format("%s: %s", path, reason)
+end
 
 local function createPart(props: {
 	Name: string,
@@ -122,7 +132,6 @@ local function buildCentralCrater(root: Folder): ()
 		Parent = craterModel,
 	})
 
-	-- Rim stones spaced around the crater perimeter (leaving clear bridge openings on -X and +X)
 	local rimFolder = Instance.new("Folder")
 	rimFolder.Name = "RimStones"
 	rimFolder.Parent = craterModel
@@ -140,7 +149,6 @@ local function buildCentralCrater(root: Folder): ()
 		})
 	end
 
-	-- Bridges connecting Crater edge (|X| = 45) to Plot_1 (-50) and Plot_2 (+50)
 	local bridgesFolder = Instance.new("Folder")
 	bridgesFolder.Name = "Bridges"
 	bridgesFolder.Parent = craterModel
@@ -155,7 +163,7 @@ local function buildCentralCrater(root: Folder): ()
 		})
 	end
 
-	-- 6 wild Meteor Spawn Nodes inside Crater
+	-- 6 wild Meteor Spawn Nodes inside Crater (explicitly tagged StarfallMeteorNode)
 	local spawnNodes = Instance.new("Folder")
 	spawnNodes.Name = "MeteorSpawnNodes"
 	spawnNodes.Parent = craterModel
@@ -177,7 +185,7 @@ local function buildCentralCrater(root: Folder): ()
 		CollectionService:AddTag(node, Constants.TAG_METEOR_NODE)
 	end
 
-	-- 2 Starter Meteor Nodes directly in each plot's front gate sightline
+	-- 2 Starter Meteor Nodes kept separate from wild TAG_METEOR_NODE pool
 	local starterNodes = Instance.new("Folder")
 	starterNodes.Name = "StarterMeteorNodes"
 	starterNodes.Parent = craterModel
@@ -209,7 +217,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	plotModel.Parent = plotsFolder
 	CollectionService:AddTag(plotModel, Constants.TAG_PLOT)
 
-	-- Forward (-Z) looks directly toward the Central Crater at (0, 0.5, 0)
 	local plotFrame = CFrame.lookAt(origin, Vector3.new(0, origin.Y, 0))
 
 	local plotBase = createPart({
@@ -221,7 +228,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	})
 	plotModel.PrimaryPart = plotBase
 
-	-- Player SpawnPoint inside the front gate facing the Crater
 	local spawnPart = Instance.new("SpawnLocation")
 	spawnPart.Name = "SpawnPoint"
 	spawnPart.Size = Vector3.new(6, 0.4, 6)
@@ -231,11 +237,10 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	spawnPart.Anchored = true
 	spawnPart.CanCollide = false
 	spawnPart.Transparency = 0.4
-	spawnPart.Enabled = false -- Assigned dynamically by PlotService
+	spawnPart.Enabled = false
 	spawnPart.Duration = 0
 	spawnPart.Parent = plotModel
 
-	-- Front Gate Arch
 	local archModel = Instance.new("Model")
 	archModel.Name = "RanchArch"
 	archModel.Parent = plotModel
@@ -272,7 +277,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	})
 	attachLabel(header, "OwnerSign", string.format("Ranch Plot %d (Open)", plotId), Vector3.new(0, 2.8, 0), PALETTE.StarlightGold)
 
-	-- Gate Sell Stand
 	local sellStand = createPart({
 		Name = "SellStand",
 		Size = Vector3.new(6, 3.2, 4),
@@ -293,7 +297,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	CollectionService:AddTag(sellStand, Constants.TAG_SELL_STAND)
 	attachLabel(sellStand, "SellLabel", "Sell Critters", Vector3.new(0, 3.4, 0), PALETTE.StarlightGold)
 
-	-- Incubator Pads (Left Wing)
 	local incubatorsFolder = Instance.new("Folder")
 	incubatorsFolder.Name = "Incubators"
 	incubatorsFolder.Parent = plotModel
@@ -320,7 +323,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 		attachLabel(pad, "SlotLabel", spec.Label, Vector3.new(0, 2.6, 0), PALETTE.OrbitalCyan)
 	end
 
-	-- Habitat Pen (Right/Center Wing)
 	local penModel = Instance.new("Model")
 	penModel.Name = "HabitatPen"
 	penModel.Parent = plotModel
@@ -333,13 +335,12 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 		Parent = penModel,
 	})
 
-	-- Low pen fence rails (leaving a clean front doorway)
 	local fenceSegments = {
-		{ Size = Vector3.new(22, 2.2, 0.8), Offset = Vector3.new(8, 1.6, 15) }, -- Back fence
-		{ Size = Vector3.new(0.8, 2.2, 20), Offset = Vector3.new(-3, 1.6, 5) }, -- Left fence
-		{ Size = Vector3.new(0.8, 2.2, 20), Offset = Vector3.new(19, 1.6, 5) }, -- Right fence
-		{ Size = Vector3.new(7, 2.2, 0.8), Offset = Vector3.new(0.5, 1.6, -5) }, -- Front left post
-		{ Size = Vector3.new(7, 2.2, 0.8), Offset = Vector3.new(15.5, 1.6, -5) }, -- Front right post
+		{ Size = Vector3.new(22, 2.2, 0.8), Offset = Vector3.new(8, 1.6, 15) },
+		{ Size = Vector3.new(0.8, 2.2, 20), Offset = Vector3.new(-3, 1.6, 5) },
+		{ Size = Vector3.new(0.8, 2.2, 20), Offset = Vector3.new(19, 1.6, 5) },
+		{ Size = Vector3.new(7, 2.2, 0.8), Offset = Vector3.new(0.5, 1.6, -5) },
+		{ Size = Vector3.new(7, 2.2, 0.8), Offset = Vector3.new(15.5, 1.6, -5) },
 	}
 	for i, seg in ipairs(fenceSegments) do
 		createPart({
@@ -379,7 +380,6 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 		attachLabel(slotPad, "SlotLabel", spec.Label, Vector3.new(0, 2.4, 0), PALETTE.StarlightGold)
 	end
 
-	-- Upgrade Pads (Back Deck)
 	local upgradeBoard = Instance.new("Folder")
 	upgradeBoard.Name = "UpgradeBoard"
 	upgradeBoard.Parent = plotModel
@@ -413,77 +413,234 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 end
 
 function GreyboxBuilder.ValidateHierarchy(root: Instance?): (boolean, string)
+	local rootPath = Constants.GREYBOX_ROOT_NAME
 	if root == nil or not root:IsA("Folder") then
-		return false, "Missing StarfallGreyboxRoot Folder"
+		return failAt(rootPath, "expected Folder")
 	end
 	if not CollectionService:HasTag(root, Constants.TAG_GREYBOX_ROOT) then
-		return false, "Root missing StarfallGreyboxRoot tag"
+		return failAt(rootPath, "missing tag " .. Constants.TAG_GREYBOX_ROOT)
+	end
+	if root:GetAttribute("GreyboxVersion") ~= Constants.GREYBOX_VERSION then
+		return failAt(rootPath, "GreyboxVersion attribute mismatch")
 	end
 
+	-- Central Crater contract
+	local craterPath = rootPath .. "/CentralCrater"
 	local crater = root:FindFirstChild("CentralCrater")
-	if crater == nil then
-		return false, "Missing CentralCrater"
+	if crater == nil or not crater:IsA("Model") then
+		return failAt(craterPath, "expected Model")
 	end
 
-	local meteorNodes = crater:FindFirstChild("MeteorSpawnNodes")
-	if meteorNodes == nil then
-		return false, "Missing MeteorSpawnNodes"
+	local craterFloor = crater:FindFirstChild("CraterFloor")
+	if craterFloor == nil or not craterFloor:IsA("BasePart") then
+		return failAt(craterPath .. "/CraterFloor", "expected BasePart")
 	end
-	for i = 1, 6 do
-		local node = meteorNodes:FindFirstChild("MeteorNode_" .. tostring(i))
-		if node == nil or not CollectionService:HasTag(node, Constants.TAG_METEOR_NODE) then
-			return false, "Missing or untagged MeteorNode_" .. tostring(i)
+	if crater.PrimaryPart ~= craterFloor then
+		return failAt(craterPath, "PrimaryPart must be CraterFloor")
+	end
+
+	local bridgesPath = craterPath .. "/Bridges"
+	local bridges = crater:FindFirstChild("Bridges")
+	if bridges == nil or not bridges:IsA("Folder") then
+		return failAt(bridgesPath, "expected Folder")
+	end
+	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+		local bridgeName = "Bridge_Plot_" .. tostring(plotId)
+		local bridge = bridges:FindFirstChild(bridgeName)
+		if bridge == nil or not bridge:IsA("BasePart") then
+			return failAt(bridgesPath .. "/" .. bridgeName, "expected BasePart")
 		end
 	end
 
-	local starterNodes = crater:FindFirstChild("StarterMeteorNodes")
-	if starterNodes == nil then
-		return false, "Missing StarterMeteorNodes"
+	local meteorNodesPath = craterPath .. "/MeteorSpawnNodes"
+	local meteorNodes = crater:FindFirstChild("MeteorSpawnNodes")
+	if meteorNodes == nil or not meteorNodes:IsA("Folder") then
+		return failAt(meteorNodesPath, "expected Folder")
+	end
+	for i = 1, 6 do
+		local nodeName = "MeteorNode_" .. tostring(i)
+		local nodePath = meteorNodesPath .. "/" .. nodeName
+		local node = meteorNodes:FindFirstChild(nodeName)
+		if node == nil or not node:IsA("BasePart") then
+			return failAt(nodePath, "expected BasePart")
+		end
+		if not CollectionService:HasTag(node, Constants.TAG_METEOR_NODE) then
+			return failAt(nodePath, "missing tag " .. Constants.TAG_METEOR_NODE)
+		end
+		if node:GetAttribute("NodeIndex") ~= i then
+			return failAt(nodePath, string.format("NodeIndex must equal %d", i))
+		end
+		if node:GetAttribute("IsStarterNode") == true then
+			return failAt(nodePath, "wild meteor node must not have IsStarterNode=true")
+		end
 	end
 
+	local starterNodesPath = craterPath .. "/StarterMeteorNodes"
+	local starterNodes = crater:FindFirstChild("StarterMeteorNodes")
+	if starterNodes == nil or not starterNodes:IsA("Folder") then
+		return failAt(starterNodesPath, "expected Folder")
+	end
+	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+		local sName = "StarterNode_Plot_" .. tostring(plotId)
+		local sPath = starterNodesPath .. "/" .. sName
+		local sNode = starterNodes:FindFirstChild(sName)
+		if sNode == nil or not sNode:IsA("BasePart") then
+			return failAt(sPath, "expected BasePart")
+		end
+		if CollectionService:HasTag(sNode, Constants.TAG_METEOR_NODE) then
+			return failAt(sPath, "starter node must not carry wild tag " .. Constants.TAG_METEOR_NODE)
+		end
+		if sNode:GetAttribute("PlotId") ~= plotId then
+			return failAt(sPath, string.format("PlotId must equal %d", plotId))
+		end
+		if sNode:GetAttribute("IsStarterNode") ~= true then
+			return failAt(sPath, "IsStarterNode attribute must equal true")
+		end
+	end
+
+	-- Plots contract
+	local plotsPath = rootPath .. "/Plots"
 	local plotsFolder = root:FindFirstChild("Plots")
-	if plotsFolder == nil then
-		return false, "Missing Plots folder"
+	if plotsFolder == nil or not plotsFolder:IsA("Folder") then
+		return failAt(plotsPath, "expected Folder")
 	end
 
 	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
-		local plot = plotsFolder:FindFirstChild("Plot_" .. tostring(plotId))
-		if plot == nil or not plot:IsA("Model") or not CollectionService:HasTag(plot, Constants.TAG_PLOT) then
-			return false, "Missing or untagged Plot_" .. tostring(plotId)
+		local plotName = "Plot_" .. tostring(plotId)
+		local plotPath = plotsPath .. "/" .. plotName
+		local plot = plotsFolder:FindFirstChild(plotName)
+		if plot == nil or not plot:IsA("Model") then
+			return failAt(plotPath, "expected Model")
 		end
-		if starterNodes:FindFirstChild("StarterNode_Plot_" .. tostring(plotId)) == nil then
-			return false, "Missing StarterNode_Plot_" .. tostring(plotId)
+		if not CollectionService:HasTag(plot, Constants.TAG_PLOT) then
+			return failAt(plotPath, "missing tag " .. Constants.TAG_PLOT)
 		end
-		for _, req in ipairs({ "PlotBase", "SpawnPoint", "RanchArch", "SellStand", "Incubators", "HabitatPen", "UpgradeBoard" }) do
-			if plot:FindFirstChild(req) == nil then
-				return false, string.format("Plot_%d missing %s", plotId, req)
-			end
+		if plot:GetAttribute("PlotId") ~= plotId then
+			return failAt(plotPath, string.format("PlotId must equal %d", plotId))
 		end
 
-		local incubators = plot:FindFirstChild("Incubators") :: Instance
-		for _, slotId in ipairs({ "Incubator_1", "Incubator_2" }) do
+		local plotBase = plot:FindFirstChild("PlotBase")
+		if plotBase == nil or not plotBase:IsA("BasePart") then
+			return failAt(plotPath .. "/PlotBase", "expected BasePart")
+		end
+		if plot.PrimaryPart ~= plotBase then
+			return failAt(plotPath, "PrimaryPart must be PlotBase")
+		end
+
+		local spawnPoint = plot:FindFirstChild("SpawnPoint")
+		if spawnPoint == nil or not spawnPoint:IsA("SpawnLocation") then
+			return failAt(plotPath .. "/SpawnPoint", "expected SpawnLocation")
+		end
+
+		local archPath = plotPath .. "/RanchArch"
+		local arch = plot:FindFirstChild("RanchArch")
+		if arch == nil or not arch:IsA("Model") then
+			return failAt(archPath, "expected Model")
+		end
+		local header = arch:FindFirstChild("Header")
+		if header == nil or not header:IsA("BasePart") then
+			return failAt(archPath .. "/Header", "expected BasePart")
+		end
+		local ownerSign = header:FindFirstChild("OwnerSign")
+		if ownerSign == nil or not ownerSign:IsA("BillboardGui") then
+			return failAt(archPath .. "/Header/OwnerSign", "expected BillboardGui")
+		end
+		local trim = arch:FindFirstChild("ArchNeonTrim")
+		if trim == nil or not trim:IsA("BasePart") then
+			return failAt(archPath .. "/ArchNeonTrim", "expected BasePart")
+		end
+
+		local sellPath = plotPath .. "/SellStand"
+		local sellStand = plot:FindFirstChild("SellStand")
+		if sellStand == nil or not sellStand:IsA("BasePart") then
+			return failAt(sellPath, "expected BasePart")
+		end
+		if not CollectionService:HasTag(sellStand, Constants.TAG_SELL_STAND) then
+			return failAt(sellPath, "missing tag " .. Constants.TAG_SELL_STAND)
+		end
+		if sellStand:GetAttribute("PlotId") ~= plotId then
+			return failAt(sellPath, string.format("PlotId must equal %d", plotId))
+		end
+
+		local incubatorsPath = plotPath .. "/Incubators"
+		local incubators = plot:FindFirstChild("Incubators")
+		if incubators == nil or not incubators:IsA("Folder") then
+			return failAt(incubatorsPath, "expected Folder")
+		end
+		for idx, slotId in ipairs({ "Incubator_1", "Incubator_2" }) do
+			local slotPath = incubatorsPath .. "/" .. slotId
 			local slot = incubators:FindFirstChild(slotId)
-			if slot == nil or not CollectionService:HasTag(slot, Constants.TAG_INCUBATOR_SLOT) then
-				return false, string.format("Plot_%d missing %s", plotId, slotId)
+			if slot == nil or not slot:IsA("BasePart") then
+				return failAt(slotPath, "expected BasePart")
+			end
+			if not CollectionService:HasTag(slot, Constants.TAG_INCUBATOR_SLOT) then
+				return failAt(slotPath, "missing tag " .. Constants.TAG_INCUBATOR_SLOT)
+			end
+			if slot:GetAttribute("PlotId") ~= plotId then
+				return failAt(slotPath, string.format("PlotId must equal %d", plotId))
+			end
+			if slot:GetAttribute("SlotId") ~= slotId then
+				return failAt(slotPath, "SlotId must equal " .. slotId)
+			end
+			if slot:GetAttribute("UnlockedByDefault") ~= (idx == 1) then
+				return failAt(slotPath, "UnlockedByDefault mismatch")
 			end
 		end
 
-		local penSlots = (plot:FindFirstChild("HabitatPen") :: Instance):FindFirstChild("PenSlots")
-		if penSlots == nil then
-			return false, string.format("Plot_%d missing PenSlots", plotId)
+		local penPath = plotPath .. "/HabitatPen"
+		local pen = plot:FindFirstChild("HabitatPen")
+		if pen == nil or not pen:IsA("Model") then
+			return failAt(penPath, "expected Model")
 		end
-		for _, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
+		local penFloor = pen:FindFirstChild("PenFloor")
+		if penFloor == nil or not penFloor:IsA("BasePart") then
+			return failAt(penPath .. "/PenFloor", "expected BasePart")
+		end
+		local penSlotsPath = penPath .. "/PenSlots"
+		local penSlots = pen:FindFirstChild("PenSlots")
+		if penSlots == nil or not penSlots:IsA("Folder") then
+			return failAt(penSlotsPath, "expected Folder")
+		end
+		for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
+			local slotPath = penSlotsPath .. "/" .. slotId
 			local slot = penSlots:FindFirstChild(slotId)
-			if slot == nil or not CollectionService:HasTag(slot, Constants.TAG_PEN_SLOT) then
-				return false, string.format("Plot_%d missing %s", plotId, slotId)
+			if slot == nil or not slot:IsA("BasePart") then
+				return failAt(slotPath, "expected BasePart")
+			end
+			if not CollectionService:HasTag(slot, Constants.TAG_PEN_SLOT) then
+				return failAt(slotPath, "missing tag " .. Constants.TAG_PEN_SLOT)
+			end
+			if slot:GetAttribute("PlotId") ~= plotId then
+				return failAt(slotPath, string.format("PlotId must equal %d", plotId))
+			end
+			if slot:GetAttribute("SlotId") ~= slotId then
+				return failAt(slotPath, "SlotId must equal " .. slotId)
+			end
+			if slot:GetAttribute("UnlockedByDefault") ~= (idx == 1) then
+				return failAt(slotPath, "UnlockedByDefault mismatch")
 			end
 		end
 
-		local upgradeBoard = plot:FindFirstChild("UpgradeBoard") :: Instance
+		local upgradeBoardPath = plotPath .. "/UpgradeBoard"
+		local upgradeBoard = plot:FindFirstChild("UpgradeBoard")
+		if upgradeBoard == nil or not upgradeBoard:IsA("Folder") then
+			return failAt(upgradeBoardPath, "expected Folder")
+		end
 		for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
-			local pad = upgradeBoard:FindFirstChild("UpgradePad_" .. upgradeId)
-			if pad == nil or not CollectionService:HasTag(pad, Constants.TAG_UPGRADE_PAD) then
-				return false, string.format("Plot_%d missing UpgradePad_%s", plotId, upgradeId)
+			local padName = "UpgradePad_" .. upgradeId
+			local padPath = upgradeBoardPath .. "/" .. padName
+			local pad = upgradeBoard:FindFirstChild(padName)
+			if pad == nil or not pad:IsA("BasePart") then
+				return failAt(padPath, "expected BasePart")
+			end
+			if not CollectionService:HasTag(pad, Constants.TAG_UPGRADE_PAD) then
+				return failAt(padPath, "missing tag " .. Constants.TAG_UPGRADE_PAD)
+			end
+			if pad:GetAttribute("PlotId") ~= plotId then
+				return failAt(padPath, string.format("PlotId must equal %d", plotId))
+			end
+			if pad:GetAttribute("UpgradeId") ~= upgradeId then
+				return failAt(padPath, "UpgradeId must equal " .. upgradeId)
 			end
 		end
 	end
@@ -498,25 +655,26 @@ function GreyboxBuilder.Generate(options: GenerateOptions?): (boolean, string, F
 
 	local existing = targetParent:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
 	if existing ~= nil then
-		if not confirmReplace then
-			local existingFolder = if existing:IsA("Folder") then existing else nil
-			return false, "ExistingPresent", existingFolder
+		if not isOwnedGreyboxFolder(existing) then
+			-- Never destroy an untagged folder or non-Folder Studio object sharing this name.
+			return false, "UnownedCollision: " .. existing:GetFullName(), nil
 		end
-		-- Only remove our own tagged root; never touch Baseplate or unrelated user Studio assets.
-		existing:Destroy()
+		if not confirmReplace then
+			return false, "ExistingPresent", existing :: Folder
+		end
 	end
 
-	local root = Instance.new("Folder")
-	root.Name = Constants.GREYBOX_ROOT_NAME
-	root:SetAttribute("GreyboxVersion", Constants.GREYBOX_VERSION)
-	CollectionService:AddTag(root, Constants.TAG_GREYBOX_ROOT)
-	root.Parent = targetParent
+	-- Build and validate the entire candidate off-tree before replacing the existing owned root.
+	local candidateRoot = Instance.new("Folder")
+	candidateRoot.Name = Constants.GREYBOX_ROOT_NAME
+	candidateRoot:SetAttribute("GreyboxVersion", Constants.GREYBOX_VERSION)
+	CollectionService:AddTag(candidateRoot, Constants.TAG_GREYBOX_ROOT)
 
-	buildCentralCrater(root)
+	buildCentralCrater(candidateRoot)
 
 	local plotsFolder = Instance.new("Folder")
 	plotsFolder.Name = "Plots"
-	plotsFolder.Parent = root
+	plotsFolder.Parent = candidateRoot
 
 	local plotOrigins = {
 		[1] = Vector3.new(-75, 0.5, 0),
@@ -526,29 +684,36 @@ function GreyboxBuilder.Generate(options: GenerateOptions?): (boolean, string, F
 		buildPlot(plotsFolder, plotId, plotOrigins[plotId])
 	end
 
-	local valid, reason = GreyboxBuilder.ValidateHierarchy(root)
-	assert(valid, "Generated greybox map failed self-validation: " .. reason)
-
-	return true, "Created", root
-end
-
-function GreyboxBuilder.EnsureExists(parent: Instance?): Folder
-	local targetParent: Instance = parent or workspace
-	local existing = targetParent:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
-	if existing ~= nil and existing:IsA("Folder") then
-		local valid, reason = GreyboxBuilder.ValidateHierarchy(existing)
-		if valid then
-			return existing
-		end
-		warn("[GreyboxBuilder] Existing greybox map invalid (" .. reason .. "); rebuilding root.")
-		local ok, status, rebuilt = GreyboxBuilder.Generate({ ConfirmReplace = true, Parent = targetParent })
-		assert(ok and rebuilt ~= nil, "Failed rebuilding greybox map: " .. status)
-		return rebuilt :: Folder
+	local valid, reason = GreyboxBuilder.ValidateHierarchy(candidateRoot)
+	if not valid then
+		candidateRoot:Destroy()
+		return false, "CandidateValidationFailed: " .. reason, nil
 	end
 
-	local ok, status, created = GreyboxBuilder.Generate({ ConfirmReplace = false, Parent = targetParent })
-	assert(ok and created ~= nil, "Failed creating greybox map: " .. status)
-	return created :: Folder
+	if existing ~= nil then
+		existing:Destroy()
+	end
+	candidateRoot.Parent = targetParent
+
+	return true, "Created", candidateRoot
+end
+
+function GreyboxBuilder.EnsureExists(parent: Instance?): (boolean, string, Folder?)
+	local targetParent: Instance = parent or workspace
+	local existing = targetParent:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
+	if existing ~= nil then
+		if not isOwnedGreyboxFolder(existing) then
+			return false, "ConflictingUnownedRoot: " .. existing:GetFullName(), nil
+		end
+		local valid, reason = GreyboxBuilder.ValidateHierarchy(existing)
+		if valid then
+			return true, "ReusedExisting", existing :: Folder
+		end
+		-- Preserve invalid authored root untouched rather than silently destroying edits.
+		return false, "InvalidExistingRoot: " .. reason, existing :: Folder
+	end
+
+	return GreyboxBuilder.Generate({ ConfirmReplace = false, Parent = targetParent })
 end
 
 return GreyboxBuilder

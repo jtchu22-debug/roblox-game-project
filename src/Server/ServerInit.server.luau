@@ -1,7 +1,7 @@
 --!strict
 --[[
 	Script: ServerInit
-	Purpose: Single authoritative server entry point. Runs optional self-tests, then initializes and starts all Server Services.
+	Purpose: Single authoritative server entry point. Runs optional self-tests, initializes services, runs service self-tests, and starts services.
 	Connections: Lives at ServerScriptService.Server.ServerInit via Rojo (default.project.json).
 	How to Test in Studio: Press Play (F5) and look for "[StarfallRanch][SelfTest] PASS" and "[StarfallRanch][Server] ... initialized" in Output.
 ]]
@@ -19,9 +19,10 @@ if Constants.RUN_SELF_TESTS then
 end
 
 local ServicesFolder = script.Parent:WaitForChild("Services")
+local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 
 local serviceOrder: { Types.Service } = {
-	require(ServicesFolder:WaitForChild("NetworkService")) :: Types.Service,
+	NetworkService :: Types.Service,
 	require(ServicesFolder:WaitForChild("DataService")) :: Types.Service,
 	require(ServicesFolder:WaitForChild("EconomyService")) :: Types.Service,
 	require(ServicesFolder:WaitForChild("PlotService")) :: Types.Service,
@@ -30,6 +31,11 @@ local serviceOrder: { Types.Service } = {
 
 for _, service in ipairs(serviceOrder) do
 	service:Init()
+end
+
+if Constants.RUN_SELF_TESTS then
+	local netPassed = NetworkService.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d NetworkService test suites passed.", netPassed))
 end
 
 for _, service in ipairs(serviceOrder) do

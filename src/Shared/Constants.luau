@@ -1,13 +1,13 @@
 --!strict
 --[[
 	Module: Constants
-	Purpose: Authoritative structural and balance bounds shared across Client and Server.
+	Purpose: Authoritative structural, map-tag, remote-name, and balance bounds shared across Client and Server.
 	Connections: Imported by Server Services and Shared Util modules to avoid magic numbers.
 	How to Test in Studio: Verify values are frozen at runtime so no script mutates shared constants.
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.2-s1-02",
+	GAME_VERSION = "0.1.3-s1-03",
 	USE_MOCK_STORE = true,
 	RUN_SELF_TESTS = true,
 	SCHEMA_VERSION = 1,
@@ -38,6 +38,16 @@ local Constants = {
 
 	-- Networking & Security Bounds
 	REMOTES_FOLDER_NAME = "Remotes",
+	REMOTE_NAMES = table.freeze({
+		SyncOwnerState = "SyncOwnerState",
+		SyncPublicPlots = "SyncPublicPlots",
+		MeteorLifecycle = "MeteorLifecycle",
+		RequestInitialSnapshot = "RequestInitialSnapshot",
+		RequestPlotAction = "RequestPlotAction",
+		RequestStartCrack = "RequestStartCrack",
+		RequestFinishCrack = "RequestFinishCrack",
+		RequestBuyUpgrade = "RequestBuyUpgrade",
+	}),
 	MAX_CRACK_START_DISTANCE = 18,
 	MAX_CRACK_FINISH_DISTANCE = 22,
 	CRACK_CLAIM_TIMEOUT_SECONDS = 6.0,

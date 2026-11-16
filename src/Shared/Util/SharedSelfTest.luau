@@ -211,6 +211,10 @@ function SharedSelfTest.RunAll(): number
 		assert(not secondCreated and secondStatus == "ExistingPresent", "Should refuse overwrite when ConfirmReplace=false")
 		assert(secondRoot == root, "Existing root instance must remain untouched")
 
+		-- EnsureExists must reuse a valid owned root without replacing it
+		local ensureOk, ensureStatus, ensureRoot = GreyboxBuilder.EnsureExists(testContainer)
+		assert(ensureOk and ensureStatus == "ReusedExisting" and ensureRoot == root, "EnsureExists must reuse valid owned root")
+
 		-- Explicit ConfirmReplace=true must rebuild root WITHOUT removing unrelated sibling objects
 		local replaced, replaceStatus, newRoot = GreyboxBuilder.Generate({
 			ConfirmReplace = true,
@@ -219,7 +223,67 @@ function SharedSelfTest.RunAll(): number
 		assert(replaced and replaceStatus == "Created" and newRoot ~= nil and newRoot ~= root, "ConfirmReplace=true must rebuild root")
 		assert(testContainer:FindFirstChild("UnrelatedUserPart") == unrelatedPart, "Unrelated sibling objects must be preserved")
 
+		-- Contract rejections must include the offending path and reject bad classes, tags, and IDs
+		local rootRef = newRoot :: Folder
+		local plots = rootRef:FindFirstChild("Plots") :: Folder
+		local plot1 = plots:FindFirstChild("Plot_1") :: Model
+		local sellStand = plot1:FindFirstChild("SellStand") :: BasePart
+		game:GetService("CollectionService"):RemoveTag(sellStand, Constants.TAG_SELL_STAND)
+		local badTagOk, badTagReason = GreyboxBuilder.ValidateHierarchy(rootRef)
+		assert(not badTagOk and string.find(badTagReason, "Plots/Plot_1/SellStand", 1, true) ~= nil, "Missing sell tag must fail with path")
+
+		-- EnsureExists must preserve an invalid owned root untouched rather than auto-replacing it
+		local invalidOk, invalidStatus, invalidRef = GreyboxBuilder.EnsureExists(testContainer)
+		assert(not invalidOk and string.find(invalidStatus, "InvalidExistingRoot", 1, true) ~= nil, "EnsureExists must reject invalid root")
+		assert(invalidRef == rootRef and rootRef.Parent == testContainer, "Invalid owned root must remain untouched in place")
+
+		-- Restore sell tag, then verify bad SpawnPoint class, bad attribute ID, and tagged starter node fail with path
+		game:GetService("CollectionService"):AddTag(sellStand, Constants.TAG_SELL_STAND)
+		local origSpawn = plot1:FindFirstChild("SpawnPoint") :: SpawnLocation
+		origSpawn.Parent = nil
+		local fakeSpawn = Instance.new("Part")
+		fakeSpawn.Name = "SpawnPoint"
+		fakeSpawn.Parent = plot1
+		local badClassOk, badClassReason = GreyboxBuilder.ValidateHierarchy(rootRef)
+		assert(not badClassOk and string.find(badClassReason, "Plots/Plot_1/SpawnPoint", 1, true) ~= nil, "Wrong SpawnPoint class must fail with path")
+		fakeSpawn:Destroy()
+		origSpawn.Parent = plot1
+
+		sellStand:SetAttribute("PlotId", 99)
+		local badIdOk, badIdReason = GreyboxBuilder.ValidateHierarchy(rootRef)
+		assert(not badIdOk and string.find(badIdReason, "Plots/Plot_1/SellStand", 1, true) ~= nil, "Wrong PlotId attribute must fail with path")
+		sellStand:SetAttribute("PlotId", 1)
+
+		local crater = rootRef:FindFirstChild("CentralCrater") :: Model
+		local starterNode = (crater:FindFirstChild("StarterMeteorNodes") :: Folder):FindFirstChild("StarterNode_Plot_1") :: BasePart
+		game:GetService("CollectionService"):AddTag(starterNode, Constants.TAG_METEOR_NODE)
+		local badStarterOk, badStarterReason = GreyboxBuilder.ValidateHierarchy(rootRef)
+		assert(not badStarterOk and string.find(badStarterReason, "StarterMeteorNodes/StarterNode_Plot_1", 1, true) ~= nil, "Tagged starter node must fail with path")
+
 		testContainer:Destroy()
+
+		-- Same-named untagged Model with descendants must survive both Generate(ConfirmReplace=true) and EnsureExists()
+		local collisionContainer = Instance.new("Folder")
+		collisionContainer.Name = "_CollisionSelfTestContainer"
+		local authoredModel = Instance.new("Model")
+		authoredModel.Name = Constants.GREYBOX_ROOT_NAME
+		authoredModel.Parent = collisionContainer
+		local authoredChild = Instance.new("Part")
+		authoredChild.Name = "AuthoredChild"
+		authoredChild.Parent = authoredModel
+
+		local genColOk, genColStatus = GreyboxBuilder.Generate({
+			ConfirmReplace = true,
+			Parent = collisionContainer,
+		})
+		assert(not genColOk and string.find(genColStatus, "UnownedCollision", 1, true) ~= nil, "Generate must refuse replacing untagged same-name object")
+		assert(authoredModel.Parent == collisionContainer and authoredModel:FindFirstChild("AuthoredChild") == authoredChild, "Unowned model and descendants must survive Generate")
+
+		local ensColOk, ensColStatus = GreyboxBuilder.EnsureExists(collisionContainer)
+		assert(not ensColOk and string.find(ensColStatus, "ConflictingUnownedRoot", 1, true) ~= nil, "EnsureExists must reject conflicting unowned object")
+		assert(authoredModel.Parent == collisionContainer and authoredModel:FindFirstChild("AuthoredChild") == authoredChild, "Unowned model and descendants must survive EnsureExists")
+
+		collisionContainer:Destroy()
 	end)
 	passedCount += 1
 
