@@ -76,3 +76,30 @@ When reviewing this Phase 0 package, please evaluate and document your findings 
 - **Monetization:** Correct obsolete payout program and remove indirect paid random rewards, probability boosts, progression advantage and social-spending pressure.
 - **Actions:** See R-001 through R-010 in [AGENT_TASKS.md](./AGENT_TASKS.md) and individual ADR dispositions in [DECISIONS.md](./DECISIONS.md).
 - **Gate:** T-011 complete on review branch; T-012 and human approval remain outstanding. Do not implement Phase 1 yet.
+
+---
+
+### Review #002 — S1-02 greybox generator (2026-11-15)
+
+**Verdict — REJECT**
+
+Reviewed [`33db18c`](https://github.com/jtchu22-debug/roblox-game-project/commit/33db18c2f5966990ff2bd38f5203926dd7f46eb9), the S1-02 commit on `main`. This was a static review of the changed map builder, Studio tool, shared self-test, and server boot path against the approved S1-02 and ADR-006 requirements. Roblox Studio execution and viewport checks remain unverified.
+
+The normal empty-place path constructs the tagged root, the central crater, two ranch plots, and the interaction anchors. The geometry joins the crater and both plots at their bridge entrances. The upgrade pads use the existing upgrade config, and server startup generates the map before the services start. A normal rerun preserves an existing valid map. The confirmed replacement and invalid-map startup paths fail the preservation requirement.
+
+#### Required fixes
+
+1. **High — Protect authored Studio objects during replacement.** `Generate` destroys any child with the root name when `ConfirmReplace` is true, even if it is an unrelated model or untagged folder. `EnsureExists` also silently enables replacement whenever a same-named folder fails validation. In Edit mode the command can remove the unrelated object's descendants from the authoring place. At runtime the auto-repair discards authored map edits in the current server, and a non-folder name collision aborts service startup with a generic error. Require the expected folder and ownership tag before any replacement. Have runtime startup reuse a valid root, generate on absence, and report a clear, non-mutating error on invalid or conflicting content. For explicit replacement, build and validate the candidate off-tree before swapping out the owned root. [Replacement and startup paths](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/src/Shared/Util/GreyboxBuilder.luau#L494-L551) · [Studio command](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/tools/studio/GenerateGreyboxMap.luau#L16-L29)
+2. **Medium — Validate the map contract upcoming services will consume.** `ValidateHierarchy` accepts an untagged `SellStand`, a wrong-class `SpawnPoint`, and tagged anchors with incorrect or missing identifiers. A map saved through Studio can pass startup checks and then leave a plot without a discoverable sell stand or bind an anchor to the wrong slot. Check the classes, relevant tags and expected `PlotId`, `SlotId`, `UpgradeId`, `NodeIndex` and starter metadata before accepting a root. Return the offending path in the error. Discover within the validated root. The six wild nodes are tagged, while the two starter nodes are in a separate untagged folder. Keep those collections explicit in the S1-07 contract so wild selection preserves the guaranteed starter meteor. [Hierarchy checks](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/src/Shared/Util/GreyboxBuilder.luau#L415-L491) · [Wild and starter generation](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/src/Shared/Util/GreyboxBuilder.luau#L158-L203)
+
+#### Verification
+
+Extend the existing map suite to verify that a same-named untagged object and its descendants survive both entry points, a damaged owned root survives startup refusal, a valid owned root is reused, and a bad class, tag or ID fails validation. The current test's unrelated object is a differently named sibling, so it misses the overwrite bug. Then run the command in an isolated Studio place in Edit mode and use Play to verify a clean server startup and traversable bridges. [Existing self-test](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/src/Shared/Util/SharedSelfTest.luau#L189-L224) · [Startup sequence](https://github.com/jtchu22-debug/roblox-game-project/blob/33db18c2f5966990ff2bd38f5203926dd7f46eb9/src/Server/ServerInit.server.luau#L14-L37)
+
+#### Security and remaining scope
+
+The map builder runs from the server bootstrap and exposes no gameplay request handler. Currency, critter grants, and progression authority remain unverified because the relevant server services are stubs. Plot assignment and player-specific spawning belong to S1-06. Require server-owned plot, distance, readiness and progression checks when S1-03–S1-07 connect inputs to state changes. Studio anchors and their replicated metadata are discovery data. [Roblox client-server security guidance](https://create.roblox.com/docs/scripting/security/client-server-boundary)
+
+**Optional —** Keep the two-plot layout and current module organization for Stage 1. Move plot origins into layout data when S3-03 introduces six plots. Limit the startup self-test to Studio or a deliberate test run before publishing a prototype.
+
+**Handoff to Gemini —** Fix the two S1-02 findings and attach the focused Studio results before S1-06 and S1-07 rely on the map. S1-03 can proceed independently of the map fixes.
