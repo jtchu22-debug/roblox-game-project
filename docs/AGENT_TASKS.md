@@ -67,25 +67,24 @@
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
 | **S4-01** | **P2** (`R-010`) | `S2-01` (Go) | Gemini + Human | Validate **one** sample Blender `.fbx` export (`StarSlime`) in an isolated Studio place (scale, normals, pivot, materials), then update `generate_lowpoly_assets.py` (embedded meteor shards, critter eyes/tails, safe rerun prompt, FBX exporter) and produce 3 critters + 3 meteor models ($\le 400$ tris each). | `tools/blender/generate_lowpoly_assets.py` | `[ ]` |
 | **S4-02** | **P1** | `S3-04`, `S4-01` | Gemini | Add simple **Discovered Species Checklist** UI (no stat multipliers), optional **Radiant** cosmetic hatch variant ($\le 30$ critters server-wide, $\le 8$ studs max height), Touch/Gamepad focus & Safe-Area polish. | `src/Client/`, `src/Shared/` | `[ ]` |
-| **S4-03** | **P1** | `S4-02` | Human + ChatGPT | Run 15–30 min published full-server soak test on real low-end phone/tablet hardware verifying sustained $\ge 30$ FPS baseline and zero memory leaks. | `docs/AGENT_REVIEWS.md` | `[ ]` |
+| **S4-03** | **P1** | `S4-02` | Human + ChatGPT | Run 15–30 min full-server soak test in a published private test place on real low-end phone/tablet hardware verifying sustained $\ge 30$ FPS baseline and zero memory leaks. | `docs/AGENT_REVIEWS.md` | `[ ]` |
 
 ---
 
-## Stage 5: Controlled Soft Launch & Telemetry (Priority P2)
-
-| Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
-| :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S5-01** | **P2** | `S4-03` | Gemini | Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
-| **S5-02** | **P2** | `S5-01` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
-
----
-
-## Stage 6: Collection Expansion for Wider Public Release
-
-Start after Stage 5 final testing passes and the controlled soft-launch results are recorded.
+## Stage 5: Private Baseline Testing & Launch Preparation
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :--- | :--- | :--- | :---: |
-| **S6-01** | **P2** | `S5-02` | Gemini + Human | Define the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) and server-owned drop pools for Ember, Frost, and Astral. Preserve the guaranteed starter Star-Slime. Tune hatch times, odds, income and sell prices against Stage 5 pacing. | Critter and meteor configs | `[ ]` |
-| **S6-02** | **P2** | `S6-01` | Gemini | Add the new critter assets, collection rarity labels, and the Astral-exclusive Secret Eclipse Dragon. Show the Secret silhouette and hint before discovery. Respect Reduced Motion on the hatch reveal. | Critter assets and collection UI | `[ ]` |
-| **S6-03** | **P2** | `S6-01`, `S6-02` | Gemini + Human + ChatGPT | Verify all species have an acquisition path, Secret hatches only from Astral Star-Pods, existing saves load, new discoveries persist, and mobile performance and upgrade pacing remain within targets. Sign off on the wider public rollout after these checks pass. | `docs/AGENT_REVIEWS.md` | `[ ]` |
+| **S5-01** | **P2** | `S4-03` | Gemini | Instrument and verify the anonymous onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy events in a private test build. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
+| **S5-02** | **P1** | `S5-01` | Gemini + Human + ChatGPT | Run invite-only baseline playtests and onboarding, multiplayer, save/load, and economy regressions. Record pacing and resolve core blockers. | `docs/AGENT_REVIEWS.md` | `[ ]` |
+
+---
+
+## Stage 6: Collection Expansion for the First Public Release
+
+| Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
+| :---: | :---: | :---: | :--- | :--- | :--- | :---: |
+| **S6-01** | **P1** | `S5-02` | Gemini + Human | Implement the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) and the Ember, Frost, and Astral drop pools. Preserve the guaranteed starter Star-Slime and tune hatches, odds, income, and sell prices. | Critter and meteor configs | `[ ]` |
+| **S6-02** | **P1** | `S6-01` | Gemini | Finish critter art, rarity labels, the collection book, and the Astral-exclusive Secret Eclipse Dragon. Add the silhouette, hint, and reveal with Reduced Motion support. | Critter assets and collection UI | `[ ]` |
+| **S6-03** | **P1** | `S6-02` | Gemini + Human + ChatGPT | Test the content-complete private release candidate. Verify acquisition, Secret and starter behavior, save/load and collection persistence, full ranch progression, multiplayer, accessibility, and mobile performance. Record final sign-off. | `docs/AGENT_REVIEWS.md` | `[ ]` |
+| **S6-04** | **P1** | `S6-03` | Human | Publish the signed-off build as the first public release with all 12 critters and the Secret chase available on day one. | Public launch | `[ ]` |
