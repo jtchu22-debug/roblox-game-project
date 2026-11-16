@@ -77,3 +77,15 @@
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
 | **S5-01** | **P2** | `S4-03` | Gemini | Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
 | **S5-02** | **P2** | `S5-01` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
+
+---
+
+## Stage 6: Collection Expansion for Wider Public Release
+
+Start after Stage 5 final testing passes and the controlled soft-launch results are recorded.
+
+| Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
+| :---: | :---: | :---: | :--- | :--- | :--- | :---: |
+| **S6-01** | **P2** | `S5-02` | Gemini + Human | Define the [12-species launch roster](./GAME_DESIGN.md#7-stage-6-collection-expansion) and server-owned drop pools for Ember, Frost, and Astral. Preserve the guaranteed starter Star-Slime. Tune hatch times, odds, income and sell prices against Stage 5 pacing. | Critter and meteor configs | `[ ]` |
+| **S6-02** | **P2** | `S6-01` | Gemini | Add the new critter assets, collection rarity labels, and the Astral-exclusive Secret Eclipse Dragon. Show the Secret silhouette and hint before discovery. Respect Reduced Motion on the hatch reveal. | Critter assets and collection UI | `[ ]` |
+| **S6-03** | **P2** | `S6-01`, `S6-02` | Gemini + Human + ChatGPT | Verify all species have an acquisition path, Secret hatches only from Astral Star-Pods, existing saves load, new discoveries persist, and mobile performance and upgrade pacing remain within targets. Sign off on the wider public rollout after these checks pass. | `docs/AGENT_REVIEWS.md` | `[ ]` |
