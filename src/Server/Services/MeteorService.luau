@@ -68,7 +68,16 @@ local starterByPlotId: { [number]: string } = {}
 local starterClaimedByUserId: { [number]: boolean } = {}
 local activeClaimsByUserId: { [number]: ActiveClaim } = {}
 local characterConnsByUserId: { [number]: { RBXScriptConnection } } = {}
+local activeHumanoidConnsByUserId: { [number]: { RBXScriptConnection } } = {}
+local lifecycleObserver: ((payload: { [string]: any }) -> ())? = nil
 local watcherRunning = false
+
+local function publishMeteorLifecycle(payload: { [string]: any }): ()
+	if lifecycleObserver ~= nil then
+		lifecycleObserver(payload)
+	end
+	NetworkService.BroadcastMeteorLifecycle(payload)
+end
 
 local function isFiniteVector3(v: Vector3): boolean
 	return v.X == v.X
@@ -114,7 +123,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	local body = Instance.new("Part")
 	body.Name = "RockBody"
 	body.Size = Vector3.new(3.8, 3.2, 3.8)
-	body.CFrame = CFrame.new(basePos) * CFrame.Angles(0, math.rad((#meteor.UID * 37) % 360), 0)
+	body.CFrame = CFrame.new(basePos) * CFrame.Angles(0, math.rad(((string.byte(meteor.UID, 1) or 0) * 37) % 360), 0)
 	body.Color = traitDef.RockColor
 	body.Material = Enum.Material.SmoothPlastic
 	body.Anchored = true
@@ -236,6 +245,14 @@ local function removeMeteorInternal(meteorUID: string): ()
 		return
 	end
 
+	if meteor.ClaimedByUserId ~= nil then
+		local claim = activeClaimsByUserId[meteor.ClaimedByUserId]
+		if claim ~= nil and claim.MeteorUID == meteorUID then
+			activeClaimsByUserId[meteor.ClaimedByUserId] = nil
+		end
+		meteor.ClaimedByUserId = nil
+	end
+
 	if meteor.IsStarter and meteor.PlotId ~= nil then
 		if starterByPlotId[meteor.PlotId] == meteorUID then
 			starterByPlotId[meteor.PlotId] = nil
@@ -264,6 +281,10 @@ function MeteorService.ReleaseClaimForUserId(userId: number): boolean
 	if meteor ~= nil and meteor.ClaimedByUserId == userId then
 		meteor.ClaimedByUserId = nil
 		setMeteorPromptEnabled(meteor, true)
+		publishMeteorLifecycle({
+			Action = "ClaimReleased",
+			MeteorUID = meteor.UID,
+		})
 	end
 	return true
 end
@@ -282,7 +303,7 @@ function MeteorService.SpawnStarterMeteorForPlot(plotId: number, ownerUserId: nu
 		return false, "MissingStarterNode", nil
 	end
 
-	local uid = "starter-" .. HttpService:GenerateGUID(false)
+	local uid = HttpService:GenerateGUID(false)
 	local meteor: ActiveMeteor = {
 		UID = uid,
 		Trait = "Ember",
@@ -319,7 +340,7 @@ function MeteorService.SpawnWildMeteorAtNode(nodeName: string, traitOverride: Ty
 	end
 
 	local trait = traitOverride or rollWeightedWildTrait(serverRng)
-	local uid = "wild-" .. HttpService:GenerateGUID(false)
+	local uid = HttpService:GenerateGUID(false)
 	local meteor: ActiveMeteor = {
 		UID = uid,
 		Trait = trait,
@@ -347,20 +368,66 @@ function MeteorService.GetActiveWildMeteorCount(): number
 	return count
 end
 
-function MeteorService.SweepExpiredClaims(nowClock: number): number
+local function getLiveCharacterPosition(player: Player): Vector3?
+	local char = player.Character
+	if char == nil then
+		return nil
+	end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local rootPart = char:FindFirstChild("HumanoidRootPart")
+	if humanoid == nil or humanoid.Health <= 0 or rootPart == nil or not rootPart:IsA("BasePart") then
+		return nil
+	end
+	return rootPart.Position
+end
+
+local function resolveLivePositionForUserId(userId: number): Vector3?
+	local player = Players:GetPlayerByUserId(userId)
+	if player == nil then
+		return nil
+	end
+	return getLiveCharacterPosition(player)
+end
+
+function MeteorService.SweepActiveClaims(nowClock: number, resolvePositionFn: ((userId: number) -> Vector3?)?): number
+	if not isFiniteClock(nowClock) then
+		return 0
+	end
+
+	local posResolver = resolvePositionFn or resolveLivePositionForUserId
 	local releasedCount = 0
 	local toRelease: { number } = {}
+
 	for userId, claim in pairs(activeClaimsByUserId) do
-		if nowClock > claim.Deadline then
+		local meteor = activeMeteors[claim.MeteorUID]
+		if meteor == nil or meteor.ClaimedByUserId ~= userId then
 			table.insert(toRelease, userId)
+		elseif nowClock > claim.Deadline then
+			table.insert(toRelease, userId)
+		else
+			local pos = posResolver(userId)
+			if pos == nil or not isFiniteVector3(pos) then
+				table.insert(toRelease, userId)
+			else
+				local distance = (pos - meteor.Position).Magnitude
+				if distance ~= distance or math.abs(distance) == math.huge or distance > Constants.MAX_CRACK_ABANDON_DISTANCE then
+					table.insert(toRelease, userId)
+				end
+			end
 		end
 	end
+
 	for _, userId in ipairs(toRelease) do
 		if MeteorService.ReleaseClaimForUserId(userId) then
 			releasedCount += 1
 		end
 	end
+
 	return releasedCount
+end
+
+function MeteorService.SweepExpiredClaims(nowClock: number, resolvePositionFn: ((userId: number) -> Vector3?)?): number
+	return MeteorService.SweepActiveClaims(nowClock, resolvePositionFn)
 end
 
 function MeteorService.StartCrackAtPosition(
@@ -401,7 +468,22 @@ function MeteorService.StartCrackAtPosition(
 		return { Ok = false, Reason = "NotStarterOwner" }
 	end
 	if meteor.ClaimedByUserId ~= nil then
-		return { Ok = false, Reason = "MeteorAlreadyClaimed" }
+		local holderUserId = meteor.ClaimedByUserId :: number
+		local holderClaim = activeClaimsByUserId[holderUserId]
+		if holderClaim == nil or holderClaim.MeteorUID ~= meteorUID then
+			meteor.ClaimedByUserId = nil
+			setMeteorPromptEnabled(meteor, true)
+			publishMeteorLifecycle({
+				Action = "ClaimReleased",
+				MeteorUID = meteor.UID,
+			})
+		elseif nowClock > holderClaim.Deadline then
+			MeteorService.ReleaseClaimForUserId(holderUserId)
+		end
+
+		if meteor.ClaimedByUserId ~= nil then
+			return { Ok = false, Reason = "MeteorAlreadyClaimed" }
+		end
 	end
 
 	if not isFiniteVector3(worldPos) then
@@ -427,6 +509,12 @@ function MeteorService.StartCrackAtPosition(
 		StartedAt = nowClock,
 		Deadline = nowClock + Constants.CRACK_CLAIM_TIMEOUT_SECONDS,
 	}
+
+	publishMeteorLifecycle({
+		Action = "Claimed",
+		MeteorUID = meteorUID,
+		ClaimedBy = userId,
+	})
 
 	return {
 		Ok = true,
@@ -483,10 +571,12 @@ function MeteorService.FinishCrackAtPosition(
 	end
 
 	if not isFiniteVector3(worldPos) then
+		MeteorService.ReleaseClaimForUserId(userId)
 		return { Ok = false, Reason = "OutOfRange" }
 	end
 	local distance = (worldPos - meteor.Position).Magnitude
 	if distance ~= distance or math.abs(distance) == math.huge or distance > Constants.MAX_CRACK_FINISH_DISTANCE then
+		MeteorService.ReleaseClaimForUserId(userId)
 		return { Ok = false, Reason = "OutOfRange" }
 	end
 
@@ -515,6 +605,10 @@ function MeteorService.FinishCrackAtPosition(
 	end
 
 	removeMeteorInternal(meteorUID)
+	publishMeteorLifecycle({
+		Action = "Despawn",
+		MeteorUID = meteorUID,
+	})
 
 	return {
 		Ok = true,
@@ -524,57 +618,39 @@ function MeteorService.FinishCrackAtPosition(
 	}
 end
 
-local function getLiveCharacterPosition(player: Player): Vector3?
-	local char = player.Character
-	if char == nil then
-		return nil
-	end
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	local rootPart = char:FindFirstChild("HumanoidRootPart")
-	if humanoid == nil or humanoid.Health <= 0 or rootPart == nil or not rootPart:IsA("BasePart") then
-		return nil
-	end
-	return rootPart.Position
-end
-
 local function handleStartCrackRequest(player: Player, meteorUID: string): NetworkService.RemoteResult
 	local pos = getLiveCharacterPosition(player)
 	if pos == nil then
 		return { Ok = false, Reason = "CharacterUnavailable" }
 	end
-	local res = MeteorService.StartCrackAtPosition(player.UserId, pos, meteorUID, workspace:GetServerTimeNow())
-	if res.Ok then
-		NetworkService.BroadcastMeteorLifecycle({
-			Action = "Claimed",
-			MeteorUID = meteorUID,
-			ClaimedBy = player.UserId,
-		})
-	end
-	return res
+	return MeteorService.StartCrackAtPosition(player.UserId, pos, meteorUID, workspace:GetServerTimeNow())
 end
 
 local function handleFinishCrackRequest(player: Player, meteorUID: string, attemptNonce: string): NetworkService.RemoteResult
 	local pos = getLiveCharacterPosition(player)
 	if pos == nil then
+		MeteorService.ReleaseClaimForUserId(player.UserId)
 		return { Ok = false, Reason = "CharacterUnavailable" }
 	end
 	local res = MeteorService.FinishCrackAtPosition(player.UserId, pos, meteorUID, attemptNonce, workspace:GetServerTimeNow())
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
-		NetworkService.BroadcastMeteorLifecycle({
-			Action = "Despawn",
-			MeteorUID = meteorUID,
-		})
-	elseif res.Reason == "BagFull" or res.Reason == "ClaimExpired" then
-		NetworkService.BroadcastMeteorLifecycle({
-			Action = "ClaimReleased",
-			MeteorUID = meteorUID,
-		})
 	end
 	return res
 end
 
+local function disconnectHumanoidListeners(userId: number): ()
+	local conns = activeHumanoidConnsByUserId[userId]
+	if conns ~= nil then
+		for _, conn in ipairs(conns) do
+			conn:Disconnect()
+		end
+		activeHumanoidConnsByUserId[userId] = nil
+	end
+end
+
 local function disconnectCharacterListeners(userId: number): ()
+	disconnectHumanoidListeners(userId)
 	local conns = characterConnsByUserId[userId]
 	if conns ~= nil then
 		for _, conn in ipairs(conns) do
@@ -584,34 +660,84 @@ local function disconnectCharacterListeners(userId: number): ()
 	end
 end
 
+function MeteorService.HandleCharacterLifecycleReset(userId: number): boolean
+	return MeteorService.ReleaseClaimForUserId(userId)
+end
+
+function MeteorService.HandlePlotReleased(plotId: number, userId: number): ()
+	local starterUid = starterByPlotId[plotId]
+	if starterUid ~= nil then
+		removeMeteorInternal(starterUid)
+		publishMeteorLifecycle({
+			Action = "Despawn",
+			MeteorUID = starterUid,
+		})
+	end
+
+	MeteorService.ReleaseClaimForUserId(userId)
+	disconnectCharacterListeners(userId)
+	starterClaimedByUserId[userId] = nil
+end
+
+function MeteorService.HandlePlayerClosing(userId: number): ()
+	MeteorService.ReleaseClaimForUserId(userId)
+	disconnectCharacterListeners(userId)
+end
+
 local function attachCharacterClaimCleanup(player: Player): ()
 	local userId = player.UserId
 	disconnectCharacterListeners(userId)
 
-	local conns: { RBXScriptConnection } = {}
-	local function bindHumanoid(char: Model)
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			table.insert(conns, hum.Died:Connect(function()
-				if MeteorService.ReleaseClaimForUserId(userId) then
-					-- Claim released cleanly on death
-				end
+	local charConns: { RBXScriptConnection } = {}
+	local function bindHumanoidFromCharacter(char: Model)
+		disconnectHumanoidListeners(userId)
+		local humConns: { RBXScriptConnection } = {}
+		local attachedHumanoid: Humanoid? = nil
+		local childAddedConn: RBXScriptConnection? = nil
+
+		local function attachToHumanoid(hum: Humanoid)
+			if attachedHumanoid == hum then
+				return
+			end
+			attachedHumanoid = hum
+			if childAddedConn ~= nil then
+				childAddedConn:Disconnect()
+				childAddedConn = nil
+			end
+			table.insert(humConns, hum.Died:Connect(function()
+				MeteorService.HandleCharacterLifecycleReset(userId)
 			end))
 		end
+
+		local existingHum = char:FindFirstChildOfClass("Humanoid")
+		if existingHum ~= nil then
+			attachToHumanoid(existingHum)
+		else
+			local conn = char.ChildAdded:Connect(function(child: Instance)
+				if child:IsA("Humanoid") then
+					attachToHumanoid(child)
+				end
+			end)
+			childAddedConn = conn
+			table.insert(humConns, conn)
+		end
+
+		activeHumanoidConnsByUserId[userId] = humConns
 	end
 
 	if player.Character ~= nil then
-		bindHumanoid(player.Character)
+		bindHumanoidFromCharacter(player.Character)
 	end
-	table.insert(conns, player.CharacterAdded:Connect(function(newChar: Model)
-		MeteorService.ReleaseClaimForUserId(userId)
-		bindHumanoid(newChar)
+	table.insert(charConns, player.CharacterAdded:Connect(function(newChar: Model)
+		MeteorService.HandleCharacterLifecycleReset(userId)
+		bindHumanoidFromCharacter(newChar)
 	end))
-	table.insert(conns, player.CharacterRemoving:Connect(function()
-		MeteorService.ReleaseClaimForUserId(userId)
+	table.insert(charConns, player.CharacterRemoving:Connect(function()
+		disconnectHumanoidListeners(userId)
+		MeteorService.HandleCharacterLifecycleReset(userId)
 	end))
 
-	characterConnsByUserId[userId] = conns
+	characterConnsByUserId[userId] = charConns
 end
 
 local function populateWildMeteorsUpToCap(nowClock: number): ()
@@ -623,7 +749,7 @@ local function populateWildMeteorsUpToCap(nowClock: number): ()
 			if wildNodeOccupied[nodeName] == nil and nowClock >= cooldownUntil then
 				local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(nodeName, nil, nowClock)
 				if ok and meteor ~= nil then
-					NetworkService.BroadcastMeteorLifecycle({
+					publishMeteorLifecycle({
 						Action = "Spawn",
 						MeteorUID = meteor.UID,
 						Trait = meteor.Trait,
@@ -685,7 +811,7 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 		end
 		local ok, _, meteor = MeteorService.SpawnStarterMeteorForPlot(plotId, userId, workspace:GetServerTimeNow())
 		if ok and meteor ~= nil then
-			NetworkService.BroadcastMeteorLifecycle({
+			publishMeteorLifecycle({
 				Action = "Spawn",
 				MeteorUID = meteor.UID,
 				Trait = meteor.Trait,
@@ -697,22 +823,11 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 	end)
 
 	PlotService.OnPlotReleased(function(plotId: number, userId: number)
-		MeteorService.ReleaseClaimForUserId(userId)
-		disconnectCharacterListeners(userId)
-		starterClaimedByUserId[userId] = nil
-		local starterUid = starterByPlotId[plotId]
-		if starterUid ~= nil then
-			removeMeteorInternal(starterUid)
-			NetworkService.BroadcastMeteorLifecycle({
-				Action = "Despawn",
-				MeteorUID = starterUid,
-			})
-		end
+		MeteorService.HandlePlotReleased(plotId, userId)
 	end)
 
 	DataService.OnPlayerClosing(function(player: Player)
-		MeteorService.ReleaseClaimForUserId(player.UserId)
-		disconnectCharacterListeners(player.UserId)
+		MeteorService.HandlePlayerClosing(player.UserId)
 	end)
 
 	DataService.OnSnapshotDelivered(function(player: Player)
@@ -738,11 +853,28 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 			while watcherRunning do
 				task.wait(0.5)
 				local nowClock = workspace:GetServerTimeNow()
-				MeteorService.SweepExpiredClaims(nowClock)
+				MeteorService.SweepActiveClaims(nowClock)
 				populateWildMeteorsUpToCap(nowClock)
 			end
 		end)
 	end
+end
+
+local function countBagItems(profile: Types.PlayerProfileData): number
+	local count = 0
+	for _, item in pairs(profile.Items) do
+		if item.State == "PodInBag" or item.State == "HatchedInBag" then
+			count += 1
+		end
+	end
+	return count
+end
+
+local function isPromptEnabled(meteor: ActiveMeteor): boolean
+	local model = meteor.Model
+	local primary = if model ~= nil then model.PrimaryPart else nil
+	local prompt = if primary ~= nil then primary:FindFirstChild("RescuePrompt") else nil
+	return prompt ~= nil and prompt:IsA("ProximityPrompt") and prompt.Enabled
 end
 
 function MeteorService.RunSelfTest(): number
@@ -751,6 +883,22 @@ function MeteorService.RunSelfTest(): number
 	local u1 = -930001
 	local u2 = -930002
 	local uUnassigned = -930003
+	local createdMeteorUIDs: { string } = {}
+	local events: { { [string]: any } } = {}
+
+	local function clearEvents(): ()
+		events = {}
+	end
+
+	local function countEvents(action: string, meteorUID: string?): number
+		local total = 0
+		for _, ev in ipairs(events) do
+			if ev.Action == action and (meteorUID == nil or ev.MeteorUID == meteorUID) then
+				total += 1
+			end
+		end
+		return total
+	end
 
 	PlotService.ReleasePlotForUserId(u1)
 	PlotService.ReleasePlotForUserId(u2)
@@ -758,102 +906,272 @@ function MeteorService.RunSelfTest(): number
 	DataService.EndMockSession(u2)
 	DataService.EndMockSession(uUnassigned)
 
-	DataService.BeginMockSession(u1, nil)
-	DataService.CompleteMockSession(u1, 5000)
-	DataService.BeginMockSession(u2, nil)
-	DataService.CompleteMockSession(u2, 5000)
+	local testOk, testErr = pcall(function()
+		lifecycleObserver = function(payload: { [string]: any })
+			table.insert(events, payload)
+		end
 
-	local p1 = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
-	local p2 = DataService.GetProfileByUserId(u2) :: Types.PlayerProfileData
+		DataService.BeginMockSession(u1, nil)
+		DataService.CompleteMockSession(u1, 5000)
+		DataService.BeginMockSession(u2, nil)
+		DataService.CompleteMockSession(u2, 5000)
 
-	assert((PlotService.AssignPlotForUserId(u1, "MeteorTester1", p1, nil)), "Assign Plot 1")
-	assert((PlotService.AssignPlotForUserId(u2, "MeteorTester2", p2, nil)), "Assign Plot 2")
+		local p1 = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
+		local p2 = DataService.GetProfileByUserId(u2) :: Types.PlayerProfileData
 
-	-- 1. Starter meteor scoping & guaranteed StarSlime drop
-	local sOk, _, starter1 = MeteorService.SpawnStarterMeteorForPlot(1, u1, 5000)
-	assert(sOk and starter1 ~= nil, "Starter meteor spawns for Plot 1")
-	local starterObj = starter1 :: ActiveMeteor
+		assert((PlotService.AssignPlotForUserId(u1, "MeteorTester1", p1, nil)), "Assign Plot 1")
+		assert((PlotService.AssignPlotForUserId(u2, "MeteorTester2", p2, nil)), "Assign Plot 2")
 
-	-- Player 2 cannot claim Player 1's starter meteor
-	local crossStart = MeteorService.StartCrackAtPosition(u2, starterObj.Position, starterObj.UID, 5001)
-	assert(not crossStart.Ok and crossStart.Reason == "NotStarterOwner", "Other player blocked from starter meteor")
+		-- 1. Starter UID validation, plot scoping, guaranteed 1-pod StarSlime grant & single Despawn
+		local sOk, _, starter1 = MeteorService.SpawnStarterMeteorForPlot(1, u1, 5000)
+		assert(sOk and starter1 ~= nil, "Starter meteor spawns for Plot 1")
+		local starterObj = starter1 :: ActiveMeteor
+		table.insert(createdMeteorUIDs, starterObj.UID)
 
-	-- Unassigned user blocked even with Ready session
-	DataService.BeginMockSession(uUnassigned, nil)
-	DataService.CompleteMockSession(uUnassigned, 5000)
-	local noPlotStart = MeteorService.StartCrackAtPosition(uUnassigned, starterObj.Position, starterObj.UID, 5001)
-	assert(not noPlotStart.Ok and noPlotStart.Reason == "NoAssignedPlot", "Unassigned player blocked")
-	DataService.EndMockSession(uUnassigned)
+		assert(#starterObj.UID <= Constants.MAX_STRING_ID_LENGTH, "Starter MeteorUID stays within MAX_STRING_ID_LENGTH")
+		local starterStartValid = NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestStartCrack, starterObj.UID)
+		assert(starterStartValid, "Generated starter UID must pass RequestStartCrack validation")
 
-	-- Player 1 completes starter crack cleanly
-	local p1Start = MeteorService.StartCrackAtPosition(u1, starterObj.Position, starterObj.UID, 5001)
-	assert(p1Start.Ok and p1Start.AttemptNonce ~= nil, "Owner starts starter crack")
-	local p1Finish = MeteorService.FinishCrackAtPosition(u1, starterObj.Position, starterObj.UID, p1Start.AttemptNonce :: string, 5002, rng)
-	assert(p1Finish.Ok and p1Finish.SpeciesId == "StarSlime", "Starter meteor guarantees StarSlime")
-	assert(activeMeteors[starterObj.UID] == nil, "Starter meteor despawned after grant")
-	passed += 1
+		local crossStart = MeteorService.StartCrackAtPosition(u2, starterObj.Position, starterObj.UID, 5001)
+		assert(not crossStart.Ok and crossStart.Reason == "NotStarterOwner", "Other player blocked from starter meteor")
 
-	-- 2. Simultaneous 2-player claim race, forged nonce, TooFast, and replay rejection
-	local wOk, _, wild1 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_1", "Astral", 5003)
-	assert(wOk and wild1 ~= nil, "Wild meteor spawns on MeteorNode_1")
-	local wildObj = wild1 :: ActiveMeteor
+		DataService.BeginMockSession(uUnassigned, nil)
+		DataService.CompleteMockSession(uUnassigned, 5000)
+		local noPlotStart = MeteorService.StartCrackAtPosition(uUnassigned, starterObj.Position, starterObj.UID, 5001)
+		assert(not noPlotStart.Ok and noPlotStart.Reason == "NoAssignedPlot", "Unassigned player blocked")
+		DataService.EndMockSession(uUnassigned)
 
-	local race1 = MeteorService.StartCrackAtPosition(u1, wildObj.Position, wildObj.UID, 5004)
-	assert(race1.Ok and race1.AttemptNonce ~= nil, "Player 1 wins claim")
-	local race2 = MeteorService.StartCrackAtPosition(u2, wildObj.Position, wildObj.UID, 5004)
-	assert(not race2.Ok and race2.Reason == "MeteorAlreadyClaimed", "Player 2 blocked from claimed meteor")
+		clearEvents()
+		local p1BagBeforeStarter = countBagItems(p1)
+		local p1Start = MeteorService.StartCrackAtPosition(u1, starterObj.Position, starterObj.UID, 5001)
+		assert(p1Start.Ok and p1Start.AttemptNonce ~= nil, "Owner starts starter crack")
+		local starterFinishValid = NetworkService.ValidateInboundPayload(
+			Constants.REMOTE_NAMES.RequestFinishCrack,
+			starterObj.UID,
+			p1Start.AttemptNonce
+		)
+		assert(starterFinishValid, "Starter UID + AttemptNonce must pass RequestFinishCrack validation")
+		assert(not isPromptEnabled(starterObj), "Starter prompt disabled while claimed")
+		assert(countEvents("Claimed", starterObj.UID) == 1, "Starter start publishes Claimed event")
 
-	-- Forged nonce rejected
-	local forged = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, "forged-nonce", 5005, rng)
-	assert(not forged.Ok and forged.Reason == "InvalidClaim", "Forged nonce rejected")
+		local p1Finish = MeteorService.FinishCrackAtPosition(u1, starterObj.Position, starterObj.UID, p1Start.AttemptNonce :: string, 5002, rng)
+		assert(p1Finish.Ok and p1Finish.SpeciesId == "StarSlime", "Starter meteor guarantees StarSlime")
+		assert(countBagItems(p1) == p1BagBeforeStarter + 1, "Starter rescue grants exactly 1 pod")
+		assert(activeMeteors[starterObj.UID] == nil, "Starter meteor despawned after grant")
+		assert(countEvents("Despawn", starterObj.UID) == 1 and countEvents("ClaimReleased", starterObj.UID) == 0, "Starter completion emits single Despawn and zero ClaimReleased")
+		passed += 1
 
-	-- Premature finish (< 0.4s) rejected without removing meteor
-	local tooFast = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5004.1, rng)
-	assert(not tooFast.Ok and tooFast.Reason == "TooFast" and activeMeteors[wildObj.UID] ~= nil, "TooFast finish rejected and meteor preserved")
+		-- 2. Wild UID validation, 2-player race, forged nonce, TooFast, 1-pod grant & replay rejection
+		local wOk, _, wild1 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_1", "Astral", 5003)
+		assert(wOk and wild1 ~= nil, "Wild meteor spawns on MeteorNode_1")
+		local wildObj = wild1 :: ActiveMeteor
+		table.insert(createdMeteorUIDs, wildObj.UID)
 
-	-- Valid finish succeeds, and replay of same nonce fails
-	local wildFinish = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5005.0, rng)
-	assert(wildFinish.Ok and activeMeteors[wildObj.UID] == nil, "Valid finish grants pod and despawns meteor")
-	local replay = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5005.2, rng)
-	assert(not replay.Ok and replay.Reason == "InvalidClaim", "Nonce replay rejected")
-	passed += 1
+		assert(#wildObj.UID <= Constants.MAX_STRING_ID_LENGTH, "Wild MeteorUID stays within MAX_STRING_ID_LENGTH")
+		local wildStartValid = NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestStartCrack, wildObj.UID)
+		assert(wildStartValid, "Generated wild UID must pass RequestStartCrack validation")
 
-	-- 3. Non-finite/out-of-range, BagFull at finish preserving meteor, and claim timeout release
-	local wOk2, _, wild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Frost", 5010)
-	assert(wOk2 and wild2 ~= nil, "Wild meteor 2 spawns")
-	local wildObj2 = wild2 :: ActiveMeteor
+		clearEvents()
+		local p1BagBeforeWild = countBagItems(p1)
+		local race1 = MeteorService.StartCrackAtPosition(u1, wildObj.Position, wildObj.UID, 5004)
+		assert(race1.Ok and race1.AttemptNonce ~= nil, "Player 1 wins claim")
+		local wildFinishValid = NetworkService.ValidateInboundPayload(
+			Constants.REMOTE_NAMES.RequestFinishCrack,
+			wildObj.UID,
+			race1.AttemptNonce
+		)
+		assert(wildFinishValid, "Wild UID + AttemptNonce must pass RequestFinishCrack validation")
+		assert(not isPromptEnabled(wildObj), "Wild prompt disabled while claimed")
 
-	local nanStart = MeteorService.StartCrackAtPosition(u2, Vector3.new(0 / 0, 0, 0), wildObj2.UID, 5011)
-	assert(not nanStart.Ok and nanStart.Reason == "OutOfRange", "NaN start pos rejected")
-	local farStart = MeteorService.StartCrackAtPosition(u2, wildObj2.Position + Vector3.new(50, 0, 0), wildObj2.UID, 5011)
-	assert(not farStart.Ok and farStart.Reason == "OutOfRange", "Out-of-range start rejected")
+		local race2 = MeteorService.StartCrackAtPosition(u2, wildObj.Position, wildObj.UID, 5004)
+		assert(not race2.Ok and race2.Reason == "MeteorAlreadyClaimed", "Player 2 blocked from claimed meteor")
 
-	-- Claim with 1 slot left, fill bag before finish -> finish must fail cleanly and preserve meteor!
-	local c2 = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5011)
-	assert(c2.Ok and c2.AttemptNonce ~= nil, "u2 claims wild2")
-	for i = 1, Constants.MAX_BAG_CAPACITY do
-		EconomyService.GrantPodToProfile(p2, "StarSlime", 5011, "fill-m-" .. tostring(i))
+		local forged = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, "forged-nonce", 5005, rng)
+		assert(not forged.Ok and forged.Reason == "InvalidClaim", "Forged nonce rejected")
+
+		local tooFast = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5004.1, rng)
+		assert(not tooFast.Ok and tooFast.Reason == "TooFast" and activeMeteors[wildObj.UID] ~= nil, "TooFast finish rejected and meteor preserved")
+		assert(not isPromptEnabled(wildObj), "Prompt remains disabled during valid crack after TooFast check")
+
+		local wildFinish = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5005.0, rng)
+		assert(wildFinish.Ok and activeMeteors[wildObj.UID] == nil, "Valid finish grants pod and despawns meteor")
+		assert(countBagItems(p1) == p1BagBeforeWild + 1, "Wild rescue grants exactly 1 pod")
+		assert(
+			countEvents("Claimed", wildObj.UID) == 1
+				and countEvents("Despawn", wildObj.UID) == 1
+				and countEvents("ClaimReleased", wildObj.UID) == 0,
+			"Wild completion emits single Claimed and Despawn"
+		)
+
+		local replay = MeteorService.FinishCrackAtPosition(u1, wildObj.Position, wildObj.UID, race1.AttemptNonce :: string, 5005.2, rng)
+		assert(not replay.Ok and replay.Reason == "InvalidClaim", "Nonce replay rejected")
+		passed += 1
+
+		-- 3. Invalid/out-of-range start, OutOfRange & BagFull finish release meteor + emit ClaimReleased + recover prompt
+		local wOk2, _, wild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Frost", 5010)
+		assert(wOk2 and wild2 ~= nil, "Wild meteor 2 spawns")
+		local wildObj2 = wild2 :: ActiveMeteor
+		table.insert(createdMeteorUIDs, wildObj2.UID)
+
+		local nanStart = MeteorService.StartCrackAtPosition(u2, Vector3.new(0 / 0, 0, 0), wildObj2.UID, 5011)
+		assert(not nanStart.Ok and nanStart.Reason == "OutOfRange", "NaN start pos rejected")
+		local farStart = MeteorService.StartCrackAtPosition(u2, wildObj2.Position + Vector3.new(50, 0, 0), wildObj2.UID, 5011)
+		assert(not farStart.Ok and farStart.Reason == "OutOfRange", "Out-of-range start rejected")
+
+		-- OutOfRange at finish releases claim, re-enables prompt, and broadcasts ClaimReleased
+		local cFarFinish = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5011)
+		assert(cFarFinish.Ok and cFarFinish.AttemptNonce ~= nil, "u2 claims wild2 before walking out of range")
+		assert(not isPromptEnabled(wildObj2), "Prompt disabled after u2 claims wild2")
+		clearEvents()
+		local farFinish = MeteorService.FinishCrackAtPosition(
+			u2,
+			wildObj2.Position + Vector3.new(Constants.MAX_CRACK_FINISH_DISTANCE + 3, 0, 0),
+			wildObj2.UID,
+			cFarFinish.AttemptNonce :: string,
+			5011.6,
+			rng
+		)
+		assert(not farFinish.Ok and farFinish.Reason == "OutOfRange", "OutOfRange finish rejected")
+		assert(activeMeteors[wildObj2.UID] ~= nil and wildObj2.ClaimedByUserId == nil, "Meteor preserved and unlocked on OutOfRange finish")
+		assert(isPromptEnabled(wildObj2), "Prompt re-enabled on OutOfRange finish")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1 and countEvents("Despawn", wildObj2.UID) == 0, "OutOfRange finish emits ClaimReleased")
+
+		-- Claim, fill bag before finish -> finish fails cleanly, releases claim, re-enables prompt
+		local c2 = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5012)
+		assert(c2.Ok and c2.AttemptNonce ~= nil, "u2 claims wild2 for BagFull check")
+		for i = 1, Constants.MAX_BAG_CAPACITY do
+			EconomyService.GrantPodToProfile(p2, "StarSlime", 5012, "fill-m-" .. tostring(i))
+		end
+		clearEvents()
+		local bagFullFinish = MeteorService.FinishCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, c2.AttemptNonce :: string, 5013, rng)
+		assert(not bagFullFinish.Ok and bagFullFinish.Reason == "BagFull", "BagFull at finish rejected")
+		assert(activeMeteors[wildObj2.UID] ~= nil and wildObj2.ClaimedByUserId == nil, "Meteor preserved & claim released on BagFull")
+		assert(isPromptEnabled(wildObj2), "Prompt re-enabled on BagFull")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1 and countEvents("Despawn", wildObj2.UID) == 0, "BagFull emits ClaimReleased")
+		p2.Items = {}
+		passed += 1
+
+		-- 4. Claim release lifecycle on distance (>28 studs), timeout, missing/dead char, respawn, and leave
+		-- 4a. Distance abandonment
+		local cDist = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5020)
+		assert(cDist.Ok, "u1 claims wild2 for distance sweep test")
+		assert(not isPromptEnabled(wildObj2), "Prompt disabled on u1 distance test claim")
+		clearEvents()
+		local sweptNear = MeteorService.SweepActiveClaims(5021, function(_userId: number): Vector3?
+			return wildObj2.Position + Vector3.new(10, 0, 0)
+		end)
+		assert(sweptNear == 0 and wildObj2.ClaimedByUserId == u1 and not isPromptEnabled(wildObj2) and #events == 0, "Player within 28 studs retains claim")
+
+		local sweptFar = MeteorService.SweepActiveClaims(5021.5, function(_userId: number): Vector3?
+			return wildObj2.Position + Vector3.new(Constants.MAX_CRACK_ABANDON_DISTANCE + 0.5, 0, 0)
+		end)
+		assert(sweptFar == 1 and wildObj2.ClaimedByUserId == nil and isPromptEnabled(wildObj2), "Walk > 28 studs releases claim and re-enables prompt")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1, "Distance abandonment broadcasts ClaimReleased")
+
+		local u2ClaimDist = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5022)
+		assert(u2ClaimDist.Ok, "Another player can immediately reclaim after distance abandonment")
+		assert(MeteorService.ReleaseClaimForUserId(u2), "Clean release after u2 reclaim")
+
+		-- 4b. Timeout expiry
+		local cExpire = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5030)
+		assert(cExpire.Ok, "u1 claims wild2 for timeout test")
+		clearEvents()
+		local sweptTimeout = MeteorService.SweepActiveClaims(
+			5030 + Constants.CRACK_CLAIM_TIMEOUT_SECONDS + 1,
+			function(_userId: number): Vector3?
+				return wildObj2.Position
+			end
+		)
+		assert(sweptTimeout == 1 and wildObj2.ClaimedByUserId == nil and isPromptEnabled(wildObj2), "Expired claim swept cleanly and prompt re-enabled")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1, "Timeout expiry broadcasts ClaimReleased")
+
+		-- 4c. Dead / missing character sweep
+		local cDead = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5040)
+		assert(cDead.Ok, "u1 claims wild2 for missing-character sweep")
+		clearEvents()
+		local sweptDead = MeteorService.SweepActiveClaims(5041, function(_userId: number): Vector3?
+			return nil
+		end)
+		assert(sweptDead == 1 and wildObj2.ClaimedByUserId == nil and isPromptEnabled(wildObj2), "Unavailable character releases claim and re-enables prompt")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1, "Character unavailable sweep broadcasts ClaimReleased")
+
+		-- 4d. Respawn / death hook
+		local cRespawn = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5050)
+		assert(cRespawn.Ok, "u1 claims wild2 for respawn hook test")
+		clearEvents()
+		assert(MeteorService.HandleCharacterLifecycleReset(u1), "Character reset handler releases active claim")
+		assert(wildObj2.ClaimedByUserId == nil and isPromptEnabled(wildObj2), "Respawn/death reset unlocks meteor and re-enables prompt")
+		assert(countEvents("ClaimReleased", wildObj2.UID) == 1, "Respawn/death reset broadcasts ClaimReleased")
+
+		-- 4e. Leave while claiming wild meteor while Plot 1 has an unclaimed starter meteor
+		starterClaimedByUserId[u1] = nil
+		local sLeaveOk, _, u1Starter = MeteorService.SpawnStarterMeteorForPlot(1, u1, 5060)
+		assert(sLeaveOk and u1Starter ~= nil, "Unclaimed starter spawns for u1 leave test")
+		local u1StarterObj = u1Starter :: ActiveMeteor
+		table.insert(createdMeteorUIDs, u1StarterObj.UID)
+
+		local cWildLeave = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5061)
+		assert(cWildLeave.Ok and not isPromptEnabled(wildObj2), "u1 claims wild2 before leaving")
+		clearEvents()
+		MeteorService.HandlePlotReleased(1, u1)
+		MeteorService.HandlePlayerClosing(u1)
+
+		assert(activeMeteors[u1StarterObj.UID] == nil, "Plot 1 starter despawned on leave")
+		assert(
+			countEvents("Despawn", u1StarterObj.UID) == 1 and countEvents("ClaimReleased", u1StarterObj.UID) == 0,
+			"Unclaimed starter emits single Despawn and no ClaimReleased"
+		)
+		assert(activeMeteors[wildObj2.UID] ~= nil and wildObj2.ClaimedByUserId == nil and isPromptEnabled(wildObj2), "Wild meteor released and prompt re-enabled on leave")
+		assert(
+			countEvents("ClaimReleased", wildObj2.UID) == 1 and countEvents("Despawn", wildObj2.UID) == 0,
+			"Leave while claiming wild meteor emits ClaimReleased"
+		)
+
+		local u2ReclaimLeave = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5062)
+		assert(u2ReclaimLeave.Ok, "Remaining player can claim wild meteor right after claimer leaves")
+		assert(MeteorService.ReleaseClaimForUserId(u2), "Release u2 reclaim before Plot 2 leave test")
+
+		-- 4f. Leave while claiming own starter meteor -> single Despawn and zero redundant ClaimReleased
+		starterClaimedByUserId[u2] = nil
+		local s2LeaveOk, _, u2Starter = MeteorService.SpawnStarterMeteorForPlot(2, u2, 5070)
+		assert(s2LeaveOk and u2Starter ~= nil, "Starter spawns for u2 own-starter leave test")
+		local u2StarterObj = u2Starter :: ActiveMeteor
+		table.insert(createdMeteorUIDs, u2StarterObj.UID)
+
+		local cStarterLeave = MeteorService.StartCrackAtPosition(u2, u2StarterObj.Position, u2StarterObj.UID, 5071)
+		assert(cStarterLeave.Ok and not isPromptEnabled(u2StarterObj), "u2 claims own starter before leaving")
+		clearEvents()
+		MeteorService.HandlePlotReleased(2, u2)
+		MeteorService.HandlePlayerClosing(u2)
+
+		assert(activeMeteors[u2StarterObj.UID] == nil, "Own starter despawned cleanly on leave")
+		assert(
+			countEvents("Despawn", u2StarterObj.UID) == 1 and countEvents("ClaimReleased") == 0,
+			"Leaving while claiming own starter emits single Despawn and zero ClaimReleased"
+		)
+		assert(activeClaimsByUserId[u2] == nil, "Leaving claim entry cleared")
+		passed += 1
+	end)
+
+	lifecycleObserver = nil
+	for _, uid in ipairs(createdMeteorUIDs) do
+		removeMeteorInternal(uid)
 	end
-	local bagFullFinish = MeteorService.FinishCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, c2.AttemptNonce :: string, 5012, rng)
-	assert(not bagFullFinish.Ok and bagFullFinish.Reason == "BagFull", "BagFull at finish rejected")
-	assert(activeMeteors[wildObj2.UID] ~= nil and wildObj2.ClaimedByUserId == nil, "Meteor preserved & claim released on BagFull")
-
-	-- Timeout sweep frees expired claim for another player
-	local cExpire = MeteorService.StartCrackAtPosition(u1, wildObj2.Position, wildObj2.UID, 5015)
-	assert(cExpire.Ok, "u1 claims wild2")
-	assert(MeteorService.SweepExpiredClaims(5015 + Constants.CRACK_CLAIM_TIMEOUT_SECONDS + 1) == 1, "Expired claim swept cleanly")
-	assert(wildObj2.ClaimedByUserId == nil, "Meteor unlocked after expiry")
-
-	-- Clean up all test meteors, plots, and sessions
-	removeMeteorInternal(wildObj2.UID)
 	wildNodeCooldownUntil = {}
+	activeClaimsByUserId[u1] = nil
+	activeClaimsByUserId[u2] = nil
+	activeClaimsByUserId[uUnassigned] = nil
 	starterClaimedByUserId[u1] = nil
 	starterClaimedByUserId[u2] = nil
 	PlotService.ReleasePlotForUserId(u1)
 	PlotService.ReleasePlotForUserId(u2)
 	DataService.EndMockSession(u1)
 	DataService.EndMockSession(u2)
-	passed += 1
+	DataService.EndMockSession(uUnassigned)
+
+	if not testOk then
+		error(testErr)
+	end
 
 	return passed
 end

@@ -20,8 +20,19 @@ local CrackController = {
 }
 
 local isCracking = false
+local activeCrackUID: string? = nil
+local activeCrackToken = 0
+local claimedByMeteorUID: { [string]: number? } = {}
 local promptConn: RBXScriptConnection? = nil
 local lifecycleConn: RBXScriptConnection? = nil
+
+local function cancelLocalCrack(meteorUID: string): ()
+	if activeCrackUID == meteorUID then
+		activeCrackUID = nil
+		isCracking = false
+		activeCrackToken += 1
+	end
+end
 
 local function findMeteorModelFromPrompt(prompt: ProximityPrompt): Model?
 	local current: Instance? = prompt.Parent
@@ -45,8 +56,34 @@ function CrackController.Start(self: typeof(CrackController)): ()
 	local meteorLifecycleEvent = remotes:WaitForChild(Constants.REMOTE_NAMES.MeteorLifecycle) :: RemoteEvent
 
 	if lifecycleConn == nil then
-		lifecycleConn = meteorLifecycleEvent.OnClientEvent:Connect(function(_payload: { [string]: any })
-			-- Tracked cleanly for S1-08 trail/particle feedback.
+		lifecycleConn = meteorLifecycleEvent.OnClientEvent:Connect(function(payload: { [string]: any })
+			if typeof(payload) ~= "table" then
+				return
+			end
+			local action = payload.Action
+			local meteorUID = payload.MeteorUID
+			if typeof(action) ~= "string" or typeof(meteorUID) ~= "string" then
+				return
+			end
+
+			if action == "Spawn" then
+				if typeof(payload.ClaimedBy) == "number" then
+					claimedByMeteorUID[meteorUID] = payload.ClaimedBy
+				else
+					claimedByMeteorUID[meteorUID] = nil
+				end
+			elseif action == "Claimed" then
+				if typeof(payload.ClaimedBy) == "number" then
+					claimedByMeteorUID[meteorUID] = payload.ClaimedBy
+				end
+			elseif action == "ClaimReleased" then
+				claimedByMeteorUID[meteorUID] = nil
+				print(string.format("[CrackController] Meteor claim released: %s", string.sub(meteorUID, 1, 8)))
+				cancelLocalCrack(meteorUID)
+			elseif action == "Despawn" then
+				claimedByMeteorUID[meteorUID] = nil
+				cancelLocalCrack(meteorUID)
+			end
 		end)
 	end
 
@@ -70,6 +107,10 @@ function CrackController.Start(self: typeof(CrackController)): ()
 			end
 
 			isCracking = true
+			activeCrackUID = meteorUID
+			activeCrackToken += 1
+			local myToken = activeCrackToken
+
 			task.spawn(function()
 				local okStart, startRes = pcall(function()
 					return startCrackFn:InvokeServer(meteorUID)
@@ -77,12 +118,23 @@ function CrackController.Start(self: typeof(CrackController)): ()
 				if not okStart or typeof(startRes) ~= "table" or not startRes.Ok then
 					local reason = if typeof(startRes) == "table" and startRes.Reason then tostring(startRes.Reason) else "Failed"
 					warn("[CrackController] Could not start meteor rescue: " .. reason)
-					isCracking = false
+					if myToken == activeCrackToken then
+						isCracking = false
+						activeCrackUID = nil
+					end
 					return
 				end
 
-				-- Minimal tactile delay respecting server MIN_CRACK_DURATION_SECONDS (0.4s); S1-08 adds visual bar.
-				task.wait(0.45)
+				if myToken ~= activeCrackToken or activeCrackUID ~= meteorUID then
+					return
+				end
+
+				-- Tactile crack window (> server MIN_CRACK_DURATION_SECONDS 0.4s) so walk-away/reset abandonment is testable; S1-08 adds visual bar.
+				task.wait(Constants.CRACK_CLIENT_DURATION_SECONDS)
+
+				if myToken ~= activeCrackToken or activeCrackUID ~= meteorUID then
+					return
+				end
 
 				local okFinish, finishRes = pcall(function()
 					return finishCrackFn:InvokeServer(meteorUID, startRes.AttemptNonce)
@@ -94,7 +146,10 @@ function CrackController.Start(self: typeof(CrackController)): ()
 					warn("[CrackController] Could not finish meteor rescue: " .. reason)
 				end
 
-				isCracking = false
+				if myToken == activeCrackToken then
+					isCracking = false
+					activeCrackUID = nil
+				end
 			end)
 		end)
 	end

@@ -140,7 +140,7 @@ To eliminate replay exploits, double-claims, and latency-unfair client timers:
 | `RequestBuyUpgrade` | `C -> S` (`RemoteFunction`) | `(UpgradeId: string)` (allowlisted against `UpgradeConfig`) | `3 / sec` |
 | `SyncOwnerState` | `S -> C` (`RemoteEvent`) | `OwnerStateDTO` | Server-driven |
 | `SyncPublicPlots` | `S -> C` (`RemoteEvent`) | `{ PublicPlotDTO }` + `PlotRevision` | Server-driven |
-| `MeteorLifecycle` | `S -> C` (`RemoteEvent`) | `{ Action: "Spawn" \| "Claimed" \| "Despawn", MeteorUID, Trait, Position, ClaimedBy? }` | Server-driven |
+| `MeteorLifecycle` | `S -> C` (`RemoteEvent`) | `{ Action: "Spawn" \| "Claimed" \| "ClaimReleased" \| "Despawn", MeteorUID, Trait?, Position?, ClaimedBy? }` | Server-driven |
 
 *Note: Removed entirely from MVP: `RequestGiftItem`, `RequestFuseCritters`, `RequestLikePlot`, `WeatherChanged`, `OfflineReportReady`, and shop window remotes.*
 
