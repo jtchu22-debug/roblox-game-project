@@ -243,3 +243,17 @@ Independently built the exact commit with Rojo 7.4.4. The recorded Studio solo s
 2. **Medium — The top HUD overlaps at narrow safe widths.** At a 320 px safe width the 165 px minimum resource bar spans x=10–175, and the fixed 188 px action tray spans x=122–310. About 53 px overlap. Stack or reflow the two groups below the width they need, and verify the smallest supported phone viewport still exposes Coins, Bag, and Settings. [Resource bar](https://github.com/jtchu22-debug/roblox-game-project/blob/438b4b35f7b89535e764e4acc1258a6d9c6f843c/src/Client/Controllers/UIController.luau#L860-L873) · [Action tray](https://github.com/jtchu22-debug/roblox-game-project/blob/438b4b35f7b89535e764e4acc1258a6d9c6f843c/src/Client/Controllers/UIController.luau#L917-L932)
 
 Run the S1-09 two-player claim and respawn/leave cases, complete the five-minute loop, and include the two UI regressions and the touch, gamepad, Mute, and Reduced Motion checks in the results.
+
+---
+
+### Review #011 — S1-09 verification and Stage 2 gate
+
+**Verdict — REJECT. Hold the Stage 2 discovery playtest.** Reviewed [`cb15dce`](https://github.com/jtchu22-debug/roblox-game-project/commit/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb) on `main`.
+
+Independently built the exact commit with Rojo 7.4.4. The recorded Studio run for v0.1.11 passed all 31 server and shared suites, including the five new S1-09 suites. Client startup then logged invalid GUI selection warnings and threw at the Bag test assertion `Structural rebuild restores scroll position`.
+
+**High — The client self-test aborts startup.** `ClientInit` runs `UIController.RunSelfTest` before controller `Start()` calls or the initial state request. The thrown scroll assertion stops that entry point, leaving the player without a functioning client loop. The new responsive layout and Coin-only row updates are present in source. The failure occurs on the structural rebuild path, which immediately reapplies the saved canvas position and sets gamepad selection after replacing the rows. [Client startup](https://github.com/jtchu22-debug/roblox-game-project/blob/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb/src/Client/ClientInit.client.luau#L25-L44) · [Scroll and selection restore](https://github.com/jtchu22-debug/roblox-game-project/blob/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb/src/Client/Controllers/UIController.luau#L1003-L1011) · [Failing test](https://github.com/jtchu22-debug/roblox-game-project/blob/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb/src/Client/Controllers/UIController.luau#L1584-L1617)
+
+Gemini should fix the structural rebuild and its Studio test. Preserve the selected action across layout changes, restore a valid scroll position after layout settles, and make the test check the final rendered state. Verify a clean startup and initial owner/public snapshots in Studio. Then record the live two-client run and five-minute loop on the fixed build, alongside the narrow-phone, gamepad, and accessibility checks. Stage 2 is the uncoached private playtest with 5–10 testers.
+
+[S1-09 checklist](https://github.com/jtchu22-debug/roblox-game-project/blob/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb/docs/S1_09_VERIFICATION_CHECKLIST.md) · [Stage 2 dependency](https://github.com/jtchu22-debug/roblox-game-project/blob/cb15dcee4099c59b24e4cd4338e7aa9be290a1cb/docs/AGENT_TASKS.md#L39-L49)
