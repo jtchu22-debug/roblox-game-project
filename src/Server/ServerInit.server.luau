@@ -7,13 +7,16 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local SharedSelfTest = require(Shared:WaitForChild("Util"):WaitForChild("SharedSelfTest"))
 
-if Constants.RUN_SELF_TESTS then
+local shouldRunSelfTests = Constants.RUN_SELF_TESTS and RunService:IsStudio()
+
+if shouldRunSelfTests then
 	local passedCount = SharedSelfTest.RunAll()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d Stage 1 shared unit test suites passed.", passedCount))
 end
@@ -38,7 +41,7 @@ for _, service in ipairs(serviceOrder) do
 	service:Init()
 end
 
-if Constants.RUN_SELF_TESTS then
+if shouldRunSelfTests then
 	local netPassed = NetworkService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d NetworkService test suites passed.", netPassed))
 

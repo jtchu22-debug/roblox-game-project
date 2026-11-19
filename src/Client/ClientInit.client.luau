@@ -7,6 +7,7 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -26,7 +27,7 @@ for _, controller in ipairs(controllerOrder) do
 	controller:Init()
 end
 
-if Constants.RUN_SELF_TESTS then
+if Constants.RUN_SELF_TESTS and RunService:IsStudio() then
 	local UIController = require(ControllersFolder:WaitForChild("UIController"))
 	local okTest, passedOrErr = pcall(UIController.RunSelfTest)
 	if okTest then

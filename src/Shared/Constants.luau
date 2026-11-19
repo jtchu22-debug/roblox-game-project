@@ -7,10 +7,10 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.1.12-s1-09-fix",
+	GAME_VERSION = "0.2.0-s2-playtest-prep",
 	USE_MOCK_STORE = true,
-	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
-	RUN_SELF_TESTS = true,
+	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0, -- Set to private Stage 2 PlaceId before publishing live tests
+	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
 	SCHEMA_VERSION = 1,
 
 	-- Plot & Server Capacity Bounds

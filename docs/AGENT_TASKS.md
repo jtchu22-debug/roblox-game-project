@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
-> **Last Updated:** November 15, 2026  
-> **Current Active Milestone:** Stage 1 Setup Complete (`S1-00`) — Ready for Stage 1 Vertical Slice Implementation (`S1-01`+)
+> **Last Updated:** November 18, 2026  
+> **Current Active Milestone:** Stage 1 Complete (`S1-00`–`S1-09`) — Stage 2 Discovery Playtest Gate (`S2-01`) In Progress
 
 ---
 
@@ -46,7 +46,7 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached 5–10 Tester Playtest:** Observe 5–10 consenting testers (no coaching, zero personal data) against directional targets ($\ge 80\%$ hatch in 90s; median first reward $\le 45\text{s}$; $\ge 70\%$ initiate another rescue in 5 min). **Go / Iterate / Pivot Decision.** | `docs/AGENT_REVIEWS.md` | `[ ]` |
+| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached 5–10 Tester Playtest (`v0.2.0-s2-playtest-prep`):** Private playtest kit prepared & self-tests gated to `RunService:IsStudio()`. Next: observe 5–10 consenting testers (no coaching, zero personal data) against directional targets ($\ge 80\%$ hatch in 90s; median first reward $\le 45\text{s}$; $\ge 70\%$ initiate another rescue in 5 min) for the **Go / Iterate / Pivot Decision**. | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
 
 ---
 
