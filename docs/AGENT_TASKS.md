@@ -46,7 +46,7 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached 5–10 Tester Playtest (`v0.2.0-s2-playtest-prep`):** Private playtest kit prepared & self-tests gated to `RunService:IsStudio()`. Next: observe 5–10 consenting testers (no coaching, zero personal data) against directional targets ($\ge 80\%$ hatch in 90s; median first reward $\le 45\text{s}$; $\ge 70\%$ initiate another rescue in 5 min) for the **Go / Iterate / Pivot Decision**. | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
+| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached 5–10 Tester Playtest (`v0.2.1-s2-playtest-live`):** Private `PlaceId 137485500524067` allowlisted for live `MockStore` + self-tests gated to `RunService:IsStudio()`. Next: observe 5–10 consenting testers (no coaching, zero personal data) against directional targets ($\ge 80\%$ hatch in 90s; median first reward $\le 45\text{s}$; $\ge 70\%$ initiate another rescue in 5 min) for the **Go / Iterate / Pivot Decision**. | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
 
 ---
 

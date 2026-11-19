@@ -1,6 +1,6 @@
 # Stage 2 (`S2-01`) Uncoached Discovery Playtest Kit
 
-> **Applies To:** `v0.2.0-s2-playtest-prep` (`Stage 2: Discovery Playtest Gate — R-009`)  
+> **Applies To:** `v0.2.1-s2-playtest-live` (`Stage 2: Discovery Playtest Gate — R-009`, allowlisted for private `PlaceId 137485500524067`)  
 > **Goal:** Observe **5–10 consenting testers** play *Starfall Ranch* uncoached for 5–15 minutes to decide whether to **Go** to Stage 3 (`ProfileStore` + 6 plots), **Iterate** on onboarding/Crater feel, or **Pivot** before writing persistence or Blender art.  
 > **Privacy Rule:** Collect **zero personal data** (no real names, Roblox usernames, UserIds, emails, or ages). Use anonymous tester codes `T-01` through `T-10`.
 
@@ -17,11 +17,7 @@
 4. **Lock server capacity to `2` Players:** In Roblox Studio **Game Settings -> Places** (or Creator Dashboard -> Places -> Configure), set **Maximum Player Count = `2`**.
    - *Important:* Stage 1–2 intentionally have `MAX_PLOTS_PROTOTYPE = 2` (`Plot_1` and `Plot_2`). Leaving Max Players higher than `2` will cause player #3 to be kicked with `NoFreePlot`!
 5. **Restrict Permissions:** Keep Experience visibility **Private** and grant Play access **only** to your explicit tester group/friends (never public Discovery).
-6. **Enable MockStore for that exact `PlaceId`:** Update [Constants.luau](../src/Shared/Constants.luau#L12):
-   ```luau
-   ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = <YOUR_NUMERIC_PLACE_ID>,
-   ```
-   Then rebuild (`powershell -ExecutionPolicy Bypass -File ".\tools\build-place.ps1"`), let Rojo sync into Studio, and click **File -> Publish to Roblox** (`Alt+P`).
+6. **Enable MockStore for that exact `PlaceId`:** [Constants.luau](../src/Shared/Constants.luau#L12) is already configured with `ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067` for the private Stage 2 place (`Bioniccat4000's Place: 11192026_1`). Verify it matches your private `PlaceId`, rebuild (`powershell -ExecutionPolicy Bypass -File ".\tools\build-place.ps1"`), ensure Rojo is connected in Studio (**Plugins -> Rojo -> Connect**), and republish (**File -> Publish to Roblox (`Alt+P`)**) with **Maximum Player Count = `2`**.
 7. **Run a 60-Second Live Smoke Test Before Inviting Testers:**
    - Join your private published experience from the Roblox app (not Studio).
    - Press **`F9`** -> **Server** log -> confirm `[DataService] Initialized in Stage 1 MockStore mode (DesignatedPrototypePlace).` and confirm `RUN_SELF_TESTS` does **not** run on the live server/client (zero flashing Bag rows on join).

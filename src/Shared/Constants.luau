@@ -7,9 +7,9 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.2.0-s2-playtest-prep",
+	GAME_VERSION = "0.2.1-s2-playtest-live",
 	USE_MOCK_STORE = true,
-	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0, -- Set to private Stage 2 PlaceId before publishing live tests
+	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067, -- Private Stage 2 test place (Bioniccat4000's Place: 11192026_1)
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
 	SCHEMA_VERSION = 1,
 
