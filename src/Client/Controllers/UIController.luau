@@ -2,9 +2,11 @@
 --[[
 	Controller: UIController
 	Purpose: Receives OwnerStateDTO snapshots from SyncOwnerState and manages the Safe-Area responsive HUD,
-	         non-blocking contextual guidance, toasts, Keep-vs-Sell Bag drawer, and Accessibility Settings.
+	         non-blocking contextual guidance, toasts, Keep-vs-Sell Bag drawer (preserving Gamepad focus &
+	         scroll across Coin ticks), and Accessibility Settings.
 	Connections: Requires SoundController and PlotVisualController; communicates with RequestPlotAction and RequestBuyUpgrade.
-	How to Test in Studio: Press Play (F5), check HUD updates, press Bag (B / Y), test Keep-vs-Sell & Settings toggles.
+	How to Test in Studio: Press Play (F5), check HUD layout across 320px+ viewports, press Bag (B / Y), verify
+	                       focus & scroll survive passive Coin updates, and test Keep-vs-Sell & Settings toggles.
 ]]
 
 local GuiService = game:GetService("GuiService")
@@ -25,12 +27,31 @@ local FormatUtil = require(Shared:WaitForChild("Util"):WaitForChild("FormatUtil"
 export type InputMode = "Touch" | "Keyboard" | "Gamepad"
 export type ToastKind = "Info" | "Success" | "Warn"
 
+export type TopHudLayout = {
+	Stacked: boolean,
+	ResourceX: number,
+	ResourceY: number,
+	ResourceWidth: number,
+	ResourceHeight: number,
+	ActionsX: number,
+	ActionsY: number,
+	ActionsWidth: number,
+	ActionsHeight: number,
+	ToastY: number,
+	SettingsX: number,
+	SettingsY: number,
+	SettingsWidth: number,
+}
+
 type TimerBinding = {
 	Label: TextLabel,
 	MaturesAt: number,
 	DisplayName: string,
 	WasMature: boolean,
 }
+
+local WIDE_TOP_HUD_MIN_WIDTH = 440
+local ACTION_TRAY_WIDTH = 188
 
 local PALETTE = {
 	PanelDark = Color3.fromRGB(24, 22, 38),
@@ -52,10 +73,13 @@ local UIController = {
 local latestOwnerState: Types.OwnerStateDTO? = nil
 local stateChangedCallbacks: { (dto: Types.OwnerStateDTO) -> () } = {}
 local syncConn: RBXScriptConnection? = nil
+local sizeChangedConn: RBXScriptConnection? = nil
 local plotActionRemote: RemoteEvent? = nil
 local buyUpgradeRemote: RemoteFunction? = nil
 
 local hudGui: ScreenGui? = nil
+local resourceBarFrame: Frame? = nil
+local actionRowFrame: Frame? = nil
 local coinsLabel: TextLabel? = nil
 local rateLabel: TextLabel? = nil
 local bagLabel: TextLabel? = nil
@@ -69,6 +93,11 @@ local bagCapacityLabel: TextLabel? = nil
 local bagScrollFrame: ScrollingFrame? = nil
 local bagCloseButton: TextButton? = nil
 local firstBagSelectable: GuiObject? = nil
+local bagButtonsByKey: { [string]: GuiObject } = {}
+local upgradeBuyButtons: { [Types.UpgradeId]: TextButton } = {}
+local lastFocusedBagKey: string? = nil
+local lastBagStructureSignature: string? = nil
+local bagRebuildCount = 0
 
 local settingsDrawer: Frame? = nil
 local muteToggleButton: TextButton? = nil
@@ -122,6 +151,114 @@ local function makeTextButton(
 	addCorner(btn, 10)
 	btn.Parent = parent
 	return btn
+end
+
+function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
+	local width = if typeof(safeWidth) == "number" and safeWidth == safeWidth and safeWidth > 0 then safeWidth else 320
+
+	if width >= WIDE_TOP_HUD_MIN_WIDTH then
+		local resWidth = math.clamp(width - 218, 210, 390)
+		local actWidth = ACTION_TRAY_WIDTH
+		local settingsWidth = 278
+		return {
+			Stacked = false,
+			ResourceX = 10,
+			ResourceY = 8,
+			ResourceWidth = resWidth,
+			ResourceHeight = 46,
+			ActionsX = width - 10 - actWidth,
+			ActionsY = 8,
+			ActionsWidth = actWidth,
+			ActionsHeight = 46,
+			ToastY = 62,
+			SettingsX = width - 10 - settingsWidth,
+			SettingsY = 62,
+			SettingsWidth = settingsWidth,
+		}
+	end
+
+	local resWidth = math.max(200, width - 16)
+	local actWidth = math.min(ACTION_TRAY_WIDTH, math.max(160, width - 16))
+	local settingsWidth = math.clamp(width - 16, 220, 278)
+	return {
+		Stacked = true,
+		ResourceX = math.floor((width - resWidth) * 0.5),
+		ResourceY = 8,
+		ResourceWidth = resWidth,
+		ResourceHeight = 44,
+		ActionsX = width - 8 - actWidth,
+		ActionsY = 58,
+		ActionsWidth = actWidth,
+		ActionsHeight = 44,
+		ToastY = 108,
+		SettingsX = width - 8 - settingsWidth,
+		SettingsY = 108,
+		SettingsWidth = settingsWidth,
+	}
+end
+
+local function applyResponsiveTopLayout(): ()
+	local screenGui = hudGui
+	if screenGui == nil then
+		return
+	end
+
+	local rawWidth = screenGui.AbsoluteSize.X
+	local safeWidth = if rawWidth > 0 then rawWidth else 320
+	local layout = UIController.ComputeTopHudLayout(safeWidth)
+
+	if resourceBarFrame ~= nil then
+		resourceBarFrame.AnchorPoint = Vector2.new(0, 0)
+		resourceBarFrame.Position = UDim2.fromOffset(layout.ResourceX, layout.ResourceY)
+		resourceBarFrame.Size = UDim2.fromOffset(layout.ResourceWidth, layout.ResourceHeight)
+	end
+	if actionRowFrame ~= nil then
+		actionRowFrame.AnchorPoint = Vector2.new(0, 0)
+		actionRowFrame.Position = UDim2.fromOffset(layout.ActionsX, layout.ActionsY)
+		actionRowFrame.Size = UDim2.fromOffset(layout.ActionsWidth, layout.ActionsHeight)
+	end
+	if toastLabel ~= nil then
+		toastLabel.Position = UDim2.new(0.5, 0, 0, layout.ToastY)
+	end
+	if settingsDrawer ~= nil then
+		settingsDrawer.AnchorPoint = Vector2.new(0, 0)
+		settingsDrawer.Position = UDim2.fromOffset(layout.SettingsX, layout.SettingsY)
+		settingsDrawer.Size = UDim2.fromOffset(layout.SettingsWidth, 224)
+	end
+end
+
+function UIController.ComputeBagStructureSignature(dto: Types.OwnerStateDTO, pendingSellUID: string?): string
+	local itemKeys: { string } = {}
+	for uid in pairs(dto.Items) do
+		table.insert(itemKeys, uid)
+	end
+	table.sort(itemKeys)
+
+	local parts: { string } = {
+		string.format("cap:%d|res:%d|sell:%s", dto.BagCap, dto.ReservedBagSlots or 0, pendingSellUID or ""),
+	}
+
+	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+		table.insert(parts, string.format("u:%s=%s", upgradeId, if dto.Upgrades[upgradeId] == true then "1" else "0"))
+	end
+
+	for _, uid in ipairs(itemKeys) do
+		local item = dto.Items[uid]
+		table.insert(
+			parts,
+			string.format(
+				"i:%s|%s|%s|%s|%s|%s",
+				item.UID,
+				item.SpeciesId,
+				item.Variant,
+				item.State,
+				item.AssignedSlot or "",
+				tostring(item.MaturesAt or 0)
+			)
+		)
+	end
+
+	return table.concat(parts, ";")
 end
 
 local function countBagAndIncome(dto: Types.OwnerStateDTO): (number, number, number, number)
@@ -329,9 +466,21 @@ local function updateContextualHint(): ()
 	end
 end
 
-local rebuildBagContents: () -> ()
+local function resolveBagSelectionTarget(preferredKey: string?): GuiObject?
+	if preferredKey ~= nil then
+		if bagButtonsByKey[preferredKey] ~= nil then
+			return bagButtonsByKey[preferredKey]
+		end
+		if preferredKey == "CloseBag" and bagCloseButton ~= nil then
+			return bagCloseButton
+		end
+	end
+	return firstBagSelectable or bagCloseButton
+end
 
-local function applyDrawerVisibility(): ()
+local rebuildBagContents: (preserveFocusAndScroll: boolean?) -> ()
+
+local function applyDrawerVisibility(preferredBagKey: string?): ()
 	if bagDrawer ~= nil then
 		bagDrawer.Visible = bagOpen
 	end
@@ -341,11 +490,38 @@ local function applyDrawerVisibility(): ()
 
 	if currentInputMode == "Gamepad" then
 		if bagOpen then
-			GuiService.SelectedObject = firstBagSelectable or bagCloseButton
+			if preferredBagKey ~= nil then
+				local target = resolveBagSelectionTarget(preferredBagKey)
+				if target ~= nil then
+					GuiService.SelectedObject = target
+				end
+			else
+				local currentSelected = GuiService.SelectedObject
+				local insideBag = currentSelected ~= nil and bagDrawer ~= nil and currentSelected:IsDescendantOf(bagDrawer)
+				if not insideBag then
+					GuiService.SelectedObject = resolveBagSelectionTarget(lastFocusedBagKey)
+				end
+			end
 		elseif settingsOpen then
-			GuiService.SelectedObject = muteToggleButton
+			local currentSelected = GuiService.SelectedObject
+			local insideSettings = currentSelected ~= nil and settingsDrawer ~= nil and currentSelected:IsDescendantOf(settingsDrawer)
+			if not insideSettings then
+				GuiService.SelectedObject = muteToggleButton
+			end
 		else
 			GuiService.SelectedObject = nil
+		end
+	end
+end
+
+local function refreshUpgradeAffordabilityInPlace(dto: Types.OwnerStateDTO): ()
+	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+		local btn = upgradeBuyButtons[upgradeId]
+		if btn ~= nil then
+			local def = UpgradeConfig.ById[upgradeId]
+			local canAfford = dto.Coins >= def.Cost
+			btn.BackgroundColor3 = if canAfford then PALETTE.MeadowMint else PALETTE.CardDark
+			btn.TextColor3 = if canAfford then PALETTE.PanelDark else PALETTE.TextMuted
 		end
 	end
 end
@@ -397,8 +573,8 @@ local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder:
 	swatch.Parent = row
 
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -210, 0, 24)
-	title.Position = UDim2.fromOffset(26, 7)
+	title.Size = UDim2.new(1, -190, 0, 24)
+	title.Position = UDim2.fromOffset(24, 7)
 	title.BackgroundTransparency = 1
 	title.TextColor3 = PALETTE.TextCream
 	title.Font = Enum.Font.GothamBold
@@ -408,8 +584,8 @@ local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder:
 	title.Parent = row
 
 	local subtitle = Instance.new("TextLabel")
-	subtitle.Size = UDim2.new(1, -210, 0, 20)
-	subtitle.Position = UDim2.fromOffset(26, 33)
+	subtitle.Size = UDim2.new(1, -190, 0, 20)
+	subtitle.Position = UDim2.fromOffset(24, 33)
 	subtitle.BackgroundTransparency = 1
 	subtitle.TextColor3 = PALETTE.TextMuted
 	subtitle.Font = Enum.Font.GothamMedium
@@ -421,10 +597,26 @@ local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder:
 	return row, title, subtitle
 end
 
-rebuildBagContents = function(): ()
+rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	local scroll = bagScrollFrame
 	if scroll == nil then
 		return
+	end
+
+	local preserve = preserveFocusAndScroll == true
+	local savedCanvasPos = if preserve then scroll.CanvasPosition else Vector2.zero
+	local preferredKey: string? = nil
+	if preserve then
+		local currentSelected = GuiService.SelectedObject
+		if currentSelected ~= nil and bagDrawer ~= nil and currentSelected:IsDescendantOf(bagDrawer) then
+			local attr = currentSelected:GetAttribute("BagActionKey")
+			if typeof(attr) == "string" then
+				preferredKey = attr
+			end
+		end
+		if preferredKey == nil then
+			preferredKey = lastFocusedBagKey
+		end
 	end
 
 	for _, child in ipairs(scroll:GetChildren()) do
@@ -433,9 +625,16 @@ rebuildBagContents = function(): ()
 		end
 	end
 	activeTimerBindings = {}
+	bagButtonsByKey = {}
+	upgradeBuyButtons = {}
 	firstBagSelectable = nil
 
-	local function registerSelectable(btn: GuiObject): ()
+	local function registerBagButton(actionKey: string, btn: GuiObject): ()
+		btn:SetAttribute("BagActionKey", actionKey)
+		bagButtonsByKey[actionKey] = btn
+		btn.SelectionGained:Connect(function()
+			lastFocusedBagKey = actionKey
+		end)
 		if firstBagSelectable == nil then
 			firstBagSelectable = btn
 		end
@@ -444,6 +643,8 @@ rebuildBagContents = function(): ()
 	local dto = latestOwnerState
 	if dto == nil then
 		createEmptyNote(scroll, "Loading Ranch Bag...", 1)
+		lastBagStructureSignature = nil
+		applyDrawerVisibility(nil)
 		return
 	end
 
@@ -516,11 +717,15 @@ rebuildBagContents = function(): ()
 			title.Text = def.DisplayName .. variantTag
 			subtitle.Text = string.format("Keep: +%d Coins/s  |  Sell: +%d Coins", def.CoinsPerSecond, def.SellPrice)
 
-			local placeBtn = makeTextButton(row, "PlaceBtn", "Place", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(78, 44), 13)
-			placeBtn.Position = UDim2.new(1, -184, 0.5, -22)
-			registerSelectable(placeBtn)
+			local placeBtn = makeTextButton(row, "PlaceBtn", "Place", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(72, 44), 13)
+			placeBtn.Position = UDim2.new(1, -166, 0.5, -22)
+			registerBagButton("Place:" .. item.UID, placeBtn)
 			placeBtn.Activated:Connect(function()
-				local freePen = findEmptyUnlockedPen(dto)
+				local currentDto = latestOwnerState
+				if currentDto == nil then
+					return
+				end
+				local freePen = findEmptyUnlockedPen(currentDto)
 				if freePen == nil then
 					SoundController.Play("Error")
 					UIController.ShowToast("All unlocked Pen slots are full! Buy Slot #2 or Sell extras.", "Warn")
@@ -542,8 +747,9 @@ rebuildBagContents = function(): ()
 			local sellText = if isArmed then "Confirm Sell?" else string.format("Sell +%d", def.SellPrice)
 			local sellBg = if isArmed then PALETTE.DangerRed else PALETTE.StarlightGold
 			local sellFg = if isArmed then PALETTE.TextCream else PALETTE.PanelDark
-			local sellBtn = makeTextButton(row, "SellBtn", sellText, sellBg, sellFg, UDim2.fromOffset(92, 44), 13)
-			sellBtn.Position = UDim2.new(1, -98, 0.5, -22)
+			local sellBtn = makeTextButton(row, "SellBtn", sellText, sellBg, sellFg, UDim2.fromOffset(84, 44), 12)
+			sellBtn.Position = UDim2.new(1, -88, 0.5, -22)
+			registerBagButton("Sell:" .. item.UID, sellBtn)
 			sellBtn.Activated:Connect(function()
 				local okRange = isWithinStationRange("SellStand", "SellStand")
 				if not okRange then
@@ -561,13 +767,14 @@ rebuildBagContents = function(): ()
 				else
 					pendingSellConfirmUID = item.UID
 					pendingSellConfirmExpiresAt = os.clock() + 3.0
+					lastFocusedBagKey = "Sell:" .. item.UID
 					SoundController.Play("Click")
-					rebuildBagContents()
+					rebuildBagContents(true)
 					task.delay(3.1, function()
 						if pendingSellConfirmUID == item.UID and os.clock() > pendingSellConfirmExpiresAt then
 							pendingSellConfirmUID = nil
 							if bagOpen then
-								rebuildBagContents()
+								rebuildBagContents(true)
 							end
 						end
 					end)
@@ -591,11 +798,15 @@ rebuildBagContents = function(): ()
 			title.Text = def.DisplayName .. " Pod"
 			subtitle.Text = string.format("Hatch: %ds  |  Earns +%d Coins/s", def.HatchSeconds, def.CoinsPerSecond)
 
-			local incBtn = makeTextButton(row, "IncubateBtn", "Incubate", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(104, 44), 14)
-			incBtn.Position = UDim2.new(1, -112, 0.5, -22)
-			registerSelectable(incBtn)
+			local incBtn = makeTextButton(row, "IncubateBtn", "Incubate", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(100, 44), 14)
+			incBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			registerBagButton("Incubate:" .. item.UID, incBtn)
 			incBtn.Activated:Connect(function()
-				local freeInc = findEmptyUnlockedIncubator(dto)
+				local currentDto = latestOwnerState
+				if currentDto == nil then
+					return
+				end
+				local freeInc = findEmptyUnlockedIncubator(currentDto)
 				if freeInc == nil then
 					SoundController.Play("Error")
 					UIController.ShowToast("All unlocked Incubator pads are busy!", "Warn")
@@ -648,11 +859,11 @@ rebuildBagContents = function(): ()
 				if mature then "Hatch!" else "Wait...",
 				if mature then PALETTE.StarlightGold else PALETTE.CardDark,
 				if mature then PALETTE.PanelDark else PALETTE.TextMuted,
-				UDim2.fromOffset(104, 44),
+				UDim2.fromOffset(100, 44),
 				14
 			)
-			hatchBtn.Position = UDim2.new(1, -112, 0.5, -22)
-			registerSelectable(hatchBtn)
+			hatchBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			registerBagButton("Hatch:" .. slotId, hatchBtn)
 			hatchBtn.Activated:Connect(function()
 				if workspace:GetServerTimeNow() < maturesAt then
 					SoundController.Play("Error")
@@ -690,12 +901,17 @@ rebuildBagContents = function(): ()
 			title.Text = string.format("%s — %s%s", slotId, def.DisplayName, variantTag)
 			subtitle.Text = string.format("In Pen (Safe)  |  Earning +%d Coins/s", def.CoinsPerSecond)
 
-			local pickUpBtn = makeTextButton(row, "PickUpBtn", "Pick Up", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(104, 44), 14)
-			pickUpBtn.Position = UDim2.new(1, -112, 0.5, -22)
+			local pickUpBtn = makeTextButton(row, "PickUpBtn", "Pick Up", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(100, 44), 14)
+			pickUpBtn.Position = UDim2.new(1, -108, 0.5, -22)
 			addStroke(pickUpBtn, PALETTE.OrbitalCyan, 1)
-			registerSelectable(pickUpBtn)
+			registerBagButton("PickUp:" .. slotId, pickUpBtn)
 			pickUpBtn.Activated:Connect(function()
-				if (bagCount + incubatingCount) >= dto.BagCap then
+				local currentDto = latestOwnerState
+				if currentDto == nil then
+					return
+				end
+				local curBagCount, curIncCount = countBagAndIncome(currentDto)
+				if (curBagCount + curIncCount) >= currentDto.BagCap then
 					SoundController.Play("Error")
 					UIController.ShowToast("Bag Full! Sell a hatched critter before picking up.", "Warn")
 					return
@@ -727,9 +943,10 @@ rebuildBagContents = function(): ()
 		subtitle.Text = string.format("%s (%s Coins)", def.Description, FormatUtil.FormatCoins(def.Cost))
 
 		if owned then
-			local ownedBtn = makeTextButton(row, "OwnedTag", "Owned", PALETTE.PanelDark, PALETTE.OrbitalCyan, UDim2.fromOffset(104, 44), 14)
-			ownedBtn.Position = UDim2.new(1, -112, 0.5, -22)
+			local ownedBtn = makeTextButton(row, "OwnedTag", "Owned", PALETTE.PanelDark, PALETTE.OrbitalCyan, UDim2.fromOffset(100, 44), 14)
+			ownedBtn.Position = UDim2.new(1, -108, 0.5, -22)
 			ownedBtn.AutoButtonColor = false
+			ownedBtn.Selectable = false
 		else
 			local canAfford = dto.Coins >= def.Cost
 			local buyBtn = makeTextButton(
@@ -738,16 +955,21 @@ rebuildBagContents = function(): ()
 				string.format("Buy (%d)", def.Cost),
 				if canAfford then PALETTE.MeadowMint else PALETTE.CardDark,
 				if canAfford then PALETTE.PanelDark else PALETTE.TextMuted,
-				UDim2.fromOffset(104, 44),
+				UDim2.fromOffset(100, 44),
 				13
 			)
-			buyBtn.Position = UDim2.new(1, -112, 0.5, -22)
-			registerSelectable(buyBtn)
+			buyBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			upgradeBuyButtons[upgradeId] = buyBtn
+			registerBagButton("Buy:" .. upgradeId, buyBtn)
 			buyBtn.Activated:Connect(function()
 				if pendingUpgradeBuy then
 					return
 				end
-				if dto.Coins < def.Cost then
+				local currentDto = latestOwnerState
+				if currentDto == nil then
+					return
+				end
+				if currentDto.Coins < def.Cost then
 					SoundController.Play("Error")
 					UIController.ShowToast(string.format("Need %s Coins for %s!", FormatUtil.FormatCoins(def.Cost), def.DisplayName), "Warn")
 					return
@@ -778,7 +1000,14 @@ rebuildBagContents = function(): ()
 		end
 	end
 
-	applyDrawerVisibility()
+	bagRebuildCount += 1
+	lastBagStructureSignature = UIController.ComputeBagStructureSignature(dto, pendingSellConfirmUID)
+
+	if preserve then
+		scroll.CanvasPosition = savedCanvasPos
+	end
+
+	applyDrawerVisibility(if preserve then preferredKey else nil)
 end
 
 local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
@@ -802,8 +1031,15 @@ local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
 
 	updateActionButtonsText()
 	updateContextualHint()
+
 	if bagOpen then
-		rebuildBagContents()
+		local nextSig = UIController.ComputeBagStructureSignature(dto, pendingSellConfirmUID)
+		if nextSig == lastBagStructureSignature then
+			-- Coin-only update: keep existing rows, scroll position, and Gamepad selection untouched.
+			refreshUpgradeAffordabilityInPlace(dto)
+		else
+			rebuildBagContents(true)
+		end
 	end
 end
 
@@ -856,22 +1092,19 @@ function UIController.Init(self: typeof(UIController)): ()
 	screenGui.Parent = playerGui
 	hudGui = screenGui
 
-	-- Top-Left Resource Bar (CoreUISafeInsets places y=0 cleanly below Roblox's top bar)
+	-- Top Resource Bar (pixel-positioned by applyResponsiveTopLayout so narrow phones stack cleanly)
 	local resBar = Instance.new("Frame")
 	resBar.Name = "TopResourceBar"
 	resBar.AnchorPoint = Vector2.new(0, 0)
-	resBar.Position = UDim2.new(0, 10, 0, 8)
-	resBar.Size = UDim2.new(0.52, -16, 0, 46)
+	resBar.Position = UDim2.fromOffset(10, 8)
+	resBar.Size = UDim2.fromOffset(300, 46)
 	resBar.BackgroundColor3 = PALETTE.PanelDark
 	resBar.BackgroundTransparency = 0.08
 	resBar.BorderSizePixel = 0
 	addCorner(resBar, 14)
 	addStroke(resBar, PALETTE.BorderSoft, 1.5)
-	local resConstraint = Instance.new("UISizeConstraint")
-	resConstraint.MinSize = Vector2.new(165, 44)
-	resConstraint.MaxSize = Vector2.new(390, 48)
-	resConstraint.Parent = resBar
 	resBar.Parent = screenGui
+	resourceBarFrame = resBar
 
 	local resLayout = Instance.new("UIListLayout")
 	resLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -917,11 +1150,12 @@ function UIController.Init(self: typeof(UIController)): ()
 	-- Top-Right Action Buttons (>= 44px touch targets)
 	local actionRow = Instance.new("Frame")
 	actionRow.Name = "TopRightActions"
-	actionRow.AnchorPoint = Vector2.new(1, 0)
-	actionRow.Position = UDim2.new(1, -10, 0, 8)
-	actionRow.Size = UDim2.fromOffset(188, 46)
+	actionRow.AnchorPoint = Vector2.new(0, 0)
+	actionRow.Position = UDim2.fromOffset(124, 58)
+	actionRow.Size = UDim2.fromOffset(ACTION_TRAY_WIDTH, 46)
 	actionRow.BackgroundTransparency = 1
 	actionRow.Parent = screenGui
+	actionRowFrame = actionRow
 
 	local actionLayout = Instance.new("UIListLayout")
 	actionLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -929,14 +1163,14 @@ function UIController.Init(self: typeof(UIController)): ()
 	actionLayout.Padding = UDim.new(0, 6)
 	actionLayout.Parent = actionRow
 
-	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag [0] (B)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(102, 46), 13)
+	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag [0] (B)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(102, 44), 13)
 	bagBtn.Activated:Connect(function()
 		SoundController.Play("Click")
 		UIController.ToggleBag()
 	end)
 	bagButton = bagBtn
 
-	local setBtn = makeTextButton(actionRow, "SettingsButton", "Settings", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(80, 46), 13)
+	local setBtn = makeTextButton(actionRow, "SettingsButton", "Settings", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(80, 44), 13)
 	addStroke(setBtn, PALETTE.BorderSoft, 1.5)
 	setBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -949,7 +1183,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	toast.Name = "ToastBanner"
 	toast.AnchorPoint = Vector2.new(0.5, 0)
 	toast.Position = UDim2.new(0.5, 0, 0, 62)
-	toast.Size = UDim2.new(0.7, 0, 0, 36)
+	toast.Size = UDim2.new(0.86, 0, 0, 36)
 	toast.BackgroundColor3 = PALETTE.PanelDark
 	toast.BackgroundTransparency = 0.08
 	toast.TextColor3 = PALETTE.OrbitalCyan
@@ -971,7 +1205,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	hintFrame.Name = "BottomHintBar"
 	hintFrame.AnchorPoint = Vector2.new(0.5, 1)
 	hintFrame.Position = UDim2.new(0.5, 0, 1, -10)
-	hintFrame.Size = UDim2.new(0.86, 0, 0, 38)
+	hintFrame.Size = UDim2.new(0.92, 0, 0, 38)
 	hintFrame.BackgroundColor3 = PALETTE.PanelDark
 	hintFrame.BackgroundTransparency = 0.14
 	hintFrame.BorderSizePixel = 0
@@ -1000,7 +1234,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	drawer.Name = "BagDrawer"
 	drawer.AnchorPoint = Vector2.new(0.5, 0.5)
 	drawer.Position = UDim2.fromScale(0.5, 0.5)
-	drawer.Size = UDim2.fromScale(0.92, 0.74)
+	drawer.Size = UDim2.fromScale(0.94, 0.72)
 	drawer.BackgroundColor3 = PALETTE.PanelDark
 	drawer.BackgroundTransparency = 0.04
 	drawer.BorderSizePixel = 0
@@ -1008,7 +1242,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	addCorner(drawer, 16)
 	addStroke(drawer, PALETTE.OrbitalCyan, 1.5)
 	local drawerConstraint = Instance.new("UISizeConstraint")
-	drawerConstraint.MinSize = Vector2.new(300, 280)
+	drawerConstraint.MinSize = Vector2.new(280, 260)
 	drawerConstraint.MaxSize = Vector2.new(600, 520)
 	drawerConstraint.Parent = drawer
 	drawer.Parent = screenGui
@@ -1040,6 +1274,10 @@ function UIController.Init(self: typeof(UIController)): ()
 	local closeBagBtn = makeTextButton(drawer, "CloseBagBtn", "X", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(44, 44), 16)
 	closeBagBtn.AnchorPoint = Vector2.new(1, 0)
 	closeBagBtn.Position = UDim2.new(1, -12, 0, 10)
+	closeBagBtn:SetAttribute("BagActionKey", "CloseBag")
+	closeBagBtn.SelectionGained:Connect(function()
+		lastFocusedBagKey = "CloseBag"
+	end)
 	addStroke(closeBagBtn, PALETTE.BorderSoft, 1)
 	closeBagBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -1068,8 +1306,8 @@ function UIController.Init(self: typeof(UIController)): ()
 	-- Settings Popover
 	local sDrawer = Instance.new("Frame")
 	sDrawer.Name = "SettingsDrawer"
-	sDrawer.AnchorPoint = Vector2.new(1, 0)
-	sDrawer.Position = UDim2.new(1, -10, 0, 62)
+	sDrawer.AnchorPoint = Vector2.new(0, 0)
+	sDrawer.Position = UDim2.fromOffset(34, 108)
 	sDrawer.Size = UDim2.fromOffset(278, 224)
 	sDrawer.BackgroundColor3 = PALETTE.PanelDark
 	sDrawer.BackgroundTransparency = 0.04
@@ -1134,6 +1372,12 @@ function UIController.Init(self: typeof(UIController)): ()
 
 	SoundController.OnSettingsChanged(updateSettingsTogglesUI)
 	updateActionButtonsText()
+	applyResponsiveTopLayout()
+
+	if sizeChangedConn ~= nil then
+		sizeChangedConn:Disconnect()
+	end
+	sizeChangedConn = screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyResponsiveTopLayout)
 end
 
 function UIController.Start(self: typeof(UIController)): ()
@@ -1196,7 +1440,7 @@ function UIController.Start(self: typeof(UIController)): ()
 							end
 						end
 						if flippedMature then
-							rebuildBagContents()
+							rebuildBagContents(true)
 						end
 					end
 				end
@@ -1226,7 +1470,7 @@ end
 
 function UIController.GetSelectedGamepadTarget(): GuiObject?
 	if bagOpen then
-		return firstBagSelectable or bagCloseButton
+		return resolveBagSelectionTarget(lastFocusedBagKey)
 	elseif settingsOpen then
 		return muteToggleButton
 	end
@@ -1237,10 +1481,11 @@ function UIController.ToggleBag(): boolean
 	bagOpen = not bagOpen
 	if bagOpen then
 		settingsOpen = false
-		rebuildBagContents()
+		rebuildBagContents(false)
 	else
 		pendingSellConfirmUID = nil
-		applyDrawerVisibility()
+		lastFocusedBagKey = nil
+		applyDrawerVisibility(nil)
 	end
 	return bagOpen
 end
@@ -1250,8 +1495,9 @@ function UIController.ToggleSettings(): boolean
 	if settingsOpen then
 		bagOpen = false
 		pendingSellConfirmUID = nil
+		lastFocusedBagKey = nil
 	end
-	applyDrawerVisibility()
+	applyDrawerVisibility(nil)
 	return settingsOpen
 end
 
@@ -1260,7 +1506,8 @@ function UIController.CloseDrawers(): boolean
 	bagOpen = false
 	settingsOpen = false
 	pendingSellConfirmUID = nil
-	applyDrawerVisibility()
+	lastFocusedBagKey = nil
+	applyDrawerVisibility(nil)
 	return hadOpen
 end
 
@@ -1270,7 +1517,152 @@ function UIController.SetInputMode(mode: InputMode): ()
 	end
 	currentInputMode = mode
 	updateActionButtonsText()
-	applyDrawerVisibility()
+	applyDrawerVisibility(nil)
+end
+
+function UIController.RunSelfTest(): number
+	local passed = 0
+	local scroll = bagScrollFrame :: ScrollingFrame
+	local savedMode = currentInputMode
+
+	local testOk, testErr = pcall(function()
+		-- 1. Narrow & wide safe-width top HUD geometry invariants (zero overlap, inside bounds)
+		for _, w in ipairs({ 320, 360, 375, 439, 440, 667, 1280 }) do
+			local layout = UIController.ComputeTopHudLayout(w)
+			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout below 440px")
+			assert(layout.ResourceX >= 0 and (layout.ResourceX + layout.ResourceWidth) <= w, "ResourceBar stays in bounds")
+			assert(layout.ActionsX >= 0 and (layout.ActionsX + layout.ActionsWidth) <= w, "ActionTray stays in bounds")
+			assert(layout.SettingsX >= 0 and (layout.SettingsX + layout.SettingsWidth) <= w, "SettingsDrawer stays in bounds")
+
+			local xOverlap = layout.ResourceX < (layout.ActionsX + layout.ActionsWidth)
+				and (layout.ResourceX + layout.ResourceWidth) > layout.ActionsX
+			local yOverlap = layout.ResourceY < (layout.ActionsY + layout.ActionsHeight)
+				and (layout.ResourceY + layout.ResourceHeight) > layout.ActionsY
+			assert(not (xOverlap and yOverlap), "ResourceBar and ActionTray must never overlap at width " .. tostring(w))
+			assert(layout.ToastY >= math.max(layout.ResourceY + layout.ResourceHeight, layout.ActionsY + layout.ActionsHeight), "Toast sits cleanly below top HUD")
+		end
+		passed += 1
+
+		-- 2. Bag rows, scroll position & focus survive passive Coin ticks and structural rebuilds
+		local mockItems: { [string]: Types.CritterItemRecord } = {
+			["h-1"] = {
+				UID = "h-1",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "HatchedInBag",
+				CreatedAt = 100,
+			},
+			["h-2"] = {
+				UID = "h-2",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "HatchedInBag",
+				CreatedAt = 101,
+			},
+		}
+		local dto1: Types.OwnerStateDTO = {
+			Revision = 1,
+			Coins = 58,
+			BagCap = Constants.MAX_BAG_CAPACITY,
+			ReservedBagSlots = 0,
+			Items = mockItems,
+			Slots = {},
+			Upgrades = {},
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true },
+		}
+		local dto2: Types.OwnerStateDTO = {
+			Revision = 2,
+			Coins = 60,
+			BagCap = Constants.MAX_BAG_CAPACITY,
+			ReservedBagSlots = 0,
+			Items = mockItems,
+			Slots = {},
+			Upgrades = {},
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true },
+		}
+
+		currentInputMode = "Gamepad"
+		bagOpen = true
+		settingsOpen = false
+		latestOwnerState = dto1
+		scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+		scroll.CanvasSize = UDim2.fromOffset(0, 1200)
+
+		rebuildBagContents(false)
+		local rebuildsBefore = bagRebuildCount
+		local pen2BtnRef = upgradeBuyButtons["PenSlot_2"]
+		assert(pen2BtnRef ~= nil, "PenSlot_2 buy button rendered")
+		assert(pen2BtnRef.BackgroundColor3 == PALETTE.CardDark, "PenSlot_2 starts unaffordable at 58 Coins")
+
+		scroll.CanvasPosition = Vector2.new(0, 120)
+		lastFocusedBagKey = "Buy:PenSlot_2"
+
+		refreshAllHUD(dto2)
+		assert(bagRebuildCount == rebuildsBefore, "Coin-only update must not rebuild Bag rows")
+		assert(upgradeBuyButtons["PenSlot_2"] == pen2BtnRef, "Coin-only update preserves exact button instance")
+		assert(pen2BtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes affordability color in place")
+		assert(lastFocusedBagKey == "Buy:PenSlot_2" and scroll.CanvasPosition.Y == 120, "Coin-only update preserves focus key and scroll")
+
+		-- Structural rebuild (e.g. Confirm Sell) preserves focus key and scroll position
+		pendingSellConfirmUID = "h-2"
+		pendingSellConfirmExpiresAt = os.clock() + 3
+		lastFocusedBagKey = "Sell:h-2"
+		rebuildBagContents(true)
+		assert(bagRebuildCount == rebuildsBefore + 1, "Structural change rebuilds Bag rows")
+		assert(scroll.CanvasPosition.Y == 120, "Structural rebuild restores scroll position")
+		local resolvedSell = resolveBagSelectionTarget("Sell:h-2")
+		assert(resolvedSell ~= nil and resolvedSell ~= firstBagSelectable, "Structural rebuild preserves targeted Sell focus rather than resetting to first row")
+		assert((resolvedSell :: TextButton).Text == "Confirm Sell?", "Focused button updated cleanly to Confirm Sell?")
+		assert(resolveBagSelectionTarget("Buy:PenSlot_2") == upgradeBuyButtons["PenSlot_2"], "Buy target remains resolvable by BagActionKey")
+		passed += 1
+	end)
+
+	-- Restore pristine empty UI state before ClientInit starts live snapshot listener
+	currentInputMode = savedMode
+	bagOpen = false
+	settingsOpen = false
+	latestOwnerState = nil
+	pendingSellConfirmUID = nil
+	pendingSellConfirmExpiresAt = 0
+	lastBagStructureSignature = nil
+	lastFocusedBagKey = nil
+	bagRebuildCount = 0
+	bagButtonsByKey = {}
+	upgradeBuyButtons = {}
+	activeTimerBindings = {}
+	firstBagSelectable = nil
+	GuiService.SelectedObject = nil
+	for _, child in ipairs(scroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	scroll.CanvasPosition = Vector2.zero
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	if coinsLabel ~= nil then
+		coinsLabel.Text = "0 Coins"
+	end
+	if rateLabel ~= nil then
+		rateLabel.Text = "+0 Coins/s"
+	end
+	if bagLabel ~= nil then
+		bagLabel.Text = "Bag: 0/10"
+		bagLabel.TextColor3 = PALETTE.TextCream
+	end
+	if hintLabel ~= nil then
+		hintLabel.Text = "Connecting to your Starfall Ranch..."
+		hintLabel.TextColor3 = PALETTE.StarlightGold
+	end
+	updateActionButtonsText()
+	applyDrawerVisibility(nil)
+	applyResponsiveTopLayout()
+
+	if not testOk then
+		error(testErr)
+	end
+
+	return passed
 end
 
 return UIController

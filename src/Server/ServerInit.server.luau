@@ -24,6 +24,7 @@ local DataService = require(ServicesFolder:WaitForChild("DataService"))
 local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 local PlotService = require(ServicesFolder:WaitForChild("PlotService"))
 local MeteorService = require(ServicesFolder:WaitForChild("MeteorService"))
+local Stage1VerificationSuite = require(ServicesFolder:WaitForChild("Stage1VerificationSuite"))
 
 local serviceOrder: { Types.Service } = {
 	NetworkService :: Types.Service,
@@ -52,6 +53,9 @@ if Constants.RUN_SELF_TESTS then
 
 	local meteorPassed = MeteorService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d MeteorService test suites passed.", meteorPassed))
+
+	local s1VerifyPassed = Stage1VerificationSuite.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d Stage1VerificationSuite test suites passed.", s1VerifyPassed))
 end
 
 for _, service in ipairs(serviceOrder) do

@@ -26,6 +26,12 @@ for _, controller in ipairs(controllerOrder) do
 	controller:Init()
 end
 
+if Constants.RUN_SELF_TESTS then
+	local UIController = require(ControllersFolder:WaitForChild("UIController"))
+	local uiPassed = UIController.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d UIController client test suites passed.", uiPassed))
+end
+
 for _, controller in ipairs(controllerOrder) do
 	controller:Start()
 end

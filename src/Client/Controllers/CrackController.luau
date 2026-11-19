@@ -242,11 +242,15 @@ local function buildFeelTimingUI(): ()
 	frame.Name = "CrackFeelFrame"
 	frame.AnchorPoint = Vector2.new(0.5, 1)
 	frame.Position = UDim2.new(0.5, 0, 1, -64)
-	frame.Size = UDim2.fromOffset(316, 98)
+	frame.Size = UDim2.new(0.92, 0, 0, 98)
 	frame.BackgroundColor3 = PALETTE.PanelDark
 	frame.BackgroundTransparency = 0.06
 	frame.BorderSizePixel = 0
 	frame.Visible = false
+	local frameConstraint = Instance.new("UISizeConstraint")
+	frameConstraint.MinSize = Vector2.new(260, 92)
+	frameConstraint.MaxSize = Vector2.new(330, 102)
+	frameConstraint.Parent = frame
 	frame.Parent = hud
 
 	local corner = Instance.new("UICorner")
