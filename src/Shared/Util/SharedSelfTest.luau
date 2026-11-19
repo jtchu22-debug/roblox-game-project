@@ -35,7 +35,10 @@ function SharedSelfTest.RunAll(): number
 	runTest("Configs_Integrity_And_Immutability", function()
 		assert(#CritterConfig.OrderedIds == 3, "Expected 3 Critter species")
 		assert(#MeteorConfig.OrderedIds == 3, "Expected 3 Meteor traits")
-		assert(#UpgradeConfig.OrderedIds == 3, "Expected 3 Ranch upgrades")
+		assert(#UpgradeConfig.OrderedIds == 4, "Expected 4 Ranch/Tool upgrades")
+		assert(UpgradeConfig.ById.StarCracker.Cost == 120 and UpgradeConfig.ById.StarCracker.SlotCategory == "Tool", "StarCracker tool upgrade configured")
+		assert(MeteorConfig.ById.Astral.RequiredUpgradeId == "StarCracker", "Astral requires StarCracker")
+		assert(Constants.CRITTER_FEED_SELL_BONUS < Constants.CRITTER_FEED_COST, "Feed sell bonus must stay strictly below feed cost")
 
 		for _, speciesId in ipairs(CritterConfig.OrderedIds) do
 			local def = CritterConfig.ById[speciesId]
@@ -94,7 +97,7 @@ function SharedSelfTest.RunAll(): number
 
 	runTest("EconomyMath_ActivePenRate_And_DeterministicRolls", function()
 		local items: { [string]: Types.CritterItemRecord } = {
-			a = {
+			["a"] = {
 				UID = "a",
 				SpeciesId = "StarSlime",
 				Variant = "Normal",
@@ -103,8 +106,9 @@ function SharedSelfTest.RunAll(): number
 				PlantedAt = nil,
 				MaturesAt = nil,
 				CreatedAt = 0,
+				FeedLevel = 0,
 			},
-			b = {
+			["b"] = {
 				UID = "b",
 				SpeciesId = "NebulaFox",
 				Variant = "Radiant",
@@ -113,8 +117,9 @@ function SharedSelfTest.RunAll(): number
 				PlantedAt = nil,
 				MaturesAt = nil,
 				CreatedAt = 0,
+				FeedLevel = 1,
 			},
-			c = {
+			["c"] = {
 				UID = "c",
 				SpeciesId = "SolarGolem",
 				Variant = "Normal",
@@ -124,7 +129,7 @@ function SharedSelfTest.RunAll(): number
 				MaturesAt = nil,
 				CreatedAt = 0,
 			},
-			d = {
+			["d"] = {
 				UID = "d",
 				SpeciesId = "SolarGolem",
 				Variant = "Normal",
@@ -137,13 +142,18 @@ function SharedSelfTest.RunAll(): number
 		}
 
 		local rate = EconomyMath.CalculateActivePenRate(items)
-		assert(rate == 6, string.format("Expected active pen rate 6, got %d", rate))
+		assert(rate == 8, string.format("Expected active pen rate 8 (2 + 4 + 2 feed bonus), got %d", rate))
+		assert(EconomyMath.GetCritterCoinsPerSecond("StarSlime", "Normal", 1) == 4, "FeedLevel 1 adds +2 Coins/s")
+		assert(EconomyMath.GetCritterSellPrice("StarSlime", "Normal", 1) == 60, "FeedLevel 1 adds +20 sell bonus (40+20)")
 
-		-- Verify Ember never drops SolarGolem and Astral never drops StarSlime
+		-- Verify Ember/Frost never drop SolarGolem (exclusive to Astral), and Astral never drops StarSlime
 		local rng = Random.new(12345)
 		for _ = 1, 25 do
 			local emberDrop = EconomyMath.RollSpeciesForMeteorTrait("Ember", rng)
 			assert(emberDrop == "StarSlime" or emberDrop == "NebulaFox", "Unexpected Ember drop")
+
+			local frostDrop = EconomyMath.RollSpeciesForMeteorTrait("Frost", rng)
+			assert(frostDrop == "StarSlime" or frostDrop == "NebulaFox", "Frost must leave SolarGolem exclusive to Astral")
 
 			local astralDrop = EconomyMath.RollSpeciesForMeteorTrait("Astral", rng)
 			assert(astralDrop == "NebulaFox" or astralDrop == "SolarGolem", "Unexpected Astral drop")
@@ -180,8 +190,10 @@ function SharedSelfTest.RunAll(): number
 		assert(ValidationUtil.IsValidMeteorTraitId("Astral"), "Valid meteor trait accepted")
 		assert(not ValidationUtil.IsValidMeteorTraitId("Gold"), "Invalid meteor trait rejected")
 		assert(ValidationUtil.IsValidUpgradeId("PenSlot_2"), "Valid upgrade accepted")
+		assert(ValidationUtil.IsValidUpgradeId("StarCracker"), "StarCracker upgrade accepted")
 		assert(not ValidationUtil.IsValidUpgradeId("Rebirth_1"), "Invalid upgrade rejected")
 		assert(ValidationUtil.IsValidPlotAction("PlaceInPen"), "Valid action accepted")
+		assert(ValidationUtil.IsValidPlotAction("FeedCritter"), "FeedCritter action accepted")
 		assert(not ValidationUtil.IsValidPlotAction("GiftItem"), "Cut gifting action rejected")
 	end)
 	passedCount += 1
@@ -214,6 +226,16 @@ function SharedSelfTest.RunAll(): number
 		-- EnsureExists must reuse a valid owned root without replacing it
 		local ensureOk, ensureStatus, ensureRoot = GreyboxBuilder.EnsureExists(testContainer)
 		assert(ensureOk and ensureStatus == "ReusedExisting" and ensureRoot == root, "EnsureExists must reuse valid owned root")
+
+		-- Removing StarCracker pad from an existing Stage 1 greybox must be non-destructively upgraded by EnsureExists
+		local existingPlots = (root :: Folder):FindFirstChild("Plots") :: Folder
+		local existingPlot1 = existingPlots:FindFirstChild("Plot_1") :: Model
+		local existingBoard1 = existingPlot1:FindFirstChild("UpgradeBoard") :: Folder
+		local missingPad = existingBoard1:FindFirstChild("UpgradePad_StarCracker") :: BasePart
+		missingPad:Destroy()
+		local upgOk, upgStatus, upgRoot = GreyboxBuilder.EnsureExists(testContainer)
+		assert(upgOk and upgStatus == "ReusedExisting" and upgRoot == root, "EnsureExists upgrades missing StarCracker pad in place")
+		assert(existingBoard1:FindFirstChild("UpgradePad_StarCracker") ~= nil, "Missing UpgradePad_StarCracker restored")
 
 		-- Explicit ConfirmReplace=true must rebuild root WITHOUT removing unrelated sibling objects
 		local replaced, replaceStatus, newRoot = GreyboxBuilder.Generate({

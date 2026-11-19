@@ -10,10 +10,10 @@ export type SpeciesId = "StarSlime" | "NebulaFox" | "SolarGolem"
 export type VariantId = "Normal" | "Radiant"
 export type MeteorTraitId = "Ember" | "Frost" | "Astral"
 export type ItemState = "PodInBag" | "Incubating" | "HatchedInBag" | "InPen"
-export type UpgradeId = "PenSlot_2" | "Incubator_2" | "PenSlot_3"
-export type PlotAction = "StartIncubate" | "Hatch" | "PlaceInPen" | "RemoveFromPen" | "SellCritter"
+export type UpgradeId = "PenSlot_2" | "StarCracker" | "Incubator_2" | "PenSlot_3"
+export type PlotAction = "StartIncubate" | "Hatch" | "PlaceInPen" | "RemoveFromPen" | "SellCritter" | "FeedCritter"
 export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
-export type SlotCategory = "Pen" | "Incubator"
+export type SlotCategory = "Pen" | "Incubator" | "Tool"
 
 export type CritterItemRecord = {
 	UID: string,
@@ -24,6 +24,7 @@ export type CritterItemRecord = {
 	PlantedAt: number?,
 	MaturesAt: number?,
 	CreatedAt: number,
+	FeedLevel: number?,
 }
 
 export type PlayerProfileData = {
@@ -52,6 +53,7 @@ export type OwnerStateDTO = {
 export type PublicPenVisual = {
 	SpeciesId: SpeciesId,
 	Variant: VariantId,
+	FeedLevel: number?,
 }
 
 export type PublicIncubatorVisual = {
@@ -88,6 +90,7 @@ export type MeteorTraitDefinition = {
 	CoreColor: Color3,
 	ShapeStyle: MeteorShapeStyle,
 	IconText: string,
+	RequiredUpgradeId: UpgradeId?,
 	DropWeights: { [SpeciesId]: number },
 }
 
@@ -98,6 +101,7 @@ export type UpgradeDefinition = {
 	Cost: number,
 	UnlocksSlotId: string,
 	SlotCategory: SlotCategory,
+	PadOffsetX: number,
 	Description: string,
 }
 

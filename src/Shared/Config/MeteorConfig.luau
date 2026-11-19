@@ -18,6 +18,7 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		CoreColor = Color3.fromRGB(255, 145, 60),
 		ShapeStyle = "FlameCrest",
 		IconText = "EMBER",
+		RequiredUpgradeId = nil,
 		DropWeights = table.freeze({
 			StarSlime = 85,
 			NebulaFox = 15,
@@ -32,10 +33,11 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		CoreColor = Color3.fromRGB(125, 240, 255),
 		ShapeStyle = "IceSpikes",
 		IconText = "FROST",
+		RequiredUpgradeId = nil,
 		DropWeights = table.freeze({
-			StarSlime = 30,
-			NebulaFox = 60,
-			SolarGolem = 10,
+			StarSlime = 35,
+			NebulaFox = 65,
+			SolarGolem = 0,
 		}),
 	}),
 	Astral = table.freeze({
@@ -46,10 +48,11 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		CoreColor = Color3.fromRGB(255, 210, 80),
 		ShapeStyle = "StarRing",
 		IconText = "ASTRAL",
+		RequiredUpgradeId = "StarCracker",
 		DropWeights = table.freeze({
 			StarSlime = 0,
-			NebulaFox = 45,
-			SolarGolem = 55,
+			NebulaFox = 35,
+			SolarGolem = 65,
 		}),
 	}),
 }

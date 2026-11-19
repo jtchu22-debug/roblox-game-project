@@ -1,6 +1,6 @@
 # Stage 2 (`S2-01`) Uncoached Discovery Playtest Kit
 
-> **Applies To:** `v0.2.1-s2-playtest-live` (`Stage 2: Discovery Playtest Gate — R-009`, allowlisted for private `PlaceId 137485500524067`)  
+> **Applies To:** `v0.2.2-s2b-iterate` (`Stage 2B: Focused Iterate Pass — R-009 / Review #012`, allowlisted for private `PlaceId 137485500524067`)  
 > **Goal:** Observe **5–10 consenting testers** play *Starfall Ranch* uncoached for 5–15 minutes to decide whether to **Go** to Stage 3 (`ProfileStore` + 6 plots), **Iterate** on onboarding/Crater feel, or **Pivot** before writing persistence or Blender art.  
 > **Privacy Rule:** Collect **zero personal data** (no real names, Roblox usernames, UserIds, emails, or ages). Use anonymous tester codes `T-01` through `T-10`.
 
@@ -115,4 +115,31 @@ Share the filled Observation & Timing Sheet and Post-Session Debrief notes back 
 - **Gemini Preliminary Gate Read:** **NO-GO for Stage 3 (`ProfileStore` & 6-Plot Alpha).** While Stage 1 UI/controls/clarity passed uncoached, Round 1 failed retention, progression depth, Coin utility, and core Crater excitement. Advancing to `ProfileStore` now would lock in a 3-minute loop that testers would not return to.
 - **Decision Required Before Any `src/` Edits:** **ITERATE** (*Starfall Ranch* Stage 2B loop/depth pass, still on `MockStore`) vs. **PIVOT** to *Relic Raiders* or *Potion Pop!* ([GAME_CONCEPTS.md](./GAME_CONCEPTS.md)).
 - **Human Lead's Preliminary Priority (if Iterating):** Add **New Coin Sinks** (Cracker/Pickaxe Tiers, Critter Level-Ups/Feeding, Meteor Lures) — paired with the Stage 2 findings on identical meteors and 2–3 min ceiling.
-- **Hold Status:** All `src/` edits are paused on `v0.2.1-s2-playtest-live` (`8ce1e25`) pending **ChatGPT's independent Stage 2 assessment** in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) and the Human Lead's final **Iterate vs. Pivot** call.
+- **Hold Status:** Round 1 concluded with ChatGPT's Review #012 (`ITERATE` verdict) and Human Lead approval of the Stage 2B **Star Cracker + 2-Beat Astral Meteor + Capped Feed** pass (`v0.2.2-s2b-iterate`).
+
+---
+
+## 6. Stage 2B Round 2 Playtest Protocol (`v0.2.2-s2b-iterate`, 3–5 Fresh Testers)
+
+### 6.1 What Changed for Round 2 (`Review #012`)
+1. **Star Cracker Tool (`120 Coins`):** Competes directly with `PenSlot_2` (`60`) / `Incubator_2` (`180`) / `PenSlot_3` (`360`) and unlocks **Astral Meteors** (`720 Coins` total upgrade budget vs. `530` previously).
+2. **Unmistakable, Exclusive Astral Payoff:** Glowing towering sky-beacon Astral Meteors stay visible in the Crater, enforce `ToolRequired` pre-claim on the Server, feature a distinct 2-beat Core Shatter interaction (`0.9s + 0.9s`, `Reduced Motion` safe), and exclusively drop **Solar Golem** (`65%`, `7/s` | `180 Coins` — removed from Frost drops).
+3. **One Capped Critter Feed Level (`45 Coins`):** Boosts any active Pen critter (`FeedLevel 0 -> 1`) by `+2 Coins/s` (and `1.15x` visual growth + gold crown trim `★`) with only `+20` sell bonus (`< 45`, zero coin-printing arbitrage).
+
+### 6.2 Round 2 Per-Tester Timing & Choice Log (`R2-01`..`R2-05`)
+Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **desktop**. Fill exact timestamps, counts, and open-ended choices:
+
+| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Voluntary 2nd+ Rescue `<= 5m`? | Purchases Made (`Feed` / `StarCracker` / Pads) | Chased Astral / Reason for Choice & Named Next Goal |
+| :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
+| `R2-01` | | | | | | | |
+| `R2-02` | | | | | | | |
+| `R2-03` | | | | | | | |
+| `R2-04` | | | | | | | |
+| `R2-05` | | | | | | | |
+
+### 6.3 Round 2 Rollup (`GO` vs. `PIVOT` — Review #012)
+- **Sample Count (`N / Denominator`):** `___ / 3–5`
+- **Median First Reward (`<= 45s`):** `___s` (`___ / N`)
+- **First Hatch & Pen (`<= 90s >= 80%`):** `___ / N` (`___%`)
+- **Voluntary 2nd+ Rescue (`<= 5m >= 70%`):** `___ / N` (`___%`)
+- **Deliberate Choice + Next Goal Clarity:** `___ / N` testers explained *why* they chose a meteor or Coin spend (`Star Cracker` / `Feed` / Pen) and named a concrete next goal -> **Decision: `GO -> Stage 3` / `PIVOT`** (recorded in `docs/AGENT_REVIEWS.md`).

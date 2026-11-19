@@ -18,6 +18,7 @@ local ConfigFolder = Shared:WaitForChild("Config")
 local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
 local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 local UtilFolder = Shared:WaitForChild("Util")
+local EconomyMath = require(UtilFolder:WaitForChild("EconomyMath"))
 local FormatUtil = require(UtilFolder:WaitForChild("FormatUtil"))
 local GreyboxBuilder = require(UtilFolder:WaitForChild("GreyboxBuilder"))
 
@@ -47,6 +48,7 @@ local PALETTE = {
 	StarlightGold = Color3.fromRGB(255, 205, 45),
 	LockedSlate = Color3.fromRGB(140, 145, 165),
 	MeadowMint = Color3.fromRGB(95, 215, 145),
+	AstralViolet = Color3.fromRGB(205, 115, 255),
 }
 
 local PlotService = {
@@ -247,6 +249,7 @@ function PlotService.BuildPublicPlotDTO(plotId: number): Types.PublicPlotDTO
 					activePenVisuals[slotId] = {
 						SpeciesId = item.SpeciesId,
 						Variant = item.Variant,
+						FeedLevel = item.FeedLevel or 0,
 					}
 				elseif item.State == "Incubating" and item.MaturesAt ~= nil then
 					incubatorVisuals[slotId] = {
@@ -403,12 +406,14 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 						setPartLabelText(anchor, "SlotLabel", string.format("Pen Slot #%d (Empty)", idx))
 					else
 						local def = CritterConfig.ById[occupant.SpeciesId]
+						local effRate = EconomyMath.GetCritterCoinsPerSecond(occupant.SpeciesId, occupant.Variant, occupant.FeedLevel)
+						local feedStar = if (occupant.FeedLevel or 0) >= 1 then " ★" else ""
 						prompt.Enabled = true
 						prompt.ActionText = "Pick Up Critter"
 						prompt.ObjectText = def.DisplayName
 						anchor.Color = def.BodyColor
 						anchor.Transparency = 0.05
-						setPartLabelText(anchor, "SlotLabel", string.format("%s (+%d/s)", def.DisplayName, def.CoinsPerSecond))
+						setPartLabelText(anchor, "SlotLabel", string.format("%s%s (+%d/s)", def.DisplayName, feedStar, effRate))
 					end
 				end
 			end
@@ -421,21 +426,23 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		local anchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
 		local prompt = prompts.Upgrades[upgradeId]
 		if anchor and prompt then
+			local unownedColor = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
+			local ownedColor = if def.SlotCategory == "Tool" then PALETTE.StarlightGold else PALETTE.OrbitalCyan
 			if assignment == nil then
 				prompt.Enabled = false
-				anchor.Color = PALETTE.MeadowMint
+				anchor.Color = unownedColor
 				anchor.Transparency = 0
 				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)))
 			elseif assignment.Profile.Upgrades[upgradeId] == true then
 				prompt.Enabled = false
-				anchor.Color = PALETTE.OrbitalCyan
+				anchor.Color = ownedColor
 				anchor.Transparency = 0.35
 				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (Owned)", def.DisplayName))
 			else
 				prompt.Enabled = true
 				prompt.ActionText = string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
 				prompt.ObjectText = def.DisplayName
-				anchor.Color = PALETTE.MeadowMint
+				anchor.Color = unownedColor
 				anchor.Transparency = 0
 				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)))
 			end

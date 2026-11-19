@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.2.1-s2-playtest-live",
+	GAME_VERSION = "0.2.2-s2b-iterate",
 	USE_MOCK_STORE = true,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067, -- Private Stage 2 test place (Bioniccat4000's Place: 11192026_1)
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -41,6 +41,10 @@ local Constants = {
 	RADIANT_HATCH_CHANCE = 0.10,
 	RADIANT_BONUS_COINS_PER_SEC = 0,
 	RADIANT_BONUS_SELL_COINS = 0,
+	MAX_CRITTER_FEED_LEVEL = 1,
+	CRITTER_FEED_COST = 45,
+	CRITTER_FEED_BONUS_COINS_PER_SEC = 2,
+	CRITTER_FEED_SELL_BONUS = 20, -- Strictly < CRITTER_FEED_COST so feeding-to-sell never profits
 
 	-- Networking & Security Bounds
 	REMOTES_FOLDER_NAME = "Remotes",
@@ -62,6 +66,12 @@ local Constants = {
 	CRACK_CLIENT_DURATION_SECONDS = 1.2,
 	CRACK_FEEL_WINDOW_START_SECONDS = 0.52,
 	CRACK_FEEL_WINDOW_END_SECONDS = 0.96,
+	ASTRAL_CRACK_DURATION_SECONDS = 1.8,
+	ASTRAL_BEAT1_END_SECONDS = 0.9,
+	ASTRAL_BEAT1_SWEET_START = 0.35,
+	ASTRAL_BEAT1_SWEET_END = 0.78,
+	ASTRAL_BEAT2_SWEET_START = 0.30, -- Ensures Beat 1 + Beat 2 >= 0.65s > MIN_CRACK_DURATION_SECONDS
+	ASTRAL_BEAT2_SWEET_END = 0.76,
 	MAX_STRING_ID_LENGTH = 40,
 }
 

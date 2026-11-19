@@ -52,6 +52,7 @@ local function cloneCritterRecord(src: Types.CritterItemRecord): Types.CritterIt
 		PlantedAt = src.PlantedAt,
 		MaturesAt = src.MaturesAt,
 		CreatedAt = src.CreatedAt,
+		FeedLevel = src.FeedLevel or 0,
 	}
 end
 

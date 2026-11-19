@@ -166,6 +166,7 @@ local function buildCritterVisual(
 	key: string,
 	speciesId: Types.SpeciesId,
 	variant: Types.VariantId,
+	feedLevel: number,
 	pad: BasePart,
 	horizontalRotation: CFrame,
 	phaseSeed: number
@@ -176,7 +177,10 @@ local function buildCritterVisual(
 		return nil
 	end
 
-	local bodyScale = def.DisplayScale
+	local fed = feedLevel >= 1
+	local scaleMult = if fed then 1.15 else 1.0
+	local accentColor = if fed then COLOR_RADIANT_GOLD else def.AccentColor
+	local bodyScale = def.DisplayScale * scaleMult
 	local padTopY = pad.Position.Y + pad.Size.X * 0.5
 	local basePos = Vector3.new(pad.Position.X, padTopY + bodyScale.Y * 0.5, pad.Position.Z)
 	local baseCFrame = CFrame.new(basePos) * horizontalRotation
@@ -185,7 +189,7 @@ local function buildCritterVisual(
 	model.Name = string.format("%s_%s", key, speciesId)
 	local partsList: { PartOffset } = {}
 
-	local haloHeight = bodyScale.Y * 0.5 + 1.15
+	local haloHeight = bodyScale.Y * 0.5 + 1.15 * scaleMult
 	local haloDiameter = math.max(bodyScale.X, bodyScale.Z) * 0.85
 
 	if speciesId == "StarSlime" then
@@ -199,26 +203,26 @@ local function buildCritterVisual(
 		model.PrimaryPart = body
 
 		for _, xSign in ipairs({ -1, 1 }) do
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.55, 0.2, -bodyScale.Z * 0.48), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.55 * scaleMult, 0.2 * scaleMult, -bodyScale.Z * 0.48), {
 				Name = if xSign < 0 then "LeftEye" else "RightEye",
-				Size = Vector3.new(0.36, 0.44, 0.22),
+				Size = Vector3.new(0.36, 0.44, 0.22) * scaleMult,
 				Color = COLOR_EYE,
 				Shape = Enum.PartType.Ball,
 			})
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (bodyScale.X * 0.48), -0.35, 0), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (bodyScale.X * 0.48), -0.35 * scaleMult, 0), {
 				Name = if xSign < 0 then "LeftNub" else "RightNub",
-				Size = Vector3.new(0.6, 0.7, 0.8),
+				Size = Vector3.new(0.6, 0.7, 0.8) * scaleMult,
 				Color = def.BodyColor,
 			})
 		end
 
-		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, bodyScale.Y * 0.5 + 0.22, 0) * CFrame.Angles(0, math.rad(45), 0), {
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, bodyScale.Y * 0.5 + 0.22 * scaleMult, 0) * CFrame.Angles(0, math.rad(45), 0), {
 			Name = "StarCrest",
-			Size = Vector3.new(0.85, 0.45, 0.85),
-			Color = def.AccentColor,
+			Size = Vector3.new(0.85, 0.45, 0.85) * scaleMult,
+			Color = accentColor,
 			Material = Enum.Material.Neon,
 		})
-		haloHeight = bodyScale.Y * 0.5 + 1.0
+		haloHeight = bodyScale.Y * 0.5 + 1.0 * scaleMult
 	elseif speciesId == "NebulaFox" then
 		-- 7 parts (+1 Radiant halo = 8 <= 8 budget)
 		local torsoScale = Vector3.new(bodyScale.X * 0.8, bodyScale.Y * 0.7, bodyScale.Z * 0.95)
@@ -230,32 +234,32 @@ local function buildCritterVisual(
 		})
 		model.PrimaryPart = body
 
-		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.05, -torsoScale.Z * 0.56), {
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.05 * scaleMult, -torsoScale.Z * 0.56), {
 			Name = "Snout",
-			Size = Vector3.new(1.0, 0.7, 0.65),
+			Size = Vector3.new(1.0, 0.7, 0.65) * scaleMult,
 			Color = COLOR_CREAM,
 		})
 		for _, xSign in ipairs({ -1, 1 }) do
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.55, 0.35, -torsoScale.Z * 0.48), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.55 * scaleMult, 0.35 * scaleMult, -torsoScale.Z * 0.48), {
 				Name = if xSign < 0 then "LeftEye" else "RightEye",
-				Size = Vector3.new(0.34, 0.38, 0.22),
+				Size = Vector3.new(0.34, 0.38, 0.22) * scaleMult,
 				Color = COLOR_EYE,
 			})
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.65, torsoScale.Y * 0.5 + 0.48, -0.5), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.65 * scaleMult, torsoScale.Y * 0.5 + 0.48 * scaleMult, -0.5 * scaleMult), {
 				Name = if xSign < 0 then "LeftEar" else "RightEar",
-				Size = Vector3.new(0.55, 1.0, 0.65),
-				Color = def.AccentColor,
+				Size = Vector3.new(0.55, 1.0, 0.65) * scaleMult,
+				Color = accentColor,
 				Material = Enum.Material.Neon,
 				IsWedge = true,
 			})
 		end
-		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.55, torsoScale.Z * 0.58) * CFrame.Angles(math.rad(-35), 0, 0), {
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.55 * scaleMult, torsoScale.Z * 0.58) * CFrame.Angles(math.rad(-35), 0, 0), {
 			Name = "Tail",
-			Size = Vector3.new(0.85, 0.85, 1.7),
-			Color = def.AccentColor,
+			Size = Vector3.new(0.85, 0.85, 1.7) * scaleMult,
+			Color = accentColor,
 			Material = Enum.Material.Neon,
 		})
-		haloHeight = torsoScale.Y * 0.5 + 1.55
+		haloHeight = torsoScale.Y * 0.5 + 1.55 * scaleMult
 	else
 		-- SolarGolem: 7 parts (+1 Radiant halo = 8 <= 8 budget)
 		local body = createVisualPart(model, partsList, baseCFrame, CFrame.new(), {
@@ -266,31 +270,31 @@ local function buildCritterVisual(
 		})
 		model.PrimaryPart = body
 
-		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, -0.1, -bodyScale.Z * 0.46), {
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, -0.1 * scaleMult, -bodyScale.Z * 0.46), {
 			Name = "SolarCore",
-			Size = Vector3.new(1.3, 1.3, 0.35),
-			Color = def.AccentColor,
+			Size = Vector3.new(1.3, 1.3, 0.35) * scaleMult,
+			Color = accentColor,
 			Material = Enum.Material.Neon,
 		})
 		for _, xSign in ipairs({ -1, 1 }) do
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.72, 0.95, -bodyScale.Z * 0.48), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.72 * scaleMult, 0.95 * scaleMult, -bodyScale.Z * 0.48), {
 				Name = if xSign < 0 then "LeftEye" else "RightEye",
-				Size = Vector3.new(0.45, 0.35, 0.22),
+				Size = Vector3.new(0.45, 0.35, 0.22) * scaleMult,
 				Color = COLOR_EYE,
 			})
-			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (bodyScale.X * 0.6), -0.15, 0), {
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (bodyScale.X * 0.6), -0.15 * scaleMult, 0), {
 				Name = if xSign < 0 then "LeftArm" else "RightArm",
-				Size = Vector3.new(0.95, 2.4, 1.0),
+				Size = Vector3.new(0.95, 2.4, 1.0) * scaleMult,
 				Color = def.BodyColor,
 			})
 		end
-		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, bodyScale.Y * 0.5 + 0.3, 0), {
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, bodyScale.Y * 0.5 + 0.3 * scaleMult, 0), {
 			Name = "CrownCap",
-			Size = Vector3.new(2.1, 0.55, 2.0),
-			Color = def.AccentColor,
+			Size = Vector3.new(2.1, 0.55, 2.0) * scaleMult,
+			Color = accentColor,
 			Material = Enum.Material.Neon,
 		})
-		haloHeight = bodyScale.Y * 0.5 + 1.15
+		haloHeight = bodyScale.Y * 0.5 + 1.15 * scaleMult
 	end
 
 	if variant == "Radiant" then
@@ -298,15 +302,16 @@ local function buildCritterVisual(
 	end
 
 	model.Parent = folder
+	local baseHop = if speciesId == "SolarGolem" then 0.45 else 0.75
 	return {
 		Key = key,
 		Kind = "Critter",
-		Signature = string.format("%s:%s", speciesId, variant),
+		Signature = string.format("%s:%s:%d", speciesId, variant, feedLevel),
 		Model = model,
 		BaseCFrame = baseCFrame,
 		Parts = partsList,
 		HopSpeed = if speciesId == "StarSlime" then 4.2 elseif speciesId == "NebulaFox" then 5.0 else 3.1,
-		HopHeight = if speciesId == "SolarGolem" then 0.45 else 0.75,
+		HopHeight = baseHop + (if fed then 0.15 else 0),
 		Phase = phaseSeed,
 		MaturesAt = nil,
 		CoreParts = nil,
@@ -401,7 +406,8 @@ local function reconcilePlotVisuals(): ()
 				for slotId, penVisual in pairs(dto.ActivePenVisuals) do
 					local key = string.format("P%d_%s", plotId, slotId)
 					desiredKeys[key] = true
-					local signature = string.format("%s:%s", penVisual.SpeciesId, penVisual.Variant)
+					local feedLevel = penVisual.FeedLevel or 0
+					local signature = string.format("%s:%s:%d", penVisual.SpeciesId, penVisual.Variant, feedLevel)
 					local current = activeVisuals[key]
 					if current == nil or current.Signature ~= signature then
 						destroyVisualEntry(key)
@@ -412,6 +418,7 @@ local function reconcilePlotVisuals(): ()
 								key,
 								penVisual.SpeciesId,
 								penVisual.Variant,
+								feedLevel,
 								pad,
 								horizontalRotation,
 								phaseSeed

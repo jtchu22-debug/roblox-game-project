@@ -32,6 +32,7 @@ local FRIENDLY_ERROR_MESSAGES: { [string]: string } = {
 	AlreadyCracking = "Already rescuing a Meteor!",
 	CharacterUnavailable = "Wait until your character respawns to rescue!",
 	ClaimExpired = "Rescue timed out — try triggering the Meteor again!",
+	ToolRequired = "Locked! Buy Star Cracker (120 Coins) on your Ranch Board to crack Astral Meteors!",
 }
 
 local PALETTE = {
@@ -40,6 +41,7 @@ local PALETTE = {
 	TextCream = Color3.fromRGB(245, 240, 232),
 	OrbitalCyan = Color3.fromRGB(65, 210, 255),
 	StarlightGold = Color3.fromRGB(255, 205, 45),
+	AstralViolet = Color3.fromRGB(205, 115, 255),
 }
 
 local CrackController = {
@@ -52,6 +54,10 @@ local activeCrackUID: string? = nil
 local activeAttemptNonce: string? = nil
 local activeCrackToken = 0
 local activeStartClock = 0
+local activePhaseStartClock = 0
+local activeIsAstral = false
+local activeAstralBeat = 1
+local activeUsedBeat1Burst = false
 local activeMeteorPos: Vector3? = nil
 local activeMeteorTrait: Types.MeteorTraitId? = nil
 local activeIsStarter = false
@@ -67,6 +73,7 @@ local renderConn: RBXScriptConnection? = nil
 local feelFrame: Frame? = nil
 local feelTitleLabel: TextLabel? = nil
 local feelFillBar: Frame? = nil
+local feelSweetZone: Frame? = nil
 local feelActionButton: TextButton? = nil
 local feelStroke: UIStroke? = nil
 
@@ -92,7 +99,7 @@ local function updateFeelButtonPromptText(inSweetSpot: boolean): ()
 	end
 
 	if SoundController.IsReducedMotion() then
-		btn.Text = "Auto-cracking safely..."
+		btn.Text = if activeIsAstral then "Astral Core stabilizing safely..." else "Auto-cracking safely..."
 		btn.BackgroundColor3 = PALETTE.TrackDark
 		btn.TextColor3 = PALETTE.TextCream
 		return
@@ -129,6 +136,9 @@ local function cancelLocalCrack(meteorUID: string, showNotice: boolean): ()
 		activeAttemptNonce = nil
 		isCracking = false
 		activeFinishSent = false
+		activeIsAstral = false
+		activeAstralBeat = 1
+		activeUsedBeat1Burst = false
 		activeCrackToken += 1
 		hideFeelUI()
 		if showNotice then
@@ -137,7 +147,7 @@ local function cancelLocalCrack(meteorUID: string, showNotice: boolean): ()
 	end
 end
 
-local function spawnBurstEffect(pos: Vector3?, color: Color3): ()
+local function spawnBurstEffect(pos: Vector3?, color: Color3, particleCount: number?): ()
 	if pos == nil or SoundController.IsReducedMotion() then
 		return
 	end
@@ -167,8 +177,59 @@ local function spawnBurstEffect(pos: Vector3?, color: Color3): ()
 	particles.Enabled = false
 	particles.Parent = emitterPart
 
-	particles:Emit(14)
+	particles:Emit(particleCount or 14)
 	Debris:AddItem(emitterPart, 0.8)
+end
+
+local function configureFeelBeat(beat: number): ()
+	if feelSweetZone ~= nil then
+		if activeIsAstral then
+			local beatDuration = if beat == 1
+				then Constants.ASTRAL_BEAT1_END_SECONDS
+				else (Constants.ASTRAL_CRACK_DURATION_SECONDS - Constants.ASTRAL_BEAT1_END_SECONDS)
+			local sweetStart = if beat == 1 then Constants.ASTRAL_BEAT1_SWEET_START else Constants.ASTRAL_BEAT2_SWEET_START
+			local sweetEnd = if beat == 1 then Constants.ASTRAL_BEAT1_SWEET_END else Constants.ASTRAL_BEAT2_SWEET_END
+			feelSweetZone.Position = UDim2.fromScale(sweetStart / beatDuration, 0)
+			feelSweetZone.Size = UDim2.fromScale((sweetEnd - sweetStart) / beatDuration, 1)
+		else
+			local sStart = Constants.CRACK_FEEL_WINDOW_START_SECONDS / Constants.CRACK_CLIENT_DURATION_SECONDS
+			local sEnd = Constants.CRACK_FEEL_WINDOW_END_SECONDS / Constants.CRACK_CLIENT_DURATION_SECONDS
+			feelSweetZone.Position = UDim2.fromScale(sStart, 0)
+			feelSweetZone.Size = UDim2.fromScale(sEnd - sStart, 1)
+		end
+	end
+
+	if feelTitleLabel ~= nil then
+		if activeIsAstral then
+			if beat == 1 then
+				feelTitleLabel.Text = "ASTRAL CORE [1/2] — Shatter Outer Shell!"
+			else
+				feelTitleLabel.Text = "ASTRAL CORE [2/2] — Break Inner Core!"
+			end
+		elseif activeIsStarter then
+			feelTitleLabel.Text = "Rescuing STARTER METEOR..."
+		else
+			local traitDef = if activeMeteorTrait ~= nil then MeteorConfig.ById[activeMeteorTrait] else nil
+			if traitDef ~= nil then
+				feelTitleLabel.Text = string.format("Rescuing [%s] Meteor...", traitDef.IconText)
+			else
+				feelTitleLabel.Text = "Rescuing Meteor..."
+			end
+		end
+	end
+end
+
+local function advanceAstralBeat(usedBurst: boolean): ()
+	activeAstralBeat = 2
+	activePhaseStartClock = os.clock()
+	activeUsedBeat1Burst = activeUsedBeat1Burst or usedBurst
+	if feelFillBar ~= nil then
+		feelFillBar.Size = UDim2.fromScale(0, 1)
+	end
+	configureFeelBeat(2)
+	updateFeelButtonPromptText(false)
+	SoundController.Play(if usedBurst then "CrackChime" else "CrackStart")
+	spawnBurstEffect(activeMeteorPos, PALETTE.AstralViolet, 10)
 end
 
 local function submitFinishCrack(usedQuickBurst: boolean): ()
@@ -187,6 +248,7 @@ local function submitFinishCrack(usedQuickBurst: boolean): ()
 	local myToken = activeCrackToken
 	local meteorPos = activeMeteorPos
 	local traitId = activeMeteorTrait
+	local wasAstral = activeIsAstral
 
 	hideFeelUI()
 
@@ -209,11 +271,11 @@ local function submitFinishCrack(usedQuickBurst: boolean): ()
 			local burstColor = if traitDef ~= nil then traitDef.TrailColor else PALETTE.StarlightGold
 
 			SoundController.Play(if usedQuickBurst then "CrackChime" else "CrackSuccess")
-			UIController.ShowToast(
-				string.format("Rescued %s Pod!%s", displayName, if usedQuickBurst then " (Quick Burst!)" else ""),
-				"Success"
-			)
-			spawnBurstEffect(meteorPos, burstColor)
+			local bonusTag = if usedQuickBurst
+				then (if wasAstral then " (Astral Surge!)" else " (Quick Burst!)")
+				else ""
+			UIController.ShowToast(string.format("Rescued %s Pod!%s", displayName, bonusTag), "Success")
+			spawnBurstEffect(meteorPos, burstColor, if wasAstral then 24 else 14)
 		else
 			local reason = if typeof(finishRes) == "table" and finishRes.Reason then tostring(finishRes.Reason) else "Failed"
 			warn("[CrackController] Could not finish meteor rescue: " .. reason)
@@ -228,6 +290,9 @@ local function submitFinishCrack(usedQuickBurst: boolean): ()
 			activeFinishSent = false
 			activeCrackUID = nil
 			activeAttemptNonce = nil
+			activeIsAstral = false
+			activeAstralBeat = 1
+			activeUsedBeat1Burst = false
 		end
 	end)
 end
@@ -298,6 +363,7 @@ local function buildFeelTimingUI(): ()
 	sweetZone.BorderSizePixel = 0
 	sweetZone.ZIndex = 2
 	sweetZone.Parent = track
+	feelSweetZone = sweetZone
 
 	local sweetStroke = Instance.new("UIStroke")
 	sweetStroke.Color = PALETTE.StarlightGold
@@ -347,7 +413,39 @@ local function stepCrackFeelUI(): ()
 		return
 	end
 
-	local elapsed = os.clock() - activeStartClock
+	local now = os.clock()
+	if activeIsAstral then
+		local phaseDuration = if activeAstralBeat == 1
+			then Constants.ASTRAL_BEAT1_END_SECONDS
+			else (Constants.ASTRAL_CRACK_DURATION_SECONDS - Constants.ASTRAL_BEAT1_END_SECONDS)
+		local phaseElapsed = now - activePhaseStartClock
+		local progress = math.clamp(phaseElapsed / phaseDuration, 0, 1)
+		local sweetStart = if activeAstralBeat == 1 then Constants.ASTRAL_BEAT1_SWEET_START else Constants.ASTRAL_BEAT2_SWEET_START
+		local sweetEnd = if activeAstralBeat == 1 then Constants.ASTRAL_BEAT1_SWEET_END else Constants.ASTRAL_BEAT2_SWEET_END
+		local inSweetSpot = not SoundController.IsReducedMotion()
+			and phaseElapsed >= sweetStart
+			and phaseElapsed <= sweetEnd
+
+		if feelFillBar ~= nil then
+			feelFillBar.Size = UDim2.fromScale(progress, 1)
+			feelFillBar.BackgroundColor3 = if inSweetSpot then PALETTE.StarlightGold else PALETTE.AstralViolet
+		end
+		if feelStroke ~= nil then
+			feelStroke.Color = if inSweetSpot then PALETTE.StarlightGold else PALETTE.AstralViolet
+		end
+		updateFeelButtonPromptText(inSweetSpot)
+
+		if phaseElapsed >= phaseDuration then
+			if activeAstralBeat == 1 then
+				advanceAstralBeat(false)
+			elseif (now - activeStartClock) >= (Constants.MIN_CRACK_DURATION_SECONDS + 0.05) then
+				submitFinishCrack(activeUsedBeat1Burst)
+			end
+		end
+		return
+	end
+
+	local elapsed = now - activeStartClock
 	local duration = Constants.CRACK_CLIENT_DURATION_SECONDS
 	local progress = math.clamp(elapsed / duration, 0, 1)
 	local inSweetSpot = not SoundController.IsReducedMotion()
@@ -429,7 +527,27 @@ function CrackController.TryTriggerSweetSpot(): boolean
 		return false
 	end
 
-	local elapsed = os.clock() - activeStartClock
+	local now = os.clock()
+	if activeIsAstral then
+		local phaseElapsed = now - activePhaseStartClock
+		if activeAstralBeat == 1 then
+			if phaseElapsed >= Constants.ASTRAL_BEAT1_SWEET_START and phaseElapsed <= Constants.ASTRAL_BEAT1_SWEET_END then
+				advanceAstralBeat(true)
+				return true
+			end
+		else
+			if phaseElapsed >= Constants.ASTRAL_BEAT2_SWEET_START
+				and phaseElapsed <= Constants.ASTRAL_BEAT2_SWEET_END
+				and (now - activeStartClock) >= (Constants.MIN_CRACK_DURATION_SECONDS + 0.05)
+			then
+				submitFinishCrack(true)
+				return true
+			end
+		end
+		return false
+	end
+
+	local elapsed = now - activeStartClock
 	if elapsed >= Constants.CRACK_FEEL_WINDOW_START_SECONDS and elapsed <= Constants.CRACK_FEEL_WINDOW_END_SECONDS then
 		submitFinishCrack(true)
 		return true
@@ -490,20 +608,15 @@ function CrackController.TryStartFromPrompt(prompt: ProximityPrompt): boolean
 
 		activeAttemptNonce = startRes.AttemptNonce
 		activeStartClock = os.clock()
+		activePhaseStartClock = activeStartClock
 		activeMeteorPos = meteorPosition
 		activeIsStarter = startRes.IsStarter == true
 		activeMeteorTrait = startRes.Trait :: Types.MeteorTraitId?
+		activeIsAstral = not activeIsStarter and activeMeteorTrait == "Astral"
+		activeAstralBeat = 1
+		activeUsedBeat1Burst = false
 
-		local traitDef = if activeMeteorTrait ~= nil then MeteorConfig.ById[activeMeteorTrait] else nil
-		if feelTitleLabel ~= nil then
-			if activeIsStarter then
-				feelTitleLabel.Text = "Rescuing STARTER METEOR..."
-			elseif traitDef ~= nil then
-				feelTitleLabel.Text = string.format("Rescuing [%s] Meteor...", traitDef.IconText)
-			else
-				feelTitleLabel.Text = "Rescuing Meteor..."
-			end
-		end
+		configureFeelBeat(1)
 
 		if feelFrame ~= nil then
 			updateFeelButtonPromptText(false)
@@ -522,10 +635,20 @@ end
 function CrackController.SetInputMode(mode: UIController.InputMode): ()
 	currentInputMode = mode
 	if isCracking and not activeFinishSent and activeAttemptNonce ~= nil then
-		local elapsed = os.clock() - activeStartClock
-		local inSweet = not SoundController.IsReducedMotion()
-			and elapsed >= Constants.CRACK_FEEL_WINDOW_START_SECONDS
-			and elapsed <= Constants.CRACK_FEEL_WINDOW_END_SECONDS
+		local now = os.clock()
+		local inSweet = false
+		if not SoundController.IsReducedMotion() then
+			if activeIsAstral then
+				local phaseElapsed = now - activePhaseStartClock
+				local sweetStart = if activeAstralBeat == 1 then Constants.ASTRAL_BEAT1_SWEET_START else Constants.ASTRAL_BEAT2_SWEET_START
+				local sweetEnd = if activeAstralBeat == 1 then Constants.ASTRAL_BEAT1_SWEET_END else Constants.ASTRAL_BEAT2_SWEET_END
+				inSweet = phaseElapsed >= sweetStart and phaseElapsed <= sweetEnd
+			else
+				local elapsed = now - activeStartClock
+				inSweet = elapsed >= Constants.CRACK_FEEL_WINDOW_START_SECONDS
+					and elapsed <= Constants.CRACK_FEEL_WINDOW_END_SECONDS
+			end
+		end
 		updateFeelButtonPromptText(inSweet)
 	end
 end

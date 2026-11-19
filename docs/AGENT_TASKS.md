@@ -46,7 +46,7 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached 5–10 Tester Playtest (`v0.2.1-s2-playtest-live`):** Round 1 live playtest results logged in [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md) — onboarding/legibility passed, but testers completed all upgrades in 2–3 min (`5+` eggs), found Coins useless post-pads, felt all meteors were identical, and lacked return pull. **Held on Stage 2 Gate awaiting ChatGPT review (`docs/AGENT_REVIEWS.md`) and Human Lead Go / Iterate / Pivot decision.** | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
+| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached Playtest (`v0.2.2-s2b-iterate`):** Round 1 (`v0.2.1`) logged; Review #012 issued **`ITERATE` (Stage 2B)**. Implemented **Star Cracker (`120 Coins`)**, sky-beacon 2-beat **Astral Meteors** (exclusive `Solar Golem` + server pre-claim guard), and capped **Critter Feeding (`45 Coins`, `+2/s`)**. Next: run **3–5 fresh uncoached testers** (mobile + desktop) using Section 6 of [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md) for the **GO -> Stage 3 vs. PIVOT** verdict in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md). | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
 
 ---
 

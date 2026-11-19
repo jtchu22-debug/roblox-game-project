@@ -23,6 +23,7 @@ local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local CritterConfig = require(Shared:WaitForChild("Config"):WaitForChild("CritterConfig"))
 local UpgradeConfig = require(Shared:WaitForChild("Config"):WaitForChild("UpgradeConfig"))
+local EconomyMath = require(Shared:WaitForChild("Util"):WaitForChild("EconomyMath"))
 local FormatUtil = require(Shared:WaitForChild("Util"):WaitForChild("FormatUtil"))
 
 export type InputMode = "Touch" | "Keyboard" | "Gamepad"
@@ -63,6 +64,7 @@ local PALETTE = {
 	OrbitalCyan = Color3.fromRGB(65, 210, 255),
 	StarlightGold = Color3.fromRGB(255, 205, 45),
 	MeadowMint = Color3.fromRGB(95, 215, 145),
+	AstralViolet = Color3.fromRGB(205, 115, 255),
 	EmberCoral = Color3.fromRGB(255, 120, 80),
 	DangerRed = Color3.fromRGB(220, 72, 72),
 }
@@ -98,6 +100,7 @@ local bagCloseButton: TextButton? = nil
 local firstBagSelectable: GuiObject? = nil
 local bagButtonsByKey: { [string]: GuiObject } = {}
 local upgradeBuyButtons: { [Types.UpgradeId]: TextButton } = {}
+local feedButtonsBySlot: { [string]: TextButton } = {}
 local lastFocusedBagKey: string? = nil
 local lastBagStructureSignature: string? = nil
 local bagRebuildCount = 0
@@ -252,13 +255,14 @@ function UIController.ComputeBagStructureSignature(dto: Types.OwnerStateDTO, pen
 		table.insert(
 			parts,
 			string.format(
-				"i:%s|%s|%s|%s|%s|%s",
+				"i:%s|%s|%s|%s|%s|%s|%s",
 				item.UID,
 				item.SpeciesId,
 				item.Variant,
 				item.State,
 				item.AssignedSlot or "",
-				tostring(item.MaturesAt or 0)
+				tostring(item.MaturesAt or 0),
+				tostring(item.FeedLevel or 0)
 			)
 		)
 	end
@@ -278,10 +282,7 @@ local function countBagAndIncome(dto: Types.OwnerStateDTO): (number, number, num
 			incubatingCount += 1
 		elseif item.State == "InPen" then
 			penCount += 1
-			local def = CritterConfig.ById[item.SpeciesId]
-			if def ~= nil then
-				totalRate += def.CoinsPerSecond
-			end
+			totalRate += EconomyMath.GetCritterCoinsPerSecond(item.SpeciesId, item.Variant, item.FeedLevel)
 		end
 	end
 	return bagCount, incubatingCount, penCount, totalRate
@@ -457,16 +458,27 @@ local function updateContextualHint(): ()
 		label.Text = string.format("Incubating Star-Pod (%s left) — Rescue more Crater Meteors while waiting!", FormatUtil.FormatTimer(shortestRemaining))
 		label.TextColor3 = PALETTE.TextCream
 	elseif dto.Upgrades["PenSlot_2"] ~= true and dto.Coins >= UpgradeConfig.ById.PenSlot_2.Cost then
-		label.Text = "Upgrade Ready! Walk to Habitat Slot #2 Pad (60 Coins) on your Ranch!"
+		label.Text = string.format("Upgrade Ready! Walk to Habitat Slot #2 Pad (%d Coins) on your Ranch!", UpgradeConfig.ById.PenSlot_2.Cost)
 		label.TextColor3 = PALETTE.MeadowMint
+	elseif dto.Upgrades["StarCracker"] ~= true and dto.Coins >= UpgradeConfig.ById.StarCracker.Cost then
+		label.Text = string.format("Tool Ready! Buy Star Cracker (%d Coins) to unlock glowing Astral Meteors!", UpgradeConfig.ById.StarCracker.Cost)
+		label.TextColor3 = PALETTE.AstralViolet
 	elseif hasHatchedInBag then
 		label.Text = "Pens full! Visit your Ranch Gate Sell Stand or Bag to Sell extras for Upgrades!"
 		label.TextColor3 = PALETTE.StarlightGold
 	elseif activePenCount == 0 then
 		label.Text = "Next Step: Walk toward the Crater & Rescue your glowing Starter Meteor!"
 		label.TextColor3 = PALETTE.StarlightGold
+	elseif dto.Upgrades["StarCracker"] == true then
+		label.Text = "Star Cracker Ready! Hunt glowing Astral Meteors in Crater for Solar Golems (7/s)!"
+		label.TextColor3 = PALETTE.AstralViolet
 	else
-		label.Text = "Scan Crater Trails: Ember (Fast) | Frost (Balanced) | Astral (Solar Golem!)"
+		label.Text = string.format(
+			"Earn Coins or Feed Pen critters (+%d/s for %d) to unlock Star Cracker (%d)!",
+			Constants.CRITTER_FEED_BONUS_COINS_PER_SEC,
+			Constants.CRITTER_FEED_COST,
+			UpgradeConfig.ById.StarCracker.Cost
+		)
 		label.TextColor3 = PALETTE.OrbitalCyan
 	end
 end
@@ -601,6 +613,12 @@ local function refreshUpgradeAffordabilityInPlace(dto: Types.OwnerStateDTO): ()
 			btn.TextColor3 = if canAfford then PALETTE.PanelDark else PALETTE.TextMuted
 		end
 	end
+
+	local canFeed = dto.Coins >= Constants.CRITTER_FEED_COST
+	for _, feedBtn in pairs(feedButtonsBySlot) do
+		feedBtn.BackgroundColor3 = if canFeed then PALETTE.MeadowMint else PALETTE.CardDark
+		feedBtn.TextColor3 = if canFeed then PALETTE.PanelDark else PALETTE.TextMuted
+	end
 end
 
 local function createSectionHeader(parent: Instance, title: string, accent: Color3, layoutOrder: number): ()
@@ -719,6 +737,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	activeTimerBindings = {}
 	bagButtonsByKey = {}
 	upgradeBuyButtons = {}
+	feedButtonsBySlot = {}
 	firstBagSelectable = nil
 
 	local function registerBagButton(actionKey: string, btn: GuiObject): ()
@@ -808,8 +827,11 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
-			title.Text = def.DisplayName .. variantTag
-			subtitle.Text = string.format("Keep: +%d Coins/s  |  Sell: +%d Coins", def.CoinsPerSecond, def.SellPrice)
+			local fedTag = if (item.FeedLevel or 0) >= 1 then " ★" else ""
+			local effRate = EconomyMath.GetCritterCoinsPerSecond(item.SpeciesId, item.Variant, item.FeedLevel)
+			local effSell = EconomyMath.GetCritterSellPrice(item.SpeciesId, item.Variant, item.FeedLevel)
+			title.Text = def.DisplayName .. variantTag .. fedTag
+			subtitle.Text = string.format("Keep: +%d Coins/s  |  Sell: +%d Coins", effRate, effSell)
 
 			local placeBtn = makeTextButton(row, "PlaceBtn", "Place", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(72, 44), 13)
 			placeBtn.Position = UDim2.new(1, -166, 0.5, -22)
@@ -838,7 +860,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			end)
 
 			local isArmed = pendingSellConfirmUID == item.UID and os.clock() <= pendingSellConfirmExpiresAt
-			local sellText = if isArmed then "Confirm Sell?" else string.format("Sell +%d", def.SellPrice)
+			local sellText = if isArmed then "Confirm Sell?" else string.format("Sell +%d", effSell)
 			local sellBg = if isArmed then PALETTE.DangerRed else PALETTE.StarlightGold
 			local sellFg = if isArmed then PALETTE.TextCream else PALETTE.PanelDark
 			local sellBtn = makeTextButton(row, "SellBtn", sellText, sellBg, sellFg, UDim2.fromOffset(84, 44), 12)
@@ -992,11 +1014,67 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
-			title.Text = string.format("%s — %s%s", slotId, def.DisplayName, variantTag)
-			subtitle.Text = string.format("In Pen (Safe)  |  Earning +%d Coins/s", def.CoinsPerSecond)
+			local feedLevel = item.FeedLevel or 0
+			local isFed = feedLevel >= Constants.MAX_CRITTER_FEED_LEVEL
+			local effRate = EconomyMath.GetCritterCoinsPerSecond(item.SpeciesId, item.Variant, item.FeedLevel)
+			title.Text = string.format("%s — %s%s%s", slotId, def.DisplayName, variantTag, if isFed then " ★" else "")
+			subtitle.Text = string.format(
+				"In Pen (Safe)  |  +%d Coins/s%s",
+				effRate,
+				if isFed then " (Star-Fed!)" else ""
+			)
 
-			local pickUpBtn = makeTextButton(row, "PickUpBtn", "Pick Up", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(100, 44), 14)
-			pickUpBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			if isFed then
+				local fedTagBtn = makeTextButton(row, "FedTag", "Fed ★", PALETTE.PanelDark, PALETTE.StarlightGold, UDim2.fromOffset(84, 44), 13)
+				fedTagBtn.Position = UDim2.new(1, -172, 0.5, -22)
+				fedTagBtn.AutoButtonColor = false
+				fedTagBtn.Selectable = false
+			else
+				local canFeed = dto.Coins >= Constants.CRITTER_FEED_COST
+				local feedBtn = makeTextButton(
+					row,
+					"FeedBtn",
+					string.format("Feed (%d)", Constants.CRITTER_FEED_COST),
+					if canFeed then PALETTE.MeadowMint else PALETTE.CardDark,
+					if canFeed then PALETTE.PanelDark else PALETTE.TextMuted,
+					UDim2.fromOffset(84, 44),
+					12
+				)
+				feedBtn.Position = UDim2.new(1, -172, 0.5, -22)
+				feedButtonsBySlot[slotId] = feedBtn
+				registerBagButton("Feed:" .. slotId, feedBtn)
+				feedBtn.Activated:Connect(function()
+					local currentDto = latestOwnerState
+					if currentDto == nil then
+						return
+					end
+					if currentDto.Coins < Constants.CRITTER_FEED_COST then
+						SoundController.Play("Error")
+						UIController.ShowToast(
+							string.format(
+								"Need %d Coins to Feed your Critter (+%d Coins/s)!",
+								Constants.CRITTER_FEED_COST,
+								Constants.CRITTER_FEED_BONUS_COINS_PER_SEC
+							),
+							"Warn"
+						)
+						return
+					end
+					local okRange = isWithinStationRange("Pen", slotId)
+					if not okRange then
+						SoundController.Play("Error")
+						UIController.ShowToast("Walk closer to " .. slotId .. " to Feed this Critter!", "Warn")
+						return
+					end
+					SoundController.Play("Click")
+					if plotActionRemote ~= nil then
+						plotActionRemote:FireServer("FeedCritter", slotId)
+					end
+				end)
+			end
+
+			local pickUpBtn = makeTextButton(row, "PickUpBtn", "Pick Up", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(76, 44), 13)
+			pickUpBtn.Position = UDim2.new(1, -84, 0.5, -22)
 			addStroke(pickUpBtn, PALETTE.OrbitalCyan, 1)
 			registerBagButton("PickUp:" .. slotId, pickUpBtn)
 			pickUpBtn.Activated:Connect(function()
@@ -1030,7 +1108,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 		local def = UpgradeConfig.ById[upgradeId]
 		local owned = dto.Upgrades[upgradeId] == true
-		local row, title, subtitle = createRowCard(scroll, if owned then PALETTE.OrbitalCyan else PALETTE.MeadowMint, order)
+		local unownedAccent = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
+		local row, title, subtitle = createRowCard(scroll, if owned then PALETTE.OrbitalCyan else unownedAccent, order)
 		order += 1
 
 		title.Text = def.DisplayName
@@ -1195,10 +1274,18 @@ local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextD
 			SoundController.Play("Hatch")
 			local prefix = if nextItem.Variant == "Radiant" then "RADIANT " else ""
 			UIController.ShowToast(string.format("Hatched %s%s!", prefix, def.DisplayName), "Success")
+		elseif nextItem ~= nil and (nextItem.FeedLevel or 0) > (prevItem.FeedLevel or 0) then
+			local def = CritterConfig.ById[nextItem.SpeciesId]
+			SoundController.Play("Upgrade")
+			UIController.ShowToast(
+				string.format("Star-Fed %s! (+%d Coins/s bonus!)", def.DisplayName, Constants.CRITTER_FEED_BONUS_COINS_PER_SEC),
+				"Success"
+			)
 		elseif prevItem.State == "HatchedInBag" and nextItem == nil and nextDto.Coins > prevDto.Coins then
 			local def = CritterConfig.ById[prevItem.SpeciesId]
+			local soldAmount = EconomyMath.GetCritterSellPrice(prevItem.SpeciesId, prevItem.Variant, prevItem.FeedLevel)
 			SoundController.Play("Sell")
-			UIController.ShowToast(string.format("Sold %s for +%s Coins!", def.DisplayName, FormatUtil.FormatCoins(def.SellPrice)), "Success")
+			UIController.ShowToast(string.format("Sold %s for +%s Coins!", def.DisplayName, FormatUtil.FormatCoins(soldAmount)), "Success")
 		end
 	end
 
@@ -1206,7 +1293,11 @@ local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextD
 		if prevDto.Upgrades[upgradeId] ~= true and nextDto.Upgrades[upgradeId] == true then
 			local def = UpgradeConfig.ById[upgradeId]
 			SoundController.Play("Upgrade")
-			UIController.ShowToast("Unlocked " .. def.DisplayName .. "!", "Success")
+			if upgradeId == "StarCracker" then
+				UIController.ShowToast("Unlocked Star Cracker! Crack glowing Astral Meteors in Crater!", "Success")
+			else
+				UIController.ShowToast("Unlocked " .. def.DisplayName .. "!", "Success")
+			end
 		end
 	end
 end
@@ -1762,14 +1853,23 @@ function UIController.RunSelfTest(): number
 				State = "PodInBag",
 				CreatedAt = 106,
 			},
+			["pen-1"] = {
+				UID = "pen-1",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_1",
+				CreatedAt = 99,
+				FeedLevel = 0,
+			},
 		}
 		local dto1: Types.OwnerStateDTO = {
 			Revision = 1,
-			Coins = 58,
+			Coins = 44,
 			BagCap = Constants.MAX_BAG_CAPACITY,
 			ReservedBagSlots = 0,
 			Items = mockItems,
-			Slots = {},
+			Slots = { Pen_1 = "pen-1" },
 			Upgrades = {},
 			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
@@ -1779,7 +1879,7 @@ function UIController.RunSelfTest(): number
 			BagCap = Constants.MAX_BAG_CAPACITY,
 			ReservedBagSlots = 0,
 			Items = mockItems,
-			Slots = {},
+			Slots = { Pen_1 = "pen-1" },
 			Upgrades = {},
 			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
@@ -1797,9 +1897,12 @@ function UIController.RunSelfTest(): number
 		assert(maxScrollY >= 40, "Rendered Bag must have >= 40px scrollable range")
 
 		local rebuildsBefore = bagRebuildCount
+		local feedBtnRef = feedButtonsBySlot["Pen_1"]
 		local pen2BtnRef = upgradeBuyButtons["PenSlot_2"]
+		assert(feedBtnRef ~= nil, "Pen_1 Feed button rendered")
+		assert(feedBtnRef.BackgroundColor3 == PALETTE.CardDark, "Pen_1 Feed starts unaffordable at 44 Coins")
 		assert(pen2BtnRef ~= nil, "PenSlot_2 buy button rendered")
-		assert(pen2BtnRef.BackgroundColor3 == PALETTE.CardDark, "PenSlot_2 starts unaffordable at 58 Coins")
+		assert(pen2BtnRef.BackgroundColor3 == PALETTE.CardDark, "PenSlot_2 starts unaffordable at 44 Coins")
 
 		local btnRelY = pen2BtnRef.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y
 		local desiredScrollY = math.clamp(math.floor(btnRelY - scroll.AbsoluteWindowSize.Y * 0.5), 40, maxScrollY)
@@ -1811,12 +1914,14 @@ function UIController.RunSelfTest(): number
 		local settledScrollY = scroll.CanvasPosition.Y
 		assert(settledScrollY >= 35, "Bag scrolled to real non-zero rendered position")
 
-		-- Coin-only update preserves rows, button instance, affordability color, focus & scroll
+		-- Coin-only update preserves rows, button instances, affordability colors, focus & scroll
 		refreshAllHUD(dto2)
 		RunService.RenderStepped:Wait()
 		assert(bagRebuildCount == rebuildsBefore, "Coin-only update must not rebuild Bag rows")
-		assert(upgradeBuyButtons["PenSlot_2"] == pen2BtnRef, "Coin-only update preserves exact button instance")
-		assert(pen2BtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes affordability color in place")
+		assert(feedButtonsBySlot["Pen_1"] == feedBtnRef, "Coin-only update preserves exact Feed button instance")
+		assert(feedBtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Feed affordability color in place")
+		assert(upgradeBuyButtons["PenSlot_2"] == pen2BtnRef, "Coin-only update preserves exact Buy button instance")
+		assert(pen2BtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Buy affordability color in place")
 		assert(math.abs(scroll.CanvasPosition.Y - settledScrollY) <= 1, "Coin-only update preserves rendered scroll position")
 		assert(lastFocusedBagKey == "Buy:PenSlot_2", "Coin-only update preserves focused Bag action key")
 
@@ -1857,6 +1962,7 @@ function UIController.RunSelfTest(): number
 	bagRebuildCount = 0
 	bagButtonsByKey = {}
 	upgradeBuyButtons = {}
+	feedButtonsBySlot = {}
 	activeTimerBindings = {}
 	firstBagSelectable = nil
 	GuiService.SelectedObject = nil

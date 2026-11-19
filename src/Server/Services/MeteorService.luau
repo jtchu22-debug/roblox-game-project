@@ -47,9 +47,9 @@ export type ActiveClaim = {
 }
 
 local WILD_TRAIT_WEIGHTS: { { Trait: Types.MeteorTraitId, Weight: number } } = table.freeze({
-	table.freeze({ Trait = "Ember" :: Types.MeteorTraitId, Weight = 50 }),
-	table.freeze({ Trait = "Frost" :: Types.MeteorTraitId, Weight = 35 }),
-	table.freeze({ Trait = "Astral" :: Types.MeteorTraitId, Weight = 15 }),
+	table.freeze({ Trait = "Ember" :: Types.MeteorTraitId, Weight = 45 }),
+	table.freeze({ Trait = "Frost" :: Types.MeteorTraitId, Weight = 30 }),
+	table.freeze({ Trait = "Astral" :: Types.MeteorTraitId, Weight = 25 }),
 })
 
 local MeteorService = {
@@ -111,6 +111,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	end
 
 	local traitDef = MeteorConfig.ById[meteor.Trait]
+	local isWildAstral = meteor.Trait == "Astral" and not meteor.IsStarter
 	local model = Instance.new("Model")
 	model.Name = (if meteor.IsStarter then "StarterMeteor_" else "WildMeteor_") .. string.sub(meteor.UID, 1, 8)
 	model:SetAttribute("MeteorUID", meteor.UID)
@@ -119,10 +120,10 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	model:SetAttribute("OwnerUserId", meteor.OwnerUserId or 0)
 	CollectionService:AddTag(model, Constants.TAG_ACTIVE_METEOR)
 
-	local basePos = meteor.Position + Vector3.new(0, 1.8, 0)
+	local basePos = meteor.Position + Vector3.new(0, if isWildAstral then 2.4 else 1.8, 0)
 	local body = Instance.new("Part")
 	body.Name = "RockBody"
-	body.Size = Vector3.new(3.8, 3.2, 3.8)
+	body.Size = if isWildAstral then Vector3.new(5.2, 4.4, 5.2) else Vector3.new(3.8, 3.2, 3.8)
 	body.CFrame = CFrame.new(basePos) * CFrame.Angles(0, math.rad(((string.byte(meteor.UID, 1) or 0) * 37) % 360), 0)
 	body.Color = traitDef.RockColor
 	body.Material = Enum.Material.SmoothPlastic
@@ -135,7 +136,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 
 	local core = Instance.new("Part")
 	core.Name = "CoreCrystal"
-	core.Size = Vector3.new(1.8, 3.8, 1.8)
+	core.Size = if isWildAstral then Vector3.new(2.4, 5.4, 2.4) else Vector3.new(1.8, 3.8, 1.8)
 	core.CFrame = body.CFrame * CFrame.new(0, 0.7, 0) * CFrame.Angles(0.15, 0.4, -0.15)
 	core.Color = traitDef.CoreColor
 	core.Material = Enum.Material.Neon
@@ -173,7 +174,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		local ring = Instance.new("Part")
 		ring.Name = "AstralRing"
 		ring.Shape = Enum.PartType.Cylinder
-		ring.Size = Vector3.new(0.35, 6.2, 6.2)
+		ring.Size = if isWildAstral then Vector3.new(0.45, 7.8, 7.8) else Vector3.new(0.35, 6.2, 6.2)
 		ring.CFrame = body.CFrame * CFrame.new(0, 0.6, 0) * CFrame.Angles(0.25, 0, math.rad(90))
 		ring.Color = traitDef.TrailColor
 		ring.Material = Enum.Material.Neon
@@ -181,14 +182,29 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		ring.Anchored = true
 		ring.CanCollide = false
 		ring.Parent = model
+
+		if isWildAstral then
+			local beacon = Instance.new("Part")
+			beacon.Name = "AstralBeacon"
+			beacon.Size = Vector3.new(1.1, 32, 1.1)
+			beacon.CFrame = body.CFrame * CFrame.new(0, 17, 0)
+			beacon.Color = traitDef.CoreColor
+			beacon.Material = Enum.Material.Neon
+			beacon.Transparency = 0.62
+			beacon.Anchored = true
+			beacon.CanCollide = false
+			beacon.CanQuery = false
+			beacon.CanTouch = false
+			beacon.Parent = model
+		end
 	end
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "MeteorLabel"
-	gui.Size = UDim2.fromOffset(190, 44)
-	gui.StudsOffset = Vector3.new(0, 4.2, 0)
+	gui.Size = if isWildAstral then UDim2.fromOffset(230, 52) else UDim2.fromOffset(190, 44)
+	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.6, 0) else Vector3.new(0, 4.2, 0)
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = 95
+	gui.MaxDistance = if isWildAstral then 140 else 95
 	gui.Adornee = body
 	gui.Parent = body
 
@@ -197,11 +213,12 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundColor3 = Color3.fromRGB(24, 22, 38)
 	label.BackgroundTransparency = 0.2
-	label.TextColor3 = traitDef.TrailColor
+	label.TextColor3 = if isWildAstral then traitDef.CoreColor else traitDef.TrailColor
 	label.TextScaled = true
 	label.Font = Enum.Font.GothamBold
 	label.Text = if meteor.IsStarter
 		then "STARTER METEOR"
+		elseif isWildAstral then "[ASTRAL - RARE]\nStar Cracker (Solar Golem!)"
 		else string.format("[%s] Meteor", traitDef.IconText)
 	label.Parent = gui
 
@@ -211,8 +228,11 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "RescuePrompt"
-	prompt.ObjectText = if meteor.IsStarter then "Starter Meteor" else traitDef.DisplayName
-	prompt.ActionText = "Rescue Star-Pod"
+	prompt.ObjectText = if meteor.IsStarter
+		then "Starter Meteor"
+		elseif isWildAstral then "Astral Meteor (Needs Star Cracker)"
+		else traitDef.DisplayName
+	prompt.ActionText = if isWildAstral then "Break Astral Core" else "Rescue Star-Pod"
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = Constants.PROMPT_ACTIVATION_DISTANCE
 	prompt.RequiresLineOfSight = false
@@ -467,6 +487,13 @@ function MeteorService.StartCrackAtPosition(
 	if meteor.IsStarter and meteor.OwnerUserId ~= userId then
 		return { Ok = false, Reason = "NotStarterOwner" }
 	end
+
+	-- Enforce required Tool upgrade BEFORE claiming so locked players cannot reserve a shared Astral meteor.
+	local requiredUpgrade = MeteorConfig.ById[meteor.Trait].RequiredUpgradeId
+	if not meteor.IsStarter and requiredUpgrade ~= nil and profile.Upgrades[requiredUpgrade] ~= true then
+		return { Ok = false, Reason = "ToolRequired", RequiredUpgradeId = requiredUpgrade }
+	end
+
 	if meteor.ClaimedByUserId ~= nil then
 		local holderUserId = meteor.ClaimedByUserId :: number
 		local holderClaim = activeClaimsByUserId[holderUserId]
@@ -559,6 +586,12 @@ function MeteorService.FinishCrackAtPosition(
 	if meteor == nil or meteor.ClaimedByUserId ~= userId then
 		activeClaimsByUserId[userId] = nil
 		return { Ok = false, Reason = "MeteorNotFound" }
+	end
+
+	local requiredUpgrade = MeteorConfig.ById[meteor.Trait].RequiredUpgradeId
+	if not meteor.IsStarter and requiredUpgrade ~= nil and profile.Upgrades[requiredUpgrade] ~= true then
+		MeteorService.ReleaseClaimForUserId(userId)
+		return { Ok = false, Reason = "ToolRequired", RequiredUpgradeId = requiredUpgrade }
 	end
 
 	if nowClock > claim.Deadline then
@@ -741,14 +774,25 @@ local function attachCharacterClaimCleanup(player: Player): ()
 end
 
 local function populateWildMeteorsUpToCap(nowClock: number): ()
+	local activeWildAstral = 0
+	for _, meteor in pairs(activeMeteors) do
+		if not meteor.IsStarter and meteor.Trait == "Astral" then
+			activeWildAstral += 1
+		end
+	end
+
 	while MeteorService.GetActiveWildMeteorCount() < Constants.MAX_ACTIVE_WILD_METEORS do
 		local spawned = false
 		for _, node in ipairs(wildNodes) do
 			local nodeName = node.Name
 			local cooldownUntil = wildNodeCooldownUntil[nodeName] or 0
 			if wildNodeOccupied[nodeName] == nil and nowClock >= cooldownUntil then
-				local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(nodeName, nil, nowClock)
+				local traitOverride: Types.MeteorTraitId? = if activeWildAstral == 0 then "Astral" else nil
+				local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(nodeName, traitOverride, nowClock)
 				if ok and meteor ~= nil then
+					if meteor.Trait == "Astral" then
+						activeWildAstral += 1
+					end
 					publishMeteorLifecycle({
 						Action = "Spawn",
 						MeteorUID = meteor.UID,
@@ -972,6 +1016,17 @@ function MeteorService.RunSelfTest(): number
 		assert(wildStartValid, "Generated wild UID must pass RequestStartCrack validation")
 
 		clearEvents()
+		local lockedAstral = MeteorService.StartCrackAtPosition(u1, wildObj.Position, wildObj.UID, 5004)
+		assert(
+			not lockedAstral.Ok and lockedAstral.Reason == "ToolRequired" and wildObj.ClaimedByUserId == nil,
+			"Player without StarCracker blocked from claiming Astral meteor"
+		)
+		assert(isPromptEnabled(wildObj), "Astral prompt stays enabled after ToolRequired rejection")
+		assert(countEvents("Claimed", wildObj.UID) == 0, "Blocked Astral attempt emits zero Claimed events")
+
+		p1.Upgrades["StarCracker"] = true
+		p2.Upgrades["StarCracker"] = true
+
 		local p1BagBeforeWild = countBagItems(p1)
 		local race1 = MeteorService.StartCrackAtPosition(u1, wildObj.Position, wildObj.UID, 5004)
 		assert(race1.Ok and race1.AttemptNonce ~= nil, "Player 1 wins claim")

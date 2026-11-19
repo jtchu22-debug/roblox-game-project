@@ -10,6 +10,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local Shared = script.Parent.Parent
 local Constants = require(Shared:WaitForChild("Constants"))
+local Types = require(Shared:WaitForChild("Types"))
 local ConfigFolder = Shared:WaitForChild("Config")
 local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 local FormatUtil = require(script.Parent:WaitForChild("FormatUtil"))
@@ -21,6 +22,7 @@ export type GenerateOptions = {
 
 local PALETTE = {
 	MeadowMint = Color3.fromRGB(95, 215, 145),
+	AstralViolet = Color3.fromRGB(205, 115, 255),
 	LilacStone = Color3.fromRGB(120, 105, 155),
 	CraterFloor = Color3.fromRGB(85, 75, 115),
 	CreamWood = Color3.fromRGB(245, 235, 220),
@@ -210,6 +212,31 @@ local function buildCentralCrater(root: Folder): ()
 	end
 end
 
+local function createUpgradePad(upgradeBoard: Folder, plotFrame: CFrame, plotId: number, def: Types.UpgradeDefinition): Part
+	local baseColor = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
+	local pad = createPart({
+		Name = "UpgradePad_" .. def.Id,
+		Size = Vector3.new(0.6, 5.5, 5.5),
+		CFrame = (plotFrame * CFrame.new(def.PadOffsetX, 0.9, 19)) * CFrame.Angles(0, 0, math.rad(90)),
+		Color = baseColor,
+		Material = Enum.Material.Neon,
+		Shape = Enum.PartType.Cylinder,
+		CanCollide = false,
+		Parent = upgradeBoard,
+	})
+	pad:SetAttribute("PlotId", plotId)
+	pad:SetAttribute("UpgradeId", def.Id)
+	CollectionService:AddTag(pad, Constants.TAG_UPGRADE_PAD)
+	attachLabel(
+		pad,
+		"UpgradeLabel",
+		string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
+		Vector3.new(0, 2.8, 0),
+		baseColor
+	)
+	return pad
+end
+
 local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): Model
 	local plotModel = Instance.new("Model")
 	plotModel.Name = "Plot_" .. tostring(plotId)
@@ -385,28 +412,7 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	upgradeBoard.Parent = plotModel
 
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
-		local def = UpgradeConfig.ById[upgradeId]
-		local localX = -18 + (def.Order - 1) * 8
-		local pad = createPart({
-			Name = "UpgradePad_" .. def.Id,
-			Size = Vector3.new(0.6, 5.5, 5.5),
-			CFrame = (plotFrame * CFrame.new(localX, 0.9, 19)) * CFrame.Angles(0, 0, math.rad(90)),
-			Color = PALETTE.MeadowMint,
-			Material = Enum.Material.Neon,
-			Shape = Enum.PartType.Cylinder,
-			CanCollide = false,
-			Parent = upgradeBoard,
-		})
-		pad:SetAttribute("PlotId", plotId)
-		pad:SetAttribute("UpgradeId", def.Id)
-		CollectionService:AddTag(pad, Constants.TAG_UPGRADE_PAD)
-		attachLabel(
-			pad,
-			"UpgradeLabel",
-			string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
-			Vector3.new(0, 2.8, 0),
-			PALETTE.MeadowMint
-		)
+		createUpgradePad(upgradeBoard, plotFrame, plotId, UpgradeConfig.ById[upgradeId])
 	end
 
 	return plotModel
@@ -698,12 +704,43 @@ function GreyboxBuilder.Generate(options: GenerateOptions?): (boolean, string, F
 	return true, "Created", candidateRoot
 end
 
+function GreyboxBuilder.EnsureMissingUpgradePads(root: Folder): number
+	local plotsFolder = root:FindFirstChild("Plots")
+	if plotsFolder == nil or not plotsFolder:IsA("Folder") then
+		return 0
+	end
+
+	local added = 0
+	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+		local plotModel = plotsFolder:FindFirstChild("Plot_" .. tostring(plotId))
+		if plotModel ~= nil and plotModel:IsA("Model") then
+			local plotBase = plotModel:FindFirstChild("PlotBase")
+			local upgradeBoard = plotModel:FindFirstChild("UpgradeBoard")
+			if plotBase ~= nil and plotBase:IsA("BasePart") and upgradeBoard ~= nil and upgradeBoard:IsA("Folder") then
+				for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+					local def = UpgradeConfig.ById[upgradeId]
+					local padName = "UpgradePad_" .. def.Id
+					if upgradeBoard:FindFirstChild(padName) == nil then
+						createUpgradePad(upgradeBoard, plotBase.CFrame, plotId, def)
+						added += 1
+					end
+				end
+			end
+		end
+	end
+
+	return added
+end
+
 function GreyboxBuilder.EnsureExists(parent: Instance?): (boolean, string, Folder?)
 	local targetParent: Instance = parent or workspace
 	local existing = targetParent:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
 	if existing ~= nil then
 		if not isOwnedGreyboxFolder(existing) then
 			return false, "ConflictingUnownedRoot: " .. existing:GetFullName(), nil
+		end
+		if existing:GetAttribute("GreyboxVersion") == Constants.GREYBOX_VERSION then
+			GreyboxBuilder.EnsureMissingUpgradePads(existing :: Folder)
 		end
 		local valid, reason = GreyboxBuilder.ValidateHierarchy(existing)
 		if valid then

@@ -21,27 +21,36 @@ local function isFinite(value: number): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) ~= math.huge
 end
 
-function EconomyMath.GetCritterCoinsPerSecond(speciesId: Types.SpeciesId, variant: Types.VariantId): number
+local function getClampedFeedLevel(feedLevel: number?): number
+	if typeof(feedLevel) ~= "number" or feedLevel ~= feedLevel or feedLevel < 1 then
+		return 0
+	end
+	return math.min(math.floor(feedLevel), Constants.MAX_CRITTER_FEED_LEVEL)
+end
+
+function EconomyMath.GetCritterCoinsPerSecond(speciesId: Types.SpeciesId, variant: Types.VariantId, feedLevel: number?): number
 	local species = CritterConfig.ById[speciesId]
 	assert(species ~= nil, string.format("Unknown SpeciesId: %s", tostring(speciesId)))
 
 	local bonus = if variant == "Radiant" then Constants.RADIANT_BONUS_COINS_PER_SEC else 0
-	return species.CoinsPerSecond + bonus
+	local feedBonus = getClampedFeedLevel(feedLevel) * Constants.CRITTER_FEED_BONUS_COINS_PER_SEC
+	return species.CoinsPerSecond + bonus + feedBonus
 end
 
-function EconomyMath.GetCritterSellPrice(speciesId: Types.SpeciesId, variant: Types.VariantId): number
+function EconomyMath.GetCritterSellPrice(speciesId: Types.SpeciesId, variant: Types.VariantId, feedLevel: number?): number
 	local species = CritterConfig.ById[speciesId]
 	assert(species ~= nil, string.format("Unknown SpeciesId: %s", tostring(speciesId)))
 
 	local bonus = if variant == "Radiant" then Constants.RADIANT_BONUS_SELL_COINS else 0
-	return species.SellPrice + bonus
+	local feedBonus = getClampedFeedLevel(feedLevel) * Constants.CRITTER_FEED_SELL_BONUS
+	return species.SellPrice + bonus + feedBonus
 end
 
 function EconomyMath.CalculateActivePenRate(items: { [string]: Types.CritterItemRecord }): number
 	local totalRate = 0
 	for _, record in pairs(items) do
 		if record.State == "InPen" and record.AssignedSlot ~= nil then
-			totalRate += EconomyMath.GetCritterCoinsPerSecond(record.SpeciesId, record.Variant)
+			totalRate += EconomyMath.GetCritterCoinsPerSecond(record.SpeciesId, record.Variant, record.FeedLevel)
 		end
 	end
 	return totalRate

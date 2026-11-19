@@ -168,6 +168,9 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 		if not VALID_STATES[item.State] then
 			return false, "Invalid State on " .. item.UID
 		end
+		if item.FeedLevel ~= nil and not isFiniteIntInRange(item.FeedLevel, 0, Constants.MAX_CRITTER_FEED_LEVEL) then
+			return false, "Invalid FeedLevel on " .. item.UID
+		end
 
 		if item.State == "PodInBag" or item.State == "HatchedInBag" then
 			bagCount += 1
@@ -289,6 +292,7 @@ function EconomyService.GrantPodToProfile(
 		PlantedAt = nil,
 		MaturesAt = nil,
 		CreatedAt = math.floor(nowClock),
+		FeedLevel = 0,
 	}
 	profile.Revision += 1
 
@@ -463,7 +467,7 @@ function EconomyService.SellCritterOnProfile(
 		return { Ok = false, Reason = "CannotSellUnhatched" }
 	end
 
-	local sellPrice = EconomyMath.GetCritterSellPrice(item.SpeciesId, item.Variant)
+	local sellPrice = EconomyMath.GetCritterSellPrice(item.SpeciesId, item.Variant, item.FeedLevel)
 	local previousCoins = profile.Coins
 	local nextCoins = math.min(Constants.MAX_COINS, previousCoins + sellPrice)
 	local actualCredited = nextCoins - previousCoins
@@ -500,6 +504,54 @@ function EconomyService.BuyUpgradeOnProfile(
 	profile.Revision += 1
 
 	return { Ok = true }
+end
+
+function EconomyService.HasUpgrade(profile: Types.PlayerProfileData, upgradeId: Types.UpgradeId): boolean
+	return profile.Upgrades[upgradeId] == true
+end
+
+function EconomyService.FeedCritterInPenOnProfile(
+	profile: Types.PlayerProfileData,
+	slotId: string,
+	nowClock: number
+): EconomyResult
+	if not PEN_SLOTS[slotId] then
+		return { Ok = false, Reason = "InvalidSlot" }
+	end
+	if not EconomyService.IsUnlockedPenSlot(profile, slotId) then
+		return { Ok = false, Reason = "SlotLocked" }
+	end
+
+	local itemUID = profile.Slots[slotId]
+	if itemUID == nil then
+		return { Ok = false, Reason = "SlotEmpty" }
+	end
+
+	local item = profile.Items[itemUID]
+	if item == nil or item.State ~= "InPen" or item.AssignedSlot ~= slotId then
+		return { Ok = false, Reason = "InvalidPenState" }
+	end
+
+	local currentFeed = item.FeedLevel or 0
+	if currentFeed >= Constants.MAX_CRITTER_FEED_LEVEL then
+		return { Ok = false, Reason = "AlreadyFed" }
+	end
+	if profile.Coins < Constants.CRITTER_FEED_COST then
+		return { Ok = false, Reason = "InsufficientCoins" }
+	end
+
+	-- Settle elapsed coins at the OLD rate before boosting this critter's Coins/s.
+	EconomyService.SettleProfileCoins(profile, nowClock)
+
+	profile.Coins -= Constants.CRITTER_FEED_COST
+	item.FeedLevel = currentFeed + 1
+	profile.Revision += 1
+
+	return {
+		Ok = true,
+		ItemUID = itemUID,
+		SpeciesId = item.SpeciesId,
+	}
 end
 
 function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): EconomyResult
@@ -548,7 +600,7 @@ function EconomyService.HandlePlotAction(
 	if action == "StartIncubate" or action == "Hatch" then
 		stationKind = "Incubator"
 		stationTargetId = targetSlotOrUID
-	elseif action == "PlaceInPen" or action == "RemoveFromPen" then
+	elseif action == "PlaceInPen" or action == "RemoveFromPen" or action == "FeedCritter" then
 		stationKind = "Pen"
 		stationTargetId = targetSlotOrUID
 	elseif action == "SellCritter" then
@@ -566,6 +618,7 @@ function EconomyService.HandlePlotAction(
 	local nowClock = workspace:GetServerTimeNow()
 	local res: EconomyResult
 	local affectsPublicPlot = false
+	local settledChanged = false
 
 	if action == "StartIncubate" then
 		res = EconomyService.StartIncubateOnProfile(profile, targetSlotOrUID, itemUID :: string, nowClock)
@@ -579,6 +632,10 @@ function EconomyService.HandlePlotAction(
 	elseif action == "RemoveFromPen" then
 		res = EconomyService.RemoveFromPenOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
+	elseif action == "FeedCritter" then
+		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+		res = EconomyService.FeedCritterInPenOnProfile(profile, targetSlotOrUID, nowClock)
+		affectsPublicPlot = true
 	elseif action == "SellCritter" then
 		res = EconomyService.SellCritterOnProfile(profile, targetSlotOrUID, nowClock)
 	else
@@ -590,6 +647,8 @@ function EconomyService.HandlePlotAction(
 		if affectsPublicPlot then
 			notifyPlotChanged(player)
 		end
+	elseif settledChanged then
+		DataService.SendOwnerStateSnapshot(player)
 	end
 	return res
 end
@@ -768,15 +827,37 @@ function EconomyService.RunSelfTest(): number
 	assert(EconomyService.PlaceInPenOnProfile(pDup, "Pen_1", "dup-1", 3015).Ok, "First PlaceInPen succeeds")
 	assert(not EconomyService.SellCritterOnProfile(pDup, "dup-1", 3015).Ok, "Active InPen critter cannot be sold directly")
 
-	assert(EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3015).Ok, "First BuyUpgrade succeeds")
+	-- Stage 2B capped FeedCritter checks (insufficient coins, valid settle+feed, duplicate feed rejection, sell non-arbitrage)
+	pDup.Coins = Constants.CRITTER_FEED_COST - 1
+	local poorFeedRev = pDup.Revision
+	local poorFeed = EconomyService.FeedCritterInPenOnProfile(pDup, "Pen_1", 3015)
+	assert(
+		not poorFeed.Ok and poorFeed.Reason == "InsufficientCoins" and pDup.Revision == poorFeedRev,
+		"FeedCritter with insufficient coins makes zero state changes"
+	)
+
+	pDup.Coins = 100
+	local feedOk = EconomyService.FeedCritterInPenOnProfile(pDup, "Pen_1", 3020) -- +5s * 2/s = 10 -> 110 - 45 = 65 Coins
+	assert(feedOk.Ok and pDup.Coins == 65 and pDup.Items["dup-1"].FeedLevel == 1, "FeedCritter settles old rate then debits 45 and sets FeedLevel=1")
+	assert(EconomyMath.CalculateActivePenRate(pDup.Items) == 4, "Fed StarSlime rate increases from 2/s to 4/s")
+	local dupFeedRev = pDup.Revision
+	local dupFeed = EconomyService.FeedCritterInPenOnProfile(pDup, "Pen_1", 3020)
+	assert(
+		not dupFeed.Ok and dupFeed.Reason == "AlreadyFed" and pDup.Coins == 65 and pDup.Revision == dupFeedRev,
+		"Duplicate FeedCritter rejected at MAX_CRITTER_FEED_LEVEL=1"
+	)
+
+	pDup.Coins = 100
+	assert(EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3020).Ok, "First BuyUpgrade succeeds")
 	local dupBuyRev = pDup.Revision
-	local dupBuy = EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3015)
+	local dupBuy = EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3020)
 	assert(not dupBuy.Ok and dupBuy.Reason == "AlreadyOwned" and pDup.Coins == 40 and pDup.Revision == dupBuyRev, "Duplicate BuyUpgrade charges once only")
 
-	assert(EconomyService.RemoveFromPenOnProfile(pDup, "Pen_1", 3015).Ok, "Remove from pen succeeds")
-	assert(EconomyService.SellCritterOnProfile(pDup, "dup-1", 3015).Ok, "First sell succeeds")
+	assert(EconomyService.RemoveFromPenOnProfile(pDup, "Pen_1", 3020).Ok, "Remove fed critter from pen succeeds")
+	local fedSell = EconomyService.SellCritterOnProfile(pDup, "dup-1", 3020)
+	assert(fedSell.Ok and fedSell.CoinsEarned == 60, "Fed StarSlime sells for 40 + 20 = 60 (< 45 feed cost, zero arbitrage)")
 	local dupSellRev = pDup.Revision
-	assert(not EconomyService.SellCritterOnProfile(pDup, "dup-1", 3015).Ok and pDup.Revision == dupSellRev, "Duplicate sell fails cleanly")
+	assert(not EconomyService.SellCritterOnProfile(pDup, "dup-1", 3020).Ok and pDup.Revision == dupSellRev, "Duplicate sell fails cleanly")
 	passed += 1
 
 	-- 4. Regression: Full unlocked incubators + full bag never deadlocks progression

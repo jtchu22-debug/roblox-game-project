@@ -112,6 +112,16 @@ local function runTwoPlayerMeteorAdversarial(u1: number, u2: number, rng: Random
 	assert(w1Ok and w1Raw ~= nil, "Wild meteor 1 spawns for 2P adversarial check")
 	local w1 = w1Raw :: MeteorService.ActiveMeteor
 
+	local p1 = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
+	local p2 = DataService.GetProfileByUserId(u2) :: Types.PlayerProfileData
+
+	-- Locking check: u1 without StarCracker cannot claim Astral meteor w1
+	local lockedStart = MeteorService.StartCrackAtPosition(u1, w1.Position, w1.UID, 8001)
+	assert(not lockedStart.Ok and lockedStart.Reason == "ToolRequired" and w1.ClaimedByUserId == nil, "Locked player cannot claim Astral meteor")
+
+	p1.Upgrades["StarCracker"] = true
+	p2.Upgrades["StarCracker"] = true
+
 	local s1 = MeteorService.StartCrackAtPosition(u1, w1.Position, w1.UID, 8001)
 	assert(s1.Ok and typeof(s1.AttemptNonce) == "string", "u1 wins claim on w1")
 
@@ -281,10 +291,13 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 	local nowClock = tStart + 25
 	local boughtTimes: { [Types.UpgradeId]: number } = {}
 	local nodeCycle = 0
-	local traitOrder: { Types.MeteorTraitId } = { "Ember", "Frost", "Astral" }
+	local fedPen1Once = false
+	local preToolTraits: { Types.MeteorTraitId } = { "Ember", "Frost" }
+	local postToolTraits: { Types.MeteorTraitId } = { "Astral", "Frost", "Astral" }
 
-	for round = 1, 10 do
-		local trait = traitOrder[((round - 1) % #traitOrder) + 1]
+	for round = 1, 20 do
+		local traitPool = if profile.Upgrades["StarCracker"] == true then postToolTraits else preToolTraits
+		local trait = traitPool[((round - 1) % #traitPool) + 1]
 		nodeCycle = ((nodeCycle) % 6) + 1
 		local nodeName = "MeteorNode_" .. tostring(nodeCycle)
 
@@ -321,7 +334,7 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 			EconomyService.SettleProfileCoins(profile, nowClock)
 		end
 
-		-- Buy visible upgrades in order as soon as affordable
+		-- Buy visible upgrades in order as soon as affordable (PenSlot_2 -> StarCracker -> Incubator_2 -> PenSlot_3)
 		for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 			if profile.Upgrades[upgradeId] ~= true then
 				local uDef = UpgradeConfig.ById[upgradeId]
@@ -330,35 +343,47 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 					assert(buyRes.Ok, "Sim buys upgrade " .. upgradeId)
 					boughtTimes[upgradeId] = nowClock - tStart
 				end
+				-- Keep ordered progression realistic so PenSlot_2 precedes StarCracker precedes Incubator_2
+				break
 			end
+		end
+
+		-- Feed Pen_1 critter once StarCracker is unlocked (or once Pen_1 feed is affordable alongside upgrades)
+		if not fedPen1Once and profile.Upgrades["PenSlot_2"] == true and profile.Coins >= Constants.CRITTER_FEED_COST then
+			local feedRes = EconomyService.FeedCritterInPenOnProfile(profile, "Pen_1", nowClock)
+			assert(feedRes.Ok, "Sim feeds Pen_1 critter once affordable")
+			fedPen1Once = true
 		end
 
 		assertInvariants(profile, "5m sim round " .. tostring(round))
 
 		local allBought = profile.Upgrades["PenSlot_2"] == true
+			and profile.Upgrades["StarCracker"] == true
 			and profile.Upgrades["Incubator_2"] == true
 			and profile.Upgrades["PenSlot_3"] == true
 		local allPensFilled = profile.Slots["Pen_1"] ~= nil
 			and profile.Slots["Pen_2"] ~= nil
 			and profile.Slots["Pen_3"] ~= nil
-		if allBought and allPensFilled then
+		if allBought and allPensFilled and fedPen1Once then
 			break
 		end
 	end
 
-	-- Verify Upgrade #1 (< 90s) and all 3 upgrades + full 3-slot Pen within 5-minute pacing target
+	-- Verify paced progression milestones & exact fed Pen rate
 	assert(boughtTimes["PenSlot_2"] ~= nil and boughtTimes["PenSlot_2"] <= 90, "PenSlot_2 (60 Coins) unlocked within 90s pacing target")
-	assert(boughtTimes["Incubator_2"] ~= nil and boughtTimes["Incubator_2"] <= 240, "Incubator_2 (150 Coins) unlocked well within 4m")
-	assert(boughtTimes["PenSlot_3"] ~= nil and boughtTimes["PenSlot_3"] <= 330, "PenSlot_3 (320 Coins) unlocked within 5-min loop")
+	assert(boughtTimes["StarCracker"] ~= nil and boughtTimes["StarCracker"] <= 240, "StarCracker (120 Coins) unlocked within 4m")
+	assert(boughtTimes["Incubator_2"] ~= nil and boughtTimes["Incubator_2"] <= 360, "Incubator_2 (180 Coins) unlocked within 6m")
+	assert(boughtTimes["PenSlot_3"] ~= nil and boughtTimes["PenSlot_3"] <= 540, "PenSlot_3 (360 Coins) unlocked within full Stage 2B loop")
+	assert(fedPen1Once and profile.Items[profile.Slots["Pen_1"]].FeedLevel == 1, "Pen_1 critter fed to level 1")
 	assert(profile.Slots["Pen_1"] ~= nil and profile.Slots["Pen_2"] ~= nil and profile.Slots["Pen_3"] ~= nil, "All 3 habitat pen slots filled")
 
 	local expectedRate = 0
 	for _, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
 		local uid = profile.Slots[slotId]
 		local item = profile.Items[uid]
-		expectedRate += CritterConfig.ById[item.SpeciesId].CoinsPerSecond
+		expectedRate += EconomyMath.GetCritterCoinsPerSecond(item.SpeciesId, item.Variant, item.FeedLevel)
 	end
-	assert(EconomyMath.CalculateActivePenRate(profile.Items) == expectedRate and expectedRate >= 6, "3-slot active pen rate matches exact integer sum")
+	assert(EconomyMath.CalculateActivePenRate(profile.Items) == expectedRate and expectedRate >= 8, "3-slot active pen rate matches exact integer sum including feed bonus")
 	assert(findAnyItemInState(profile, "Incubating") == nil, "No dangling incubator left at sim end")
 
 	MeteorService.HandlePlotReleased(1, uSim)
