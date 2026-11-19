@@ -78,11 +78,11 @@ Once 5–10 uncoached runs are recorded above, fill in these observed directiona
 
 | Directional Target (`R-009`) | Stage 2 Benchmark | Observed Result | Pass? (`Yes`/`No`) |
 | :--- | :--- | :--- | :---: |
-| Completed Uncoached Sessions | `5–10` testers | | |
-| **Median First Reward** | `<= 45s` | | |
-| **First Hatch & Pen <= 90s** | `>= 80%` of testers | | |
-| **Voluntary 2nd+ Rescue <= 5m** | `>= 70%` of testers | | |
-| **Qualitative Engagement** | Testers understand loop uncoached, care about Ember/Frost/Astral choices, and show/visit ranches | | |
+| Completed Uncoached Sessions | `5–10` testers | Cohort-level summary reported (exact `N` not supplied) | `Unconfirmed` |
+| **Median First Reward** | `<= 45s` | Not individually timed; all testers incubated `5+` eggs and bought all 3 upgrades within `2–3` min | `Inferred Fast (Untimed)` |
+| **First Hatch & Pen <= 90s** | `>= 80%` of testers | Not individually timed; all testers incubated `5+` eggs within `2–3` min and found gameplay *"simple enough for a child to understand"* | `Inferred Pass (Untimed)` |
+| **Voluntary 2nd+ Rescue <= 5m** | `>= 70%` of testers | All testers incubated `5+` eggs within `2–3` min | `Pass` |
+| **Qualitative Engagement** | Testers understand loop uncoached, care about Ember/Frost/Astral choices, and show/visit ranches | **FAILED** — *"game is really easy to progress and lacks content"*; *"coins feel rather useless"* (only upgrades incubators/pen slots); *"All meteors felt the same, nothing was special or stood out"*; *"probably won't come back as there isn't much content"* | `Fail` |
 
 ### Decision Rule
 - **GO -> Unlock Stage 3 (`S3-01`–`S3-04`):** Directional hypotheses hold (testers understand the loop uncoached, hit first rewards quickly, and actively return to the Crater rather than idling at Pens). Next step: vendor pinned `ProfileStore`, wire offline incubation (`MaturesAt`), and scale `2 -> 6` plots.
@@ -91,3 +91,28 @@ Once 5–10 uncoached runs are recorded above, fill in these observed directiona
 
 ### Recording the Decision
 Share the filled Observation & Timing Sheet and Post-Session Debrief notes back in this conversation so **Gemini + ChatGPT** can analyze the results and ChatGPT can record the formal Stage 2 verdict (`GO` / `ITERATE` / `PIVOT`) in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md).
+
+---
+
+## 5. Recorded Stage 2 Playtest Summary — Round 1 (`v0.2.1-s2-playtest-live`, 2026-11-18)
+
+> **Data Completeness Note:** The Human Project Lead provided a qualitative & cohort-level summary of Round 1 live playtest feedback without an exact tester count (`N`) or per-tester timestamps (`T-01`..`T-10` remain blank above).
+
+### 5.1 Human Lead Cohort Readout
+- **Onboarding & Clarity (Positive):** Gameplay was reported as *"simple enough for a child to understand"* — all testers understood how to rescue meteors, incubate eggs/pods, and buy upgrades uncoached.
+- **Progression Speed & Content Depth (Fail):** All testers bought **all upgrades** and incubated **`5+` eggs/pods within 2–3 minutes**. General consensus was that progression is far too easy and lacks content.
+- **Coin Utility (Fail):** Coins felt *"rather useless"* once players unlocked the two extra Pen/Incubator upgrades because there is no other ongoing use for Coins.
+- **Meteor Differentiation (Fail):** *"All meteors felt the same, nothing was special or stood out."*
+- **Return Retention Intent (Fail):** Testers reported they *"probably won't come back as there isn't much content."*
+
+### 5.2 Code-Level Diagnosis (Mapped to Round 1 Build `8ce1e25`)
+1. **`530`-Coin Content Ceiling ([UpgradeConfig.luau](../src/Shared/Config/UpgradeConfig.luau#L13-L39)):** Total progression across all 3 upgrades (`PenSlot_2 = 60`, `Incubator_2 = 150`, `PenSlot_3 = 320`) equals only `530 Coins`. Selling `3` critters or idling briefly completes 100% of ranch upgrades within `2–3` minutes.
+2. **Un-gated `Astral` Spawns ([MeteorService.luau](../src/Server/Services/MeteorService.luau#L49-L53)) & High Payouts ([CritterConfig.luau](../src/Shared/Config/CritterConfig.luau#L35-L45)):** `Astral` meteors (`15%` weight) spawn immediately from `t = 0` with no tool/progression gate and yield `SolarGolem` (`180 Coins` sell / `7 Coins/s`), accelerating testers through the `530`-Coin cap.
+3. **Identical Meteor Interaction ([MeteorService.luau](../src/Server/Services/MeteorService.luau#L123-L145) & [CrackController.luau](../src/Client/Controllers/CrackController.luau#L88-L115)):** Ember, Frost, and Astral rocks sit at fixed Crater nodes and share the exact same single-tier `1.2s` crack bar — zero live meteor shower / sky-fall impact spectacle, zero tier-specific mechanics or special rare/event meteors, and zero meaningful gameplay difference between traits.
+4. **No Ongoing Coin Sinks:** Zero tool/cracker upgrades, critter feeding/leveling sinks, meteor lures/scans, or deeper species goals (`3` total species; `Radiant` variant has `+0` stats).
+
+### 5.3 Preliminary Gate Read & Handoff Status
+- **Gemini Preliminary Gate Read:** **NO-GO for Stage 3 (`ProfileStore` & 6-Plot Alpha).** While Stage 1 UI/controls/clarity passed uncoached, Round 1 failed retention, progression depth, Coin utility, and core Crater excitement. Advancing to `ProfileStore` now would lock in a 3-minute loop that testers would not return to.
+- **Decision Required Before Any `src/` Edits:** **ITERATE** (*Starfall Ranch* Stage 2B loop/depth pass, still on `MockStore`) vs. **PIVOT** to *Relic Raiders* or *Potion Pop!* ([GAME_CONCEPTS.md](./GAME_CONCEPTS.md)).
+- **Human Lead's Preliminary Priority (if Iterating):** Add **New Coin Sinks** (Cracker/Pickaxe Tiers, Critter Level-Ups/Feeding, Meteor Lures) — paired with the Stage 2 findings on identical meteors and 2–3 min ceiling.
+- **Hold Status:** All `src/` edits are paused on `v0.2.1-s2-playtest-live` (`8ce1e25`) pending **ChatGPT's independent Stage 2 assessment** in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) and the Human Lead's final **Iterate vs. Pivot** call.
