@@ -1,17 +1,26 @@
 # Stage 1 (`S1-09`) Verification Checklist & Test Script
 
-> **Applies To:** `v0.1.11-s1-09` (`S1-08` Review #010 UI Fixes + `S1-09` Final Gate Before Stage 2)  
-> **Instructions:** Run each section below inside Roblox Studio (synced via Rojo `v7.4.4`) and report observed results so they can be recorded in `docs/AGENT_REVIEWS.md`.
+> **Applies To:** `v0.1.12-s1-09-fix` (`S1-08` Review #010 & #011 UI Fixes + `S1-09` Final Gate Before Stage 2)  
+> **Instructions:** Run each remaining section below inside Roblox Studio (synced via Rojo `v7.4.4`) and report observed results so they can be recorded in `docs/AGENT_REVIEWS.md`.
+
+### Latest Verified Play Solo Evidence (`v0.1.12-s1-09-fix` via Studio MCP)
+- **Clean Boot & Self-Tests:** `33/33` PASS suites (`31` Server/Shared including `5/5 Stage1VerificationSuite` + `2/2 UIController`), `0` script errors, `0` `GuiService.SelectedObject` warnings, clean initial `SyncPublicPlots` & `SyncOwnerState` delivery. *(Note: external Studio catalog warning `ContentId: rbxassetid://203785492` does not originate in `src/`.)*
+- **Automated Layout & Scroll/Focus Self-Tests (`UIController.RunSelfTest`):** `ComputeTopHudLayout` passed across `320, 360, 375, 439, 440, 667, 1280`px; overflowing Bag self-test (`4` hatched + `3` pods + `3` upgrades) passed post-`RenderStepped` scroll offset, in-place `MeadowMint` affordable color update, and structural rebuild scroll/focus restoration.
+- **Interactive 1P Play Solo Probes (`v0.1.12-s1-09-fix`):**
+  - Starter rescue + incubate + 3 wild rescues + hatch + `Pen_1` placement -> `Bag: 3/10`, `RateText = "+2 Coins/s"`, `P1_Pen_1_StarSlime` visual spawned.
+  - Opened Bag, scrolled to `Y = 180` (`MaxScrollY = 302`), waited `3.5s` across passive ticks (`27 Coins -> 35 Coins`): `ScrollBefore = 180 == ScrollAfter = 180` and `SameBuyBtnIntactAcrossCoinTicks = true`.
+  - Toggled `Mute Sound: ON` (`StarfallSfxGroup.Volume = 0`) and `Reduced Motion: ON` (`HopDelta: 0.622 -> 0`).
+- **Remaining Manual Studio Gates Before Stage 2:** Visual `Test -> Device Emulator` (`320px` & `667x375`), interactive Gamepad/Keyboard/Touch checks (including toggling audio/motion back `OFF` & `Confirm Sell?` focus), **2-Player Local Server**, and **5-Minute Solo Playthrough Timing**.
 
 ---
 
 ## 1. Automated Startup Verification (Solo Play `F5`)
 
-- [ ] **Rojo Sync & Startup (`ServerInit` + `ClientInit`):**
+- [x] **Rojo Sync & Startup (`ServerInit` + `ClientInit`):**
   - Open **View -> Output** and press **Play (`F5`)**.
   - Confirm **31 Server/Shared suites PASS** (including `All 5 Stage1VerificationSuite test suites passed.`).
   - Confirm **2 Client suites PASS** (`All 2 UIController client test suites passed.`).
-  - Total expected `PASS` suites on boot: **33** with zero errors or script analysis warnings.
+  - Total expected `PASS` suites on boot: **33** with zero errors or script analysis warnings (`v0.1.12-s1-09-fix` verified in Studio Play Solo).
 
 ---
 

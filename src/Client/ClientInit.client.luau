@@ -28,8 +28,12 @@ end
 
 if Constants.RUN_SELF_TESTS then
 	local UIController = require(ControllersFolder:WaitForChild("UIController"))
-	local uiPassed = UIController.RunSelfTest()
-	print(string.format("[StarfallRanch][SelfTest] PASS: All %d UIController client test suites passed.", uiPassed))
+	local okTest, passedOrErr = pcall(UIController.RunSelfTest)
+	if okTest then
+		print(string.format("[StarfallRanch][SelfTest] PASS: All %d UIController client test suites passed.", passedOrErr :: number))
+	else
+		warn("[StarfallRanch][SelfTest] FAIL: UIController self-test error: " .. tostring(passedOrErr))
+	end
 end
 
 for _, controller in ipairs(controllerOrder) do

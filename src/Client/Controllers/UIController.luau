@@ -12,6 +12,7 @@
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local ControllersFolder = script.Parent
 local SoundController = require(ControllersFolder:WaitForChild("SoundController"))
@@ -74,6 +75,7 @@ local latestOwnerState: Types.OwnerStateDTO? = nil
 local stateChangedCallbacks: { (dto: Types.OwnerStateDTO) -> () } = {}
 local syncConn: RBXScriptConnection? = nil
 local sizeChangedConn: RBXScriptConnection? = nil
+local layoutChangedConn: RBXScriptConnection? = nil
 local plotActionRemote: RemoteEvent? = nil
 local buyUpgradeRemote: RemoteFunction? = nil
 
@@ -91,6 +93,7 @@ local hintLabel: TextLabel? = nil
 local bagDrawer: Frame? = nil
 local bagCapacityLabel: TextLabel? = nil
 local bagScrollFrame: ScrollingFrame? = nil
+local bagScrollLayout: UIListLayout? = nil
 local bagCloseButton: TextButton? = nil
 local firstBagSelectable: GuiObject? = nil
 local bagButtonsByKey: { [string]: GuiObject } = {}
@@ -98,6 +101,8 @@ local upgradeBuyButtons: { [Types.UpgradeId]: TextButton } = {}
 local lastFocusedBagKey: string? = nil
 local lastBagStructureSignature: string? = nil
 local bagRebuildCount = 0
+local bagRestoreToken = 0
+local bagRestoreInFlight = false
 
 local settingsDrawer: Frame? = nil
 local muteToggleButton: TextButton? = nil
@@ -466,6 +471,71 @@ local function updateContextualHint(): ()
 	end
 end
 
+local function syncBagCanvasSize(minHeight: number?): ()
+	local scroll = bagScrollFrame
+	local layout = bagScrollLayout
+	if scroll == nil or layout == nil then
+		return
+	end
+	local contentH = math.ceil(layout.AbsoluteContentSize.Y) + 16
+	if minHeight ~= nil then
+		contentH = math.max(contentH, minHeight)
+	end
+	scroll.CanvasSize = UDim2.fromOffset(0, contentH)
+end
+
+local function getMaxBagScrollY(): number
+	local scroll = bagScrollFrame
+	if scroll == nil then
+		return 0
+	end
+	local layoutH = if bagScrollLayout ~= nil then math.ceil(bagScrollLayout.AbsoluteContentSize.Y) + 16 else 0
+	local canvasH = math.max(scroll.AbsoluteCanvasSize.Y, layoutH)
+	return math.max(0, canvasH - scroll.AbsoluteWindowSize.Y)
+end
+
+local function canSelectGuiObject(target: GuiObject?): boolean
+	if target == nil then
+		return false
+	end
+	if not GuiService.GuiNavigationEnabled then
+		return false
+	end
+	local root = hudGui
+	if root == nil or not root.Enabled or not target:IsDescendantOf(root) then
+		return false
+	end
+	if not target.Selectable or not target.Visible then
+		return false
+	end
+
+	local current: Instance? = target.Parent
+	while current ~= nil and current ~= root do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		current = current.Parent
+	end
+
+	local absSize = target.AbsoluteSize
+	if absSize.X <= 0 or absSize.Y <= 0 then
+		return false
+	end
+	return true
+end
+
+local function safeSetSelectedObject(target: GuiObject?): boolean
+	if target == nil then
+		GuiService.SelectedObject = nil
+		return true
+	end
+	if not canSelectGuiObject(target) then
+		return false
+	end
+	GuiService.SelectedObject = target
+	return GuiService.SelectedObject == target
+end
+
 local function resolveBagSelectionTarget(preferredKey: string?): GuiObject?
 	if preferredKey ~= nil then
 		if bagButtonsByKey[preferredKey] ~= nil then
@@ -488,29 +558,36 @@ local function applyDrawerVisibility(preferredBagKey: string?): ()
 		settingsDrawer.Visible = settingsOpen
 	end
 
-	if currentInputMode == "Gamepad" then
-		if bagOpen then
-			if preferredBagKey ~= nil then
-				local target = resolveBagSelectionTarget(preferredBagKey)
-				if target ~= nil then
-					GuiService.SelectedObject = target
-				end
-			else
-				local currentSelected = GuiService.SelectedObject
-				local insideBag = currentSelected ~= nil and bagDrawer ~= nil and currentSelected:IsDescendantOf(bagDrawer)
-				if not insideBag then
-					GuiService.SelectedObject = resolveBagSelectionTarget(lastFocusedBagKey)
-				end
-			end
-		elseif settingsOpen then
+	if currentInputMode ~= "Gamepad" then
+		return
+	end
+
+	if bagOpen then
+		if not bagRestoreInFlight then
 			local currentSelected = GuiService.SelectedObject
-			local insideSettings = currentSelected ~= nil and settingsDrawer ~= nil and currentSelected:IsDescendantOf(settingsDrawer)
-			if not insideSettings then
-				GuiService.SelectedObject = muteToggleButton
+			local insideBag = currentSelected ~= nil and bagDrawer ~= nil and currentSelected:IsDescendantOf(bagDrawer)
+			if preferredBagKey ~= nil or not insideBag then
+				local target = resolveBagSelectionTarget(preferredBagKey or lastFocusedBagKey)
+				safeSetSelectedObject(target)
 			end
-		else
-			GuiService.SelectedObject = nil
 		end
+	elseif settingsOpen then
+		local currentSelected = GuiService.SelectedObject
+		local insideSettings = currentSelected ~= nil and settingsDrawer ~= nil and currentSelected:IsDescendantOf(settingsDrawer)
+		if not insideSettings then
+			if canSelectGuiObject(muteToggleButton) then
+				safeSetSelectedObject(muteToggleButton)
+			else
+				task.spawn(function()
+					RunService.RenderStepped:Wait()
+					if settingsOpen and currentInputMode == "Gamepad" then
+						safeSetSelectedObject(muteToggleButton)
+					end
+				end)
+			end
+		end
+	else
+		safeSetSelectedObject(nil)
 	end
 end
 
@@ -605,6 +682,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 
 	local preserve = preserveFocusAndScroll == true
 	local savedCanvasPos = if preserve then scroll.CanvasPosition else Vector2.zero
+	local prevCanvasHeight = if preserve then math.max(scroll.AbsoluteCanvasSize.Y, scroll.CanvasSize.Y.Offset, 1) else 0
 	local preferredKey: string? = nil
 	if preserve then
 		local currentSelected = GuiService.SelectedObject
@@ -617,6 +695,20 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 		if preferredKey == nil then
 			preferredKey = lastFocusedBagKey
 		end
+	end
+
+	bagRestoreToken += 1
+	local myToken = bagRestoreToken
+	bagRestoreInFlight = true
+
+	-- Keep CanvasSize height and clear selection before destroying rows so Roblox does not
+	-- synchronously clamp CanvasPosition or log invalid SelectedObject fallback jumps.
+	local currentSelected = GuiService.SelectedObject
+	if currentSelected ~= nil and currentSelected:IsDescendantOf(scroll) then
+		GuiService.SelectedObject = nil
+	end
+	if preserve then
+		scroll.CanvasSize = UDim2.fromOffset(0, prevCanvasHeight)
 	end
 
 	for _, child in ipairs(scroll:GetChildren()) do
@@ -644,6 +736,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	if dto == nil then
 		createEmptyNote(scroll, "Loading Ranch Bag...", 1)
 		lastBagStructureSignature = nil
+		syncBagCanvasSize(nil)
+		bagRestoreInFlight = false
 		applyDrawerVisibility(nil)
 		return
 	end
@@ -1003,11 +1097,57 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	bagRebuildCount += 1
 	lastBagStructureSignature = UIController.ComputeBagStructureSignature(dto, pendingSellConfirmUID)
 
-	if preserve then
-		scroll.CanvasPosition = savedCanvasPos
+	if bagDrawer ~= nil then
+		bagDrawer.Visible = bagOpen
+	end
+	if settingsDrawer ~= nil then
+		settingsDrawer.Visible = settingsOpen
 	end
 
-	applyDrawerVisibility(if preserve then preferredKey else nil)
+	task.spawn(function()
+		RunService.RenderStepped:Wait()
+		if myToken ~= bagRestoreToken then
+			return
+		end
+		syncBagCanvasSize(nil)
+		if bagScrollLayout ~= nil and bagScrollLayout.AbsoluteContentSize.Y == 0 and #scroll:GetChildren() > 1 then
+			RunService.RenderStepped:Wait()
+			if myToken ~= bagRestoreToken then
+				return
+			end
+			syncBagCanvasSize(nil)
+		end
+
+		if not bagOpen then
+			bagRestoreInFlight = false
+			return
+		end
+
+		local maxScrollY = getMaxBagScrollY()
+		if preserve then
+			scroll.CanvasPosition = Vector2.new(savedCanvasPos.X, math.clamp(savedCanvasPos.Y, 0, maxScrollY))
+		else
+			scroll.CanvasPosition = Vector2.zero
+		end
+
+		if currentInputMode == "Gamepad" then
+			local target = resolveBagSelectionTarget(if preserve then preferredKey else lastFocusedBagKey)
+			safeSetSelectedObject(target)
+			if preserve and target ~= nil then
+				local winTop = scroll.AbsolutePosition.Y
+				local winBottom = winTop + scroll.AbsoluteWindowSize.Y
+				local targetTop = target.AbsolutePosition.Y
+				local targetBottom = targetTop + target.AbsoluteSize.Y
+				if targetTop >= winTop - 2 and targetBottom <= winBottom + 2 then
+					scroll.CanvasPosition = Vector2.new(savedCanvasPos.X, math.clamp(savedCanvasPos.Y, 0, maxScrollY))
+				end
+			end
+		end
+
+		if myToken == bagRestoreToken then
+			bagRestoreInFlight = false
+		end
+	end)
 end
 
 local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
@@ -1292,7 +1432,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	scroll.BackgroundTransparency = 1
 	scroll.BorderSizePixel = 0
 	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
 	scroll.ScrollBarThickness = 6
 	scroll.ScrollBarImageColor3 = PALETTE.OrbitalCyan
 	scroll.Parent = drawer
@@ -1302,6 +1442,16 @@ function UIController.Init(self: typeof(UIController)): ()
 	scrollLayout.Padding = UDim.new(0, 8)
 	scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	scrollLayout.Parent = scroll
+	bagScrollLayout = scrollLayout
+
+	if layoutChangedConn ~= nil then
+		layoutChangedConn:Disconnect()
+	end
+	layoutChangedConn = scrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		if not bagRestoreInFlight then
+			syncBagCanvasSize(nil)
+		end
+	end)
 
 	-- Settings Popover
 	local sDrawer = Instance.new("Frame")
@@ -1483,6 +1633,8 @@ function UIController.ToggleBag(): boolean
 		settingsOpen = false
 		rebuildBagContents(false)
 	else
+		bagRestoreToken += 1
+		bagRestoreInFlight = false
 		pendingSellConfirmUID = nil
 		lastFocusedBagKey = nil
 		applyDrawerVisibility(nil)
@@ -1494,6 +1646,8 @@ function UIController.ToggleSettings(): boolean
 	settingsOpen = not settingsOpen
 	if settingsOpen then
 		bagOpen = false
+		bagRestoreToken += 1
+		bagRestoreInFlight = false
 		pendingSellConfirmUID = nil
 		lastFocusedBagKey = nil
 	end
@@ -1505,6 +1659,8 @@ function UIController.CloseDrawers(): boolean
 	local hadOpen = bagOpen or settingsOpen
 	bagOpen = false
 	settingsOpen = false
+	bagRestoreToken += 1
+	bagRestoreInFlight = false
 	pendingSellConfirmUID = nil
 	lastFocusedBagKey = nil
 	applyDrawerVisibility(nil)
@@ -1523,9 +1679,21 @@ end
 function UIController.RunSelfTest(): number
 	local passed = 0
 	local scroll = bagScrollFrame :: ScrollingFrame
+	local layoutRef = bagScrollLayout :: UIListLayout
 	local savedMode = currentInputMode
 
+	local function waitForBagSettled(): ()
+		local frames = 0
+		while bagRestoreInFlight and frames < 15 do
+			RunService.RenderStepped:Wait()
+			frames += 1
+		end
+		RunService.RenderStepped:Wait()
+	end
+
 	local testOk, testErr = pcall(function()
+		RunService.RenderStepped:Wait()
+
 		-- 1. Narrow & wide safe-width top HUD geometry invariants (zero overlap, inside bounds)
 		for _, w in ipairs({ 320, 360, 375, 439, 440, 667, 1280 }) do
 			local layout = UIController.ComputeTopHudLayout(w)
@@ -1543,7 +1711,7 @@ function UIController.RunSelfTest(): number
 		end
 		passed += 1
 
-		-- 2. Bag rows, scroll position & focus survive passive Coin ticks and structural rebuilds
+		-- 2. Final rendered Bag scroll, Coin-only in-place update & post-layout structural rebuild
 		local mockItems: { [string]: Types.CritterItemRecord } = {
 			["h-1"] = {
 				UID = "h-1",
@@ -1559,6 +1727,41 @@ function UIController.RunSelfTest(): number
 				State = "HatchedInBag",
 				CreatedAt = 101,
 			},
+			["h-3"] = {
+				UID = "h-3",
+				SpeciesId = "SolarGolem",
+				Variant = "Normal",
+				State = "HatchedInBag",
+				CreatedAt = 102,
+			},
+			["h-4"] = {
+				UID = "h-4",
+				SpeciesId = "StarSlime",
+				Variant = "Radiant",
+				State = "HatchedInBag",
+				CreatedAt = 103,
+			},
+			["p-1"] = {
+				UID = "p-1",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 104,
+			},
+			["p-2"] = {
+				UID = "p-2",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 105,
+			},
+			["p-3"] = {
+				UID = "p-3",
+				SpeciesId = "SolarGolem",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 106,
+			},
 		}
 		local dto1: Types.OwnerStateDTO = {
 			Revision = 1,
@@ -1568,7 +1771,7 @@ function UIController.RunSelfTest(): number
 			Items = mockItems,
 			Slots = {},
 			Upgrades = {},
-			DiscoveredSpecies = { StarSlime = true, NebulaFox = true },
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
 		local dto2: Types.OwnerStateDTO = {
 			Revision = 2,
@@ -1578,46 +1781,71 @@ function UIController.RunSelfTest(): number
 			Items = mockItems,
 			Slots = {},
 			Upgrades = {},
-			DiscoveredSpecies = { StarSlime = true, NebulaFox = true },
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
 
 		currentInputMode = "Gamepad"
 		bagOpen = true
 		settingsOpen = false
 		latestOwnerState = dto1
-		scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
-		scroll.CanvasSize = UDim2.fromOffset(0, 1200)
 
 		rebuildBagContents(false)
+		waitForBagSettled()
+		assert(not bagRestoreInFlight, "Initial Bag restore must settle within bounded frames")
+		assert(layoutRef.AbsoluteContentSize.Y > scroll.AbsoluteWindowSize.Y, "Rendered Bag list must overflow window height for scroll test")
+		local maxScrollY = getMaxBagScrollY()
+		assert(maxScrollY >= 40, "Rendered Bag must have >= 40px scrollable range")
+
 		local rebuildsBefore = bagRebuildCount
 		local pen2BtnRef = upgradeBuyButtons["PenSlot_2"]
 		assert(pen2BtnRef ~= nil, "PenSlot_2 buy button rendered")
 		assert(pen2BtnRef.BackgroundColor3 == PALETTE.CardDark, "PenSlot_2 starts unaffordable at 58 Coins")
 
-		scroll.CanvasPosition = Vector2.new(0, 120)
+		local btnRelY = pen2BtnRef.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y
+		local desiredScrollY = math.clamp(math.floor(btnRelY - scroll.AbsoluteWindowSize.Y * 0.5), 40, maxScrollY)
+		scroll.CanvasPosition = Vector2.new(0, desiredScrollY)
 		lastFocusedBagKey = "Buy:PenSlot_2"
+		safeSetSelectedObject(pen2BtnRef)
+		RunService.RenderStepped:Wait()
 
+		local settledScrollY = scroll.CanvasPosition.Y
+		assert(settledScrollY >= 35, "Bag scrolled to real non-zero rendered position")
+
+		-- Coin-only update preserves rows, button instance, affordability color, focus & scroll
 		refreshAllHUD(dto2)
+		RunService.RenderStepped:Wait()
 		assert(bagRebuildCount == rebuildsBefore, "Coin-only update must not rebuild Bag rows")
 		assert(upgradeBuyButtons["PenSlot_2"] == pen2BtnRef, "Coin-only update preserves exact button instance")
 		assert(pen2BtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes affordability color in place")
-		assert(lastFocusedBagKey == "Buy:PenSlot_2" and scroll.CanvasPosition.Y == 120, "Coin-only update preserves focus key and scroll")
+		assert(math.abs(scroll.CanvasPosition.Y - settledScrollY) <= 1, "Coin-only update preserves rendered scroll position")
+		assert(lastFocusedBagKey == "Buy:PenSlot_2", "Coin-only update preserves focused Bag action key")
 
-		-- Structural rebuild (e.g. Confirm Sell) preserves focus key and scroll position
+		-- Structural rebuild preserves lower-row focus & rendered scroll position after layout settles
 		pendingSellConfirmUID = "h-2"
 		pendingSellConfirmExpiresAt = os.clock() + 3
-		lastFocusedBagKey = "Sell:h-2"
+		lastFocusedBagKey = "Buy:PenSlot_2"
 		rebuildBagContents(true)
+		waitForBagSettled()
+
+		assert(not bagRestoreInFlight, "Post-rebuild restore must finish settling")
 		assert(bagRebuildCount == rebuildsBefore + 1, "Structural change rebuilds Bag rows")
-		assert(scroll.CanvasPosition.Y == 120, "Structural rebuild restores scroll position")
+		assert(math.abs(scroll.CanvasPosition.Y - settledScrollY) <= 1, "Structural rebuild restores final rendered scroll position")
+
+		local rebuiltBuyBtn = upgradeBuyButtons["PenSlot_2"]
+		assert(rebuiltBuyBtn ~= nil and resolveBagSelectionTarget("Buy:PenSlot_2") == rebuiltBuyBtn, "Structural rebuild preserves lower-row Buy target")
+		if GuiService.GuiNavigationEnabled and canSelectGuiObject(rebuiltBuyBtn) then
+			assert(GuiService.SelectedObject == rebuiltBuyBtn, "Gamepad selection stays on lower-row Buy button after structural rebuild")
+		end
+
 		local resolvedSell = resolveBagSelectionTarget("Sell:h-2")
-		assert(resolvedSell ~= nil and resolvedSell ~= firstBagSelectable, "Structural rebuild preserves targeted Sell focus rather than resetting to first row")
+		assert(resolvedSell ~= nil and resolvedSell ~= firstBagSelectable, "Confirm Sell button remains resolvable outside row 1")
 		assert((resolvedSell :: TextButton).Text == "Confirm Sell?", "Focused button updated cleanly to Confirm Sell?")
-		assert(resolveBagSelectionTarget("Buy:PenSlot_2") == upgradeBuyButtons["PenSlot_2"], "Buy target remains resolvable by BagActionKey")
 		passed += 1
 	end)
 
 	-- Restore pristine empty UI state before ClientInit starts live snapshot listener
+	bagRestoreToken += 1
+	bagRestoreInFlight = false
 	currentInputMode = savedMode
 	bagOpen = false
 	settingsOpen = false
@@ -1639,7 +1867,7 @@ function UIController.RunSelfTest(): number
 	end
 	scroll.CanvasPosition = Vector2.zero
 	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
 	if coinsLabel ~= nil then
 		coinsLabel.Text = "0 Coins"
 	end
