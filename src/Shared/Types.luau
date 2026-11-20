@@ -6,12 +6,20 @@
 	How to Test in Studio: Play (F5) and verify zero Luau Script Analysis warnings in Output.
 ]]
 
-export type SpeciesId = "StarSlime" | "NebulaFox" | "SolarGolem"
+export type SpeciesId = "StarSlime" | "CinderPup" | "FrostBeetle" | "NebulaFox" | "SolarGolem" | "CometOwl"
+export type RarityId = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary"
 export type VariantId = "Normal" | "Radiant"
 export type MeteorTraitId = "Ember" | "Frost" | "Astral"
 export type ItemState = "PodInBag" | "Incubating" | "HatchedInBag" | "InPen"
-export type UpgradeId = "PenSlot_2" | "StarCracker" | "Incubator_2" | "PenSlot_3"
-export type PlotAction = "StartIncubate" | "Hatch" | "PlaceInPen" | "RemoveFromPen" | "SellCritter" | "FeedCritter"
+export type UpgradeId = "PenSlot_2" | "FrostCracker" | "Incubator_2" | "PenSlot_3" | "StarCracker" | "PenSlot_4"
+export type PlotAction =
+	"StartIncubate"
+	| "Hatch"
+	| "PlaceInPen"
+	| "RemoveFromPen"
+	| "SellCritter"
+	| "FeedCritter"
+	| "UseFrostLure"
 export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
 export type SlotCategory = "Pen" | "Incubator" | "Tool"
 
@@ -73,12 +81,14 @@ export type PublicPlotDTO = {
 export type SpeciesDefinition = {
 	Id: SpeciesId,
 	DisplayName: string,
+	Rarity: RarityId,
 	HatchSeconds: number,
 	CoinsPerSecond: number,
 	SellPrice: number,
 	BodyColor: Color3,
 	AccentColor: Color3,
 	DisplayScale: Vector3,
+	FieldClue: string,
 	Description: string,
 }
 
@@ -102,6 +112,7 @@ export type UpgradeDefinition = {
 	UnlocksSlotId: string,
 	SlotCategory: SlotCategory,
 	PadOffsetX: number,
+	RequiresUpgradeId: UpgradeId?,
 	Description: string,
 }
 

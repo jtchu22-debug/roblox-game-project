@@ -33,6 +33,8 @@ export type ActiveMeteor = {
 	IsStarter: boolean,
 	OwnerUserId: number?,
 	PlotId: number?,
+	LuredByUserId: number?,
+	LuredOwnerName: string?,
 	ClaimedByUserId: number?,
 	SpawnedAt: number,
 	Model: Model?,
@@ -52,6 +54,18 @@ local WILD_TRAIT_WEIGHTS: { { Trait: Types.MeteorTraitId, Weight: number } } = t
 	table.freeze({ Trait = "Astral" :: Types.MeteorTraitId, Weight = 25 }),
 })
 
+local EMBER_BASIN_NODES: { [string]: boolean } = table.freeze({
+	MeteorNode_1 = true,
+	MeteorNode_3 = true,
+	MeteorNode_4 = true,
+})
+
+local FROST_ASTRAL_RIDGE_NODES: { [string]: boolean } = table.freeze({
+	MeteorNode_2 = true,
+	MeteorNode_5 = true,
+	MeteorNode_6 = true,
+})
+
 local MeteorService = {
 	Name = "MeteorService",
 }
@@ -66,6 +80,8 @@ local wildNodeOccupied: { [string]: string } = {}
 local wildNodeCooldownUntil: { [string]: number } = {}
 local starterByPlotId: { [number]: string } = {}
 local starterClaimedByUserId: { [number]: boolean } = {}
+local luredMeteorByUserId: { [number]: string } = {}
+local lastLureClockByUserId: { [number]: number } = {}
 local activeClaimsByUserId: { [number]: ActiveClaim } = {}
 local characterConnsByUserId: { [number]: { RBXScriptConnection } } = {}
 local activeHumanoidConnsByUserId: { [number]: { RBXScriptConnection } } = {}
@@ -111,13 +127,17 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	end
 
 	local traitDef = MeteorConfig.ById[meteor.Trait]
+	local isWildFrost = meteor.Trait == "Frost" and not meteor.IsStarter
 	local isWildAstral = meteor.Trait == "Astral" and not meteor.IsStarter
+	local isLured = meteor.LuredByUserId ~= nil
 	local model = Instance.new("Model")
-	model.Name = (if meteor.IsStarter then "StarterMeteor_" else "WildMeteor_") .. string.sub(meteor.UID, 1, 8)
+	model.Name = (if meteor.IsStarter then "StarterMeteor_" elseif isLured then "LuredFrost_" else "WildMeteor_")
+		.. string.sub(meteor.UID, 1, 8)
 	model:SetAttribute("MeteorUID", meteor.UID)
 	model:SetAttribute("Trait", meteor.Trait)
 	model:SetAttribute("IsStarter", meteor.IsStarter)
 	model:SetAttribute("OwnerUserId", meteor.OwnerUserId or 0)
+	model:SetAttribute("LuredByUserId", meteor.LuredByUserId or 0)
 	CollectionService:AddTag(model, Constants.TAG_ACTIVE_METEOR)
 
 	local basePos = meteor.Position + Vector3.new(0, if isWildAstral then 2.4 else 1.8, 0)
@@ -201,10 +221,13 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "MeteorLabel"
-	gui.Size = if isWildAstral then UDim2.fromOffset(230, 52) else UDim2.fromOffset(190, 44)
-	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.6, 0) else Vector3.new(0, 4.2, 0)
+	gui.Size = if isWildAstral
+		then UDim2.fromOffset(235, 52)
+		elseif isWildFrost then UDim2.fromOffset(220, 48)
+		else UDim2.fromOffset(205, 44)
+	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.6, 0) else Vector3.new(0, 4.4, 0)
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = if isWildAstral then 140 else 95
+	gui.MaxDistance = if isWildAstral then 140 elseif isWildFrost then 115 else 95
 	gui.Adornee = body
 	gui.Parent = body
 
@@ -218,8 +241,10 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	label.Font = Enum.Font.GothamBold
 	label.Text = if meteor.IsStarter
 		then "STARTER METEOR"
-		elseif isWildAstral then "[ASTRAL - RARE]\nStar Cracker (Solar Golem!)"
-		else string.format("[%s] Meteor", traitDef.IconText)
+		elseif isWildAstral then "[ASTRAL - RARE]\nAstral Cracker (Golem / Owl!)"
+		elseif isLured then string.format("[FROST - LURED]\n%s's Frost Meteor", meteor.LuredOwnerName or "Rancher")
+		elseif isWildFrost then "[FROST - RIDGE]\nFrost Cracker (Beetle / Fox)"
+		else "[EMBER]\nStarter Glove (Slime / Pup)"
 	label.Parent = gui
 
 	local corner = Instance.new("UICorner")
@@ -230,9 +255,14 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	prompt.Name = "RescuePrompt"
 	prompt.ObjectText = if meteor.IsStarter
 		then "Starter Meteor"
-		elseif isWildAstral then "Astral Meteor (Needs Star Cracker)"
+		elseif isWildAstral then "Astral Meteor (Needs Astral Cracker)"
+		elseif isLured then string.format("%s's Lured Frost Meteor", meteor.LuredOwnerName or "Rancher")
+		elseif isWildFrost then "Frost Meteor (Needs Frost Cracker)"
 		else traitDef.DisplayName
-	prompt.ActionText = if isWildAstral then "Break Astral Core" else "Rescue Star-Pod"
+	prompt.ActionText = if isWildAstral
+		then "Break Astral Pulse"
+		elseif isWildFrost then "Fracture Frost Core"
+		else "Rescue Star-Pod"
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = Constants.PROMPT_ACTIVATION_DISTANCE
 	prompt.RequiresLineOfSight = false
@@ -278,6 +308,9 @@ local function removeMeteorInternal(meteorUID: string): ()
 			starterByPlotId[meteor.PlotId] = nil
 		end
 	elseif not meteor.IsStarter then
+		if meteor.LuredByUserId ~= nil and luredMeteorByUserId[meteor.LuredByUserId] == meteorUID then
+			luredMeteorByUserId[meteor.LuredByUserId] = nil
+		end
 		if wildNodeOccupied[meteor.NodeName] == meteorUID then
 			wildNodeOccupied[meteor.NodeName] = nil
 		end
@@ -343,7 +376,13 @@ function MeteorService.SpawnStarterMeteorForPlot(plotId: number, ownerUserId: nu
 	return true, "Spawned", meteor
 end
 
-function MeteorService.SpawnWildMeteorAtNode(nodeName: string, traitOverride: Types.MeteorTraitId?, nowClock: number?): (boolean, string, ActiveMeteor?)
+function MeteorService.SpawnWildMeteorAtNode(
+	nodeName: string,
+	traitOverride: Types.MeteorTraitId?,
+	nowClock: number?,
+	luredByUserId: number?,
+	luredOwnerName: string?
+): (boolean, string, ActiveMeteor?)
 	if wildNodeOccupied[nodeName] ~= nil then
 		return false, "NodeOccupied", nil
 	end
@@ -369,6 +408,8 @@ function MeteorService.SpawnWildMeteorAtNode(nodeName: string, traitOverride: Ty
 		IsStarter = false,
 		OwnerUserId = nil,
 		PlotId = nil,
+		LuredByUserId = luredByUserId,
+		LuredOwnerName = luredOwnerName,
 		ClaimedByUserId = nil,
 		SpawnedAt = nowClock or workspace:GetServerTimeNow(),
 		Model = nil,
@@ -376,14 +417,77 @@ function MeteorService.SpawnWildMeteorAtNode(nodeName: string, traitOverride: Ty
 	meteor.Model = createMeteorModel(meteor)
 	activeMeteors[uid] = meteor
 	wildNodeOccupied[nodeName] = uid
+	if luredByUserId ~= nil then
+		luredMeteorByUserId[luredByUserId] = uid
+	end
 
+	return true, "Spawned", meteor
+end
+
+function MeteorService.SpawnLuredMeteorForPlayer(
+	userId: number,
+	displayName: string,
+	trait: Types.MeteorTraitId,
+	nowClock: number?
+): (boolean, string, ActiveMeteor?)
+	local clock = nowClock or workspace:GetServerTimeNow()
+	if luredMeteorByUserId[userId] ~= nil then
+		return false, "AlreadyHasActiveLure", nil
+	end
+	local lastClock = lastLureClockByUserId[userId]
+	if lastClock ~= nil and (clock - lastClock) < Constants.FROST_LURE_COOLDOWN_SECONDS then
+		return false, "LureCooldown", nil
+	end
+
+	local selectedNodeName: string? = nil
+	local preferredNodes = if trait == "Ember" then EMBER_BASIN_NODES else FROST_ASTRAL_RIDGE_NODES
+	for _, node in ipairs(wildNodes) do
+		local name = node.Name
+		local cooldownUntil = wildNodeCooldownUntil[name] or 0
+		if preferredNodes[name] and wildNodeOccupied[name] == nil and clock >= cooldownUntil then
+			selectedNodeName = name
+			break
+		end
+	end
+	if selectedNodeName == nil then
+		for _, node in ipairs(wildNodes) do
+			local name = node.Name
+			local cooldownUntil = wildNodeCooldownUntil[name] or 0
+			if wildNodeOccupied[name] == nil and clock >= cooldownUntil then
+				selectedNodeName = name
+				break
+			end
+		end
+	end
+	if selectedNodeName == nil then
+		return false, "NoFreeMeteorNode", nil
+	end
+
+	local ok, reason, meteor = MeteorService.SpawnWildMeteorAtNode(selectedNodeName :: string, trait, clock, userId, displayName)
+	if not ok or meteor == nil then
+		return false, reason, nil
+	end
+
+	lastLureClockByUserId[userId] = clock
+	publishMeteorLifecycle({
+		Action = "Spawn",
+		MeteorUID = meteor.UID,
+		Trait = meteor.Trait,
+		Position = meteor.Position,
+		LuredBy = userId,
+		LuredOwnerName = displayName,
+		ArrivalEffect = true,
+	})
 	return true, "Spawned", meteor
 end
 
 function MeteorService.GetActiveWildMeteorCount(): number
 	local count = 0
-	for _ in pairs(wildNodeOccupied) do
-		count += 1
+	for _, uid in pairs(wildNodeOccupied) do
+		local m = activeMeteors[uid]
+		if m ~= nil and m.LuredByUserId == nil then
+			count += 1
+		end
 	end
 	return count
 end
@@ -487,8 +591,11 @@ function MeteorService.StartCrackAtPosition(
 	if meteor.IsStarter and meteor.OwnerUserId ~= userId then
 		return { Ok = false, Reason = "NotStarterOwner" }
 	end
+	if meteor.LuredByUserId ~= nil and meteor.LuredByUserId ~= userId then
+		return { Ok = false, Reason = "NotLureOwner" }
+	end
 
-	-- Enforce required Tool upgrade BEFORE claiming so locked players cannot reserve a shared Astral meteor.
+	-- Enforce required Tool upgrade BEFORE claiming so locked players cannot reserve a shared meteor.
 	local requiredUpgrade = MeteorConfig.ById[meteor.Trait].RequiredUpgradeId
 	if not meteor.IsStarter and requiredUpgrade ~= nil and profile.Upgrades[requiredUpgrade] ~= true then
 		return { Ok = false, Reason = "ToolRequired", RequiredUpgradeId = requiredUpgrade }
@@ -586,6 +693,10 @@ function MeteorService.FinishCrackAtPosition(
 	if meteor == nil or meteor.ClaimedByUserId ~= userId then
 		activeClaimsByUserId[userId] = nil
 		return { Ok = false, Reason = "MeteorNotFound" }
+	end
+	if meteor.LuredByUserId ~= nil and meteor.LuredByUserId ~= userId then
+		MeteorService.ReleaseClaimForUserId(userId)
+		return { Ok = false, Reason = "NotLureOwner" }
 	end
 
 	local requiredUpgrade = MeteorConfig.ById[meteor.Trait].RequiredUpgradeId
@@ -697,6 +808,20 @@ function MeteorService.HandleCharacterLifecycleReset(userId: number): boolean
 	return MeteorService.ReleaseClaimForUserId(userId)
 end
 
+local function despawnLuredMeteorForUserId(userId: number): ()
+	local luredUid = luredMeteorByUserId[userId]
+	if luredUid ~= nil then
+		MeteorService.ReleaseClaimForUserId(userId)
+		removeMeteorInternal(luredUid)
+		luredMeteorByUserId[userId] = nil
+		publishMeteorLifecycle({
+			Action = "Despawn",
+			MeteorUID = luredUid,
+		})
+	end
+	lastLureClockByUserId[userId] = nil
+end
+
 function MeteorService.HandlePlotReleased(plotId: number, userId: number): ()
 	local starterUid = starterByPlotId[plotId]
 	if starterUid ~= nil then
@@ -707,12 +832,14 @@ function MeteorService.HandlePlotReleased(plotId: number, userId: number): ()
 		})
 	end
 
+	despawnLuredMeteorForUserId(userId)
 	MeteorService.ReleaseClaimForUserId(userId)
 	disconnectCharacterListeners(userId)
 	starterClaimedByUserId[userId] = nil
 end
 
 function MeteorService.HandlePlayerClosing(userId: number): ()
+	despawnLuredMeteorForUserId(userId)
 	MeteorService.ReleaseClaimForUserId(userId)
 	disconnectCharacterListeners(userId)
 end
@@ -773,38 +900,75 @@ local function attachCharacterClaimCleanup(player: Player): ()
 	characterConnsByUserId[userId] = charConns
 end
 
+local function pickOpenNodeNameForTrait(trait: Types.MeteorTraitId, nowClock: number): string?
+	local preferred = if trait == "Ember" then EMBER_BASIN_NODES else FROST_ASTRAL_RIDGE_NODES
+	for _, node in ipairs(wildNodes) do
+		local name = node.Name
+		local cooldownUntil = wildNodeCooldownUntil[name] or 0
+		if preferred[name] and wildNodeOccupied[name] == nil and nowClock >= cooldownUntil then
+			return name
+		end
+	end
+	for _, node in ipairs(wildNodes) do
+		local name = node.Name
+		local cooldownUntil = wildNodeCooldownUntil[name] or 0
+		if wildNodeOccupied[name] == nil and nowClock >= cooldownUntil then
+			return name
+		end
+	end
+	return nil
+end
+
 local function populateWildMeteorsUpToCap(nowClock: number): ()
-	local activeWildAstral = 0
+	local activeEmber = 0
+	local activeFrost = 0
+	local activeAstral = 0
 	for _, meteor in pairs(activeMeteors) do
-		if not meteor.IsStarter and meteor.Trait == "Astral" then
-			activeWildAstral += 1
+		if not meteor.IsStarter and meteor.LuredByUserId == nil then
+			if meteor.Trait == "Ember" then
+				activeEmber += 1
+			elseif meteor.Trait == "Frost" then
+				activeFrost += 1
+			elseif meteor.Trait == "Astral" then
+				activeAstral += 1
+			end
 		end
 	end
 
 	while MeteorService.GetActiveWildMeteorCount() < Constants.MAX_ACTIVE_WILD_METEORS do
-		local spawned = false
-		for _, node in ipairs(wildNodes) do
-			local nodeName = node.Name
-			local cooldownUntil = wildNodeCooldownUntil[nodeName] or 0
-			if wildNodeOccupied[nodeName] == nil and nowClock >= cooldownUntil then
-				local traitOverride: Types.MeteorTraitId? = if activeWildAstral == 0 then "Astral" else nil
-				local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(nodeName, traitOverride, nowClock)
-				if ok and meteor ~= nil then
-					if meteor.Trait == "Astral" then
-						activeWildAstral += 1
-					end
-					publishMeteorLifecycle({
-						Action = "Spawn",
-						MeteorUID = meteor.UID,
-						Trait = meteor.Trait,
-						Position = meteor.Position,
-					})
-					spawned = true
-					break
-				end
-			end
+		local nextTrait: Types.MeteorTraitId
+		if activeEmber == 0 then
+			nextTrait = "Ember"
+		elseif activeFrost == 0 then
+			nextTrait = "Frost"
+		elseif activeAstral == 0 then
+			nextTrait = "Astral"
+		else
+			nextTrait = rollWeightedWildTrait(serverRng)
 		end
-		if not spawned then
+
+		local nodeName = pickOpenNodeNameForTrait(nextTrait, nowClock)
+		if nodeName == nil then
+			break
+		end
+
+		local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(nodeName, nextTrait, nowClock)
+		if ok and meteor ~= nil then
+			if meteor.Trait == "Ember" then
+				activeEmber += 1
+			elseif meteor.Trait == "Frost" then
+				activeFrost += 1
+			elseif meteor.Trait == "Astral" then
+				activeAstral += 1
+			end
+			publishMeteorLifecycle({
+				Action = "Spawn",
+				MeteorUID = meteor.UID,
+				Trait = meteor.Trait,
+				Position = meteor.Position,
+				ArrivalEffect = meteor.Trait == "Astral",
+			})
+		else
 			break
 		end
 	end
@@ -847,6 +1011,10 @@ end
 function MeteorService.Start(self: typeof(MeteorService)): ()
 	NetworkService.BindStartCrackHandler(handleStartCrackRequest)
 	NetworkService.BindFinishCrackHandler(handleFinishCrackRequest)
+	EconomyService.SetLureSpawner(function(userId: number, displayName: string, trait: Types.MeteorTraitId, nowClock: number): (boolean, string)
+		local ok, reason = MeteorService.SpawnLuredMeteorForPlayer(userId, displayName, trait, nowClock)
+		return ok, reason
+	end)
 
 	PlotService.OnPlotAssigned(function(plotId: number, userId: number)
 		local player = Players:GetPlayerByUserId(userId)
@@ -883,6 +1051,8 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 				Position = meteor.Position,
 				IsStarter = meteor.IsStarter,
 				OwnerUserId = meteor.OwnerUserId,
+				LuredBy = meteor.LuredByUserId,
+				LuredOwnerName = meteor.LuredOwnerName,
 				ClaimedBy = meteor.ClaimedByUserId,
 			})
 		end
@@ -1062,11 +1232,31 @@ function MeteorService.RunSelfTest(): number
 		assert(not replay.Ok and replay.Reason == "InvalidClaim", "Nonce replay rejected")
 		passed += 1
 
-		-- 3. Invalid/out-of-range start, OutOfRange & BagFull finish release meteor + emit ClaimReleased + recover prompt
+		-- 3. Frost pre-claim ToolRequired, OutOfRange, BagFull & Lured Meteor isolation
 		local wOk2, _, wild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Frost", 5010)
 		assert(wOk2 and wild2 ~= nil, "Wild meteor 2 spawns")
 		local wildObj2 = wild2 :: ActiveMeteor
 		table.insert(createdMeteorUIDs, wildObj2.UID)
+
+		local lockedFrost = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5010.5)
+		assert(
+			not lockedFrost.Ok and lockedFrost.Reason == "ToolRequired" and wildObj2.ClaimedByUserId == nil,
+			"Player without FrostCracker blocked from claiming Frost meteor"
+		)
+		p1.Upgrades["FrostCracker"] = true
+		p2.Upgrades["FrostCracker"] = true
+
+		-- Verify personal Frost Lure ownership isolation and double-lure guard
+		local lOk, _, luredMeteorRaw = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5010.8)
+		assert(lOk and luredMeteorRaw ~= nil, "Frost Lure spawns personal Frost meteor")
+		local luredObj = luredMeteorRaw :: ActiveMeteor
+		table.insert(createdMeteorUIDs, luredObj.UID)
+		local stealLure = MeteorService.StartCrackAtPosition(u2, luredObj.Position, luredObj.UID, 5010.9)
+		assert(not stealLure.Ok and stealLure.Reason == "NotLureOwner", "Other player blocked from Lured Frost meteor")
+		local dupOk, dupReason = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5010.9)
+		assert(not dupOk and dupReason == "AlreadyHasActiveLure", "Second concurrent lure blocked")
+		removeMeteorInternal(luredObj.UID)
+		lastLureClockByUserId[u1] = nil
 
 		local nanStart = MeteorService.StartCrackAtPosition(u2, Vector3.new(0 / 0, 0, 0), wildObj2.UID, 5011)
 		assert(not nanStart.Ok and nanStart.Reason == "OutOfRange", "NaN start pos rejected")
@@ -1218,6 +1408,10 @@ function MeteorService.RunSelfTest(): number
 	activeClaimsByUserId[uUnassigned] = nil
 	starterClaimedByUserId[u1] = nil
 	starterClaimedByUserId[u2] = nil
+	luredMeteorByUserId[u1] = nil
+	luredMeteorByUserId[u2] = nil
+	lastLureClockByUserId[u1] = nil
+	lastLureClockByUserId[u2] = nil
 	PlotService.ReleasePlotForUserId(u1)
 	PlotService.ReleasePlotForUserId(u2)
 	DataService.EndMockSession(u1)

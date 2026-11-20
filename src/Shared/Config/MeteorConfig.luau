@@ -20,9 +20,12 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		IconText = "EMBER",
 		RequiredUpgradeId = nil,
 		DropWeights = table.freeze({
-			StarSlime = 85,
-			NebulaFox = 15,
+			StarSlime = 70,
+			CinderPup = 30,
+			FrostBeetle = 0,
+			NebulaFox = 0,
 			SolarGolem = 0,
+			CometOwl = 0,
 		}),
 	}),
 	Frost = table.freeze({
@@ -33,11 +36,14 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		CoreColor = Color3.fromRGB(125, 240, 255),
 		ShapeStyle = "IceSpikes",
 		IconText = "FROST",
-		RequiredUpgradeId = nil,
+		RequiredUpgradeId = "FrostCracker",
 		DropWeights = table.freeze({
-			StarSlime = 35,
-			NebulaFox = 65,
+			StarSlime = 0,
+			CinderPup = 0,
+			FrostBeetle = 55,
+			NebulaFox = 45,
 			SolarGolem = 0,
+			CometOwl = 0,
 		}),
 	}),
 	Astral = table.freeze({
@@ -51,8 +57,11 @@ local byId: { [Types.MeteorTraitId]: Types.MeteorTraitDefinition } = {
 		RequiredUpgradeId = "StarCracker",
 		DropWeights = table.freeze({
 			StarSlime = 0,
-			NebulaFox = 35,
-			SolarGolem = 65,
+			CinderPup = 0,
+			FrostBeetle = 0,
+			NebulaFox = 15,
+			SolarGolem = 55,
+			CometOwl = 30,
 		}),
 	}),
 }

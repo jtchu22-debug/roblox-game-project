@@ -417,7 +417,9 @@ function NetworkService.RunSelfTest(): number
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestFinishCrack, "meteor-1", "nonce-123", 0.5), "Extra ClientDelta arg rejected")
 
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "PenSlot_2"), "Valid upgradeId accepted")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "FrostCracker"), "FrostCracker upgradeId accepted")
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "StarCracker"), "StarCracker upgradeId accepted")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "PenSlot_4"), "PenSlot_4 upgradeId accepted")
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "Rebirth_1"), "Unknown upgradeId rejected")
 
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "StartIncubate", "Incubator_1", "item-uid-1"), "StartIncubate valid")
@@ -426,6 +428,8 @@ function NetworkService.RunSelfTest(): number
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "Hatch", "Incubator_1", "extra-uid"), "Hatch extra itemUID rejected")
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "FeedCritter", "Pen_1"), "FeedCritter valid")
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "FeedCritter", "Pen_1", "extra-uid"), "FeedCritter extra arg rejected")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "UseFrostLure", "LureStand"), "UseFrostLure valid")
+	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "UseFrostLure", "LureStand", "extra"), "UseFrostLure extra arg rejected")
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "GiftItem", "Slot_1", "uid"), "Removed GiftItem action rejected")
 	passed += 1
 

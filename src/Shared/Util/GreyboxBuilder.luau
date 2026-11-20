@@ -212,8 +212,80 @@ local function buildCentralCrater(root: Folder): ()
 	end
 end
 
+local PEN_SLOT_SPECS = {
+	{ SlotId = "Pen_1", Offset = Vector3.new(8, 0.95, 2), Unlocked = true, Label = "Pen Slot #1" },
+	{ SlotId = "Pen_2", Offset = Vector3.new(2, 0.95, 10), Unlocked = false, Label = "Pen Slot #2 (Locked)" },
+	{ SlotId = "Pen_3", Offset = Vector3.new(14, 0.95, 10), Unlocked = false, Label = "Pen Slot #3 (Locked)" },
+	{ SlotId = "Pen_4", Offset = Vector3.new(15, 0.95, 1.5), Unlocked = false, Label = "Pen Slot #4 (Locked)" },
+}
+
+local function getUpgradePadColor(def: Types.UpgradeDefinition): Color3
+	if def.Id == "FrostCracker" then
+		return PALETTE.OrbitalCyan
+	elseif def.Id == "StarCracker" then
+		return PALETTE.AstralViolet
+	elseif def.Id == "PenSlot_4" then
+		return PALETTE.StarlightGold
+	end
+	return PALETTE.MeadowMint
+end
+
+local function createLureStand(plotModel: Model, plotFrame: CFrame, plotId: number): Part
+	local lureStand = createPart({
+		Name = "LureStand",
+		Size = Vector3.new(6, 3.2, 4),
+		CFrame = plotFrame * CFrame.new(-15, 2.1, -18),
+		Color = PALETTE.DarkSlate,
+		Parent = plotModel,
+	})
+	createPart({
+		Name = "LureTop",
+		Size = Vector3.new(6.2, 0.4, 4.2),
+		CFrame = plotFrame * CFrame.new(-15, 3.9, -18),
+		Color = PALETTE.OrbitalCyan,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		Parent = lureStand,
+	})
+	lureStand:SetAttribute("PlotId", plotId)
+	CollectionService:AddTag(lureStand, Constants.TAG_LURE_STAND)
+	attachLabel(
+		lureStand,
+		"LureLabel",
+		string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST),
+		Vector3.new(0, 3.4, 0),
+		PALETTE.OrbitalCyan
+	)
+	return lureStand
+end
+
+local function createPenSlotPad(
+	penSlotsFolder: Folder,
+	plotFrame: CFrame,
+	plotId: number,
+	spec: { SlotId: string, Offset: Vector3, Unlocked: boolean, Label: string }
+): Part
+	local slotPad = createPart({
+		Name = spec.SlotId,
+		Size = Vector3.new(0.4, 5, 5),
+		CFrame = (plotFrame * CFrame.new(spec.Offset)) * CFrame.Angles(0, 0, math.rad(90)),
+		Color = if spec.Unlocked then PALETTE.StarlightGold else PALETTE.LockedSlate,
+		Material = Enum.Material.SmoothPlastic,
+		Shape = Enum.PartType.Cylinder,
+		Transparency = if spec.Unlocked then 0.15 else 0.5,
+		CanCollide = false,
+		Parent = penSlotsFolder,
+	})
+	slotPad:SetAttribute("PlotId", plotId)
+	slotPad:SetAttribute("SlotId", spec.SlotId)
+	slotPad:SetAttribute("UnlockedByDefault", spec.Unlocked)
+	CollectionService:AddTag(slotPad, Constants.TAG_PEN_SLOT)
+	attachLabel(slotPad, "SlotLabel", spec.Label, Vector3.new(0, 2.4, 0), PALETTE.StarlightGold)
+	return slotPad
+end
+
 local function createUpgradePad(upgradeBoard: Folder, plotFrame: CFrame, plotId: number, def: Types.UpgradeDefinition): Part
-	local baseColor = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
+	local baseColor = getUpgradePadColor(def)
 	local pad = createPart({
 		Name = "UpgradePad_" .. def.Id,
 		Size = Vector3.new(0.6, 5.5, 5.5),
@@ -324,6 +396,8 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	CollectionService:AddTag(sellStand, Constants.TAG_SELL_STAND)
 	attachLabel(sellStand, "SellLabel", "Sell Critters", Vector3.new(0, 3.4, 0), PALETTE.StarlightGold)
 
+	createLureStand(plotModel, plotFrame, plotId)
+
 	local incubatorsFolder = Instance.new("Folder")
 	incubatorsFolder.Name = "Incubators"
 	incubatorsFolder.Parent = plotModel
@@ -383,28 +457,8 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 	penSlotsFolder.Name = "PenSlots"
 	penSlotsFolder.Parent = penModel
 
-	local penSpecs = {
-		{ SlotId = "Pen_1", Offset = Vector3.new(8, 0.95, 2), Unlocked = true, Label = "Pen Slot #1" },
-		{ SlotId = "Pen_2", Offset = Vector3.new(2, 0.95, 10), Unlocked = false, Label = "Pen Slot #2 (Locked)" },
-		{ SlotId = "Pen_3", Offset = Vector3.new(14, 0.95, 10), Unlocked = false, Label = "Pen Slot #3 (Locked)" },
-	}
-	for _, spec in ipairs(penSpecs) do
-		local slotPad = createPart({
-			Name = spec.SlotId,
-			Size = Vector3.new(0.4, 5, 5),
-			CFrame = (plotFrame * CFrame.new(spec.Offset)) * CFrame.Angles(0, 0, math.rad(90)),
-			Color = if spec.Unlocked then PALETTE.StarlightGold else PALETTE.LockedSlate,
-			Material = Enum.Material.SmoothPlastic,
-			Shape = Enum.PartType.Cylinder,
-			Transparency = if spec.Unlocked then 0.15 else 0.5,
-			CanCollide = false,
-			Parent = penSlotsFolder,
-		})
-		slotPad:SetAttribute("PlotId", plotId)
-		slotPad:SetAttribute("SlotId", spec.SlotId)
-		slotPad:SetAttribute("UnlockedByDefault", spec.Unlocked)
-		CollectionService:AddTag(slotPad, Constants.TAG_PEN_SLOT)
-		attachLabel(slotPad, "SlotLabel", spec.Label, Vector3.new(0, 2.4, 0), PALETTE.StarlightGold)
+	for _, spec in ipairs(PEN_SLOT_SPECS) do
+		createPenSlotPad(penSlotsFolder, plotFrame, plotId, spec)
 	end
 
 	local upgradeBoard = Instance.new("Folder")
@@ -568,6 +622,18 @@ function GreyboxBuilder.ValidateHierarchy(root: Instance?): (boolean, string)
 			return failAt(sellPath, string.format("PlotId must equal %d", plotId))
 		end
 
+		local lurePath = plotPath .. "/LureStand"
+		local lureStand = plot:FindFirstChild("LureStand")
+		if lureStand == nil or not lureStand:IsA("BasePart") then
+			return failAt(lurePath, "expected BasePart")
+		end
+		if not CollectionService:HasTag(lureStand, Constants.TAG_LURE_STAND) then
+			return failAt(lurePath, "missing tag " .. Constants.TAG_LURE_STAND)
+		end
+		if lureStand:GetAttribute("PlotId") ~= plotId then
+			return failAt(lurePath, string.format("PlotId must equal %d", plotId))
+		end
+
 		local incubatorsPath = plotPath .. "/Incubators"
 		local incubators = plot:FindFirstChild("Incubators")
 		if incubators == nil or not incubators:IsA("Folder") then
@@ -607,7 +673,7 @@ function GreyboxBuilder.ValidateHierarchy(root: Instance?): (boolean, string)
 		if penSlots == nil or not penSlots:IsA("Folder") then
 			return failAt(penSlotsPath, "expected Folder")
 		end
-		for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
+		for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
 			local slotPath = penSlotsPath .. "/" .. slotId
 			local slot = penSlots:FindFirstChild(slotId)
 			if slot == nil or not slot:IsA("BasePart") then
@@ -704,7 +770,7 @@ function GreyboxBuilder.Generate(options: GenerateOptions?): (boolean, string, F
 	return true, "Created", candidateRoot
 end
 
-function GreyboxBuilder.EnsureMissingUpgradePads(root: Folder): number
+function GreyboxBuilder.EnsureMissingStage2BPads(root: Folder): number
 	local plotsFolder = root:FindFirstChild("Plots")
 	if plotsFolder == nil or not plotsFolder:IsA("Folder") then
 		return 0
@@ -715,14 +781,41 @@ function GreyboxBuilder.EnsureMissingUpgradePads(root: Folder): number
 		local plotModel = plotsFolder:FindFirstChild("Plot_" .. tostring(plotId))
 		if plotModel ~= nil and plotModel:IsA("Model") then
 			local plotBase = plotModel:FindFirstChild("PlotBase")
-			local upgradeBoard = plotModel:FindFirstChild("UpgradeBoard")
-			if plotBase ~= nil and plotBase:IsA("BasePart") and upgradeBoard ~= nil and upgradeBoard:IsA("Folder") then
-				for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
-					local def = UpgradeConfig.ById[upgradeId]
-					local padName = "UpgradePad_" .. def.Id
-					if upgradeBoard:FindFirstChild(padName) == nil then
-						createUpgradePad(upgradeBoard, plotBase.CFrame, plotId, def)
-						added += 1
+			if plotBase ~= nil and plotBase:IsA("BasePart") then
+				if plotModel:FindFirstChild("LureStand") == nil then
+					createLureStand(plotModel, plotBase.CFrame, plotId)
+					added += 1
+				end
+
+				local pen = plotModel:FindFirstChild("HabitatPen")
+				local penSlots = if pen then pen:FindFirstChild("PenSlots") else nil
+				if penSlots ~= nil and penSlots:IsA("Folder") then
+					for _, spec in ipairs(PEN_SLOT_SPECS) do
+						if penSlots:FindFirstChild(spec.SlotId) == nil then
+							createPenSlotPad(penSlots, plotBase.CFrame, plotId, spec)
+							added += 1
+						end
+					end
+				end
+
+				local upgradeBoard = plotModel:FindFirstChild("UpgradeBoard")
+				if upgradeBoard ~= nil and upgradeBoard:IsA("Folder") then
+					for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+						local def = UpgradeConfig.ById[upgradeId]
+						local padName = "UpgradePad_" .. def.Id
+						local existingPad = upgradeBoard:FindFirstChild(padName)
+						if existingPad == nil then
+							createUpgradePad(upgradeBoard, plotBase.CFrame, plotId, def)
+							added += 1
+						elseif def.Id == "StarCracker" and existingPad:IsA("BasePart") then
+							-- If an earlier 1-tier build placed StarCracker at X=6, move it to its Stage 2B slot (X=14)
+							-- so FrostCracker at X=6 never overlaps it.
+							local localPos = plotBase.CFrame:PointToObjectSpace(existingPad.Position)
+							if math.abs(localPos.X - 6) < 1.5 then
+								existingPad.CFrame = (plotBase.CFrame * CFrame.new(def.PadOffsetX, 0.9, 19))
+									* CFrame.Angles(0, 0, math.rad(90))
+							end
+						end
 					end
 				end
 			end
@@ -732,6 +825,8 @@ function GreyboxBuilder.EnsureMissingUpgradePads(root: Folder): number
 	return added
 end
 
+GreyboxBuilder.EnsureMissingUpgradePads = GreyboxBuilder.EnsureMissingStage2BPads
+
 function GreyboxBuilder.EnsureExists(parent: Instance?): (boolean, string, Folder?)
 	local targetParent: Instance = parent or workspace
 	local existing = targetParent:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
@@ -740,7 +835,7 @@ function GreyboxBuilder.EnsureExists(parent: Instance?): (boolean, string, Folde
 			return false, "ConflictingUnownedRoot: " .. existing:GetFullName(), nil
 		end
 		if existing:GetAttribute("GreyboxVersion") == Constants.GREYBOX_VERSION then
-			GreyboxBuilder.EnsureMissingUpgradePads(existing :: Folder)
+			GreyboxBuilder.EnsureMissingStage2BPads(existing :: Folder)
 		end
 		local valid, reason = GreyboxBuilder.ValidateHierarchy(existing)
 		if valid then

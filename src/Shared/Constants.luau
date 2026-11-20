@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.2.2-s2b-iterate",
+	GAME_VERSION = "0.2.3-s2b-expanded",
 	USE_MOCK_STORE = true,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067, -- Private Stage 2 test place (Bioniccat4000's Place: 11192026_1)
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -32,6 +32,7 @@ local Constants = {
 	TAG_PEN_SLOT = "StarfallPenSlot",
 	TAG_UPGRADE_PAD = "StarfallUpgradePad",
 	TAG_SELL_STAND = "StarfallSellStand",
+	TAG_LURE_STAND = "StarfallLureStand",
 	TAG_METEOR_NODE = "StarfallMeteorNode",
 	TAG_ACTIVE_METEOR = "StarfallActiveMeteor",
 
@@ -45,6 +46,8 @@ local Constants = {
 	CRITTER_FEED_COST = 45,
 	CRITTER_FEED_BONUS_COINS_PER_SEC = 2,
 	CRITTER_FEED_SELL_BONUS = 20, -- Strictly < CRITTER_FEED_COST so feeding-to-sell never profits
+	FROST_LURE_COST = 75,
+	FROST_LURE_COOLDOWN_SECONDS = 8,
 
 	-- Networking & Security Bounds
 	REMOTES_FOLDER_NAME = "Remotes",
@@ -66,12 +69,13 @@ local Constants = {
 	CRACK_CLIENT_DURATION_SECONDS = 1.2,
 	CRACK_FEEL_WINDOW_START_SECONDS = 0.52,
 	CRACK_FEEL_WINDOW_END_SECONDS = 0.96,
-	ASTRAL_CRACK_DURATION_SECONDS = 1.8,
-	ASTRAL_BEAT1_END_SECONDS = 0.9,
-	ASTRAL_BEAT1_SWEET_START = 0.35,
-	ASTRAL_BEAT1_SWEET_END = 0.78,
-	ASTRAL_BEAT2_SWEET_START = 0.30, -- Ensures Beat 1 + Beat 2 >= 0.65s > MIN_CRACK_DURATION_SECONDS
-	ASTRAL_BEAT2_SWEET_END = 0.76,
+	FROST_CRACK_DURATION_SECONDS = 1.5,
+	FROST_BEAT1_END_SECONDS = 0.75,
+	FROST_BEAT_SWEET_START = 0.25,
+	FROST_BEAT_SWEET_END = 0.62,
+	ASTRAL_CRACK_DURATION_SECONDS = 1.9,
+	ASTRAL_PULSE_SWEET_START = 0.85, -- > MIN_CRACK_DURATION_SECONDS for rhythmic pulse surge
+	ASTRAL_PULSE_SWEET_END = 1.55,
 	MAX_STRING_ID_LENGTH = 40,
 }
 

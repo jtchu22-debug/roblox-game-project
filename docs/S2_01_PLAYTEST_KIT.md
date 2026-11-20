@@ -1,6 +1,6 @@
 # Stage 2 (`S2-01`) Uncoached Discovery Playtest Kit
 
-> **Applies To:** `v0.2.2-s2b-iterate` (`Stage 2B: Focused Iterate Pass — R-009 / Review #012`, allowlisted for private `PlaceId 137485500524067`)  
+> **Applies To:** `v0.2.3-s2b-expanded` (`Stage 2B: Expanded Mid-Game Loop — Review #012 + Gameplay Plan`, allowlisted for private `PlaceId 137485500524067`)  
 > **Goal:** Observe **5–10 consenting testers** play *Starfall Ranch* uncoached for 5–15 minutes to decide whether to **Go** to Stage 3 (`ProfileStore` + 6 plots), **Iterate** on onboarding/Crater feel, or **Pivot** before writing persistence or Blender art.  
 > **Privacy Rule:** Collect **zero personal data** (no real names, Roblox usernames, UserIds, emails, or ages). Use anonymous tester codes `T-01` through `T-10`.
 
@@ -119,17 +119,19 @@ Share the filled Observation & Timing Sheet and Post-Session Debrief notes back 
 
 ---
 
-## 6. Stage 2B Round 2 Playtest Protocol (`v0.2.2-s2b-iterate`, 3–5 Fresh Testers)
+## 6. Stage 2B Round 2 Playtest Protocol (`v0.2.3-s2b-expanded`, 3–5 Fresh Testers)
 
-### 6.1 What Changed for Round 2 (`Review #012`)
-1. **Star Cracker Tool (`120 Coins`):** Competes directly with `PenSlot_2` (`60`) / `Incubator_2` (`180`) / `PenSlot_3` (`360`) and unlocks **Astral Meteors** (`720 Coins` total upgrade budget vs. `530` previously).
-2. **Unmistakable, Exclusive Astral Payoff:** Glowing towering sky-beacon Astral Meteors stay visible in the Crater, enforce `ToolRequired` pre-claim on the Server, feature a distinct 2-beat Core Shatter interaction (`0.9s + 0.9s`, `Reduced Motion` safe), and exclusively drop **Solar Golem** (`65%`, `7/s` | `180 Coins` — removed from Frost drops).
-3. **One Capped Critter Feed Level (`45 Coins`):** Boosts any active Pen critter (`FeedLevel 0 -> 1`) by `+2 Coins/s` (and `1.15x` visual growth + gold crown trim `★`) with only `+20` sell bonus (`< 45`, zero coin-printing arbitrage).
+### 6.1 What Changed for Round 2 (`Review #012` + [STARFALL_RANCH_GAMEPLAY_PLAN.md](./STARFALL_RANCH_GAMEPLAY_PLAN.md))
+1. **6 Species & Field Guide (`Discovered: X / 6`):** *Ember* (*StarSlime* `2/s|40`, *CinderPup* `3/s|70`), *Frost* (*FrostBeetle* `5/s|110`, *NebulaFox* `8/s|175`), and *Astral* (*SolarGolem* `13/s|290`, *CometOwl* `20/s|450`) with Bag Field Guide clues for undiscovered species.
+2. **2 Purchasable Cracker Tiers:** `FrostCracker` (`120 Coins`) unlocks Frost Ridge meteors & Frost Lures; `StarCracker` (`550 Coins`, requires `FrostCracker`) unlocks Astral meteors.
+3. **2 Crater Regions & 3 Distinct Encounters:** Ember Basin (`1.2s` Standard Quick-Burst), Frost Ridge (`1.5s` 2-point sequential Fracture `[1/2] -> [2/2]`), and Astral Crater (`1.9s` Pulse Surge + sky-streak arrival beacon/toast), all accessible & `Reduced Motion`-safe.
+4. **Ongoing Coin Sinks:** `Frost Lure` (`75 Coins`, personal `LuredByUserId` Frost meteor on Ridge — requires `FrostCracker`) on Ranch Gate `LureStand` & Bag UI, plus capped `Critter Feeding` (`45 Coins`, `+2 Coins/s`, `+20` sell bonus `< 45`, `1.15x` growth & gold `★`).
+5. **10–15 Min Progression & Follow-up Goal:** `PenSlot_2 (60)` -> `FrostCracker (120)` -> `Incubator_2 (190)` -> `PenSlot_3 (360, req PenSlot_2)` -> `StarCracker (550, req FrostCracker)` -> `PenSlot_4 (1,150, req PenSlot_3, Gold Ranch Arch)`. Run a 10–15 min solo pre-check before inviting testers.
 
 ### 6.2 Round 2 Per-Tester Timing & Choice Log (`R2-01`..`R2-05`)
 Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **desktop**. Fill exact timestamps, counts, and open-ended choices:
 
-| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Voluntary 2nd+ Rescue `<= 5m`? | Purchases Made (`Feed` / `StarCracker` / Pads) | Chased Astral / Reason for Choice & Named Next Goal |
+| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Voluntary 2nd+ Rescue `<= 5m`? | Purchases Made (`Feed` / `FrostLure` / `Crackers` / `Pads`) | Discovered (`X/6`), Chased Frost/Astral & Named Next Goal |
 | :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
 | `R2-01` | | | | | | | |
 | `R2-02` | | | | | | | |
@@ -142,4 +144,4 @@ Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **d
 - **Median First Reward (`<= 45s`):** `___s` (`___ / N`)
 - **First Hatch & Pen (`<= 90s >= 80%`):** `___ / N` (`___%`)
 - **Voluntary 2nd+ Rescue (`<= 5m >= 70%`):** `___ / N` (`___%`)
-- **Deliberate Choice + Next Goal Clarity:** `___ / N` testers explained *why* they chose a meteor or Coin spend (`Star Cracker` / `Feed` / Pen) and named a concrete next goal -> **Decision: `GO -> Stage 3` / `PIVOT`** (recorded in `docs/AGENT_REVIEWS.md`).
+- **Session Endurance (`~10–15m`), Coin Sink Use & Next Goal Clarity:** `___ / N` testers used active Coin sinks (`FrostLure` / `Feed` / `Crackers`), noticed distinct Frost/Astral encounters, and named a concrete next goal -> **Decision: `GO -> Stage 3` / `PIVOT`** (recorded in `docs/AGENT_REVIEWS.md`).

@@ -40,6 +40,7 @@ type PlotPromptSet = {
 	Incubators: { [string]: ProximityPrompt },
 	Pens: { [string]: ProximityPrompt },
 	SellStand: ProximityPrompt?,
+	LureStand: ProximityPrompt?,
 	Upgrades: { [string]: ProximityPrompt },
 }
 
@@ -172,6 +173,9 @@ function PlotService.ResolveStationAnchor(plotId: number, stationKind: string, t
 	elseif stationKind == "SellStand" then
 		local stand = plotModel:FindFirstChild("SellStand")
 		return if stand and stand:IsA("BasePart") then stand else nil
+	elseif stationKind == "LureStand" then
+		local lure = plotModel:FindFirstChild("LureStand")
+		return if lure and lure:IsA("BasePart") then lure else nil
 	elseif stationKind == "UpgradePad" then
 		local board = plotModel:FindFirstChild("UpgradeBoard")
 		local pad = if board then board:FindFirstChild("UpgradePad_" .. targetId) else nil
@@ -304,8 +308,10 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		if trim and trim:IsA("BasePart") then
 			if assignment == nil then
 				trim.Color = PALETTE.LockedSlate
-			elseif assignment.Profile.Upgrades["PenSlot_3"] == true then
+			elseif assignment.Profile.Upgrades["PenSlot_4"] == true then
 				trim.Color = PALETTE.StarlightGold
+			elseif assignment.Profile.Upgrades["PenSlot_3"] == true then
+				trim.Color = PALETTE.AstralViolet
 			else
 				trim.Color = PALETTE.OrbitalCyan
 			end
@@ -315,6 +321,24 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 	-- Update SellStand Prompt
 	if prompts.SellStand ~= nil then
 		prompts.SellStand.Enabled = assignment ~= nil
+	end
+
+	-- Update LureStand Prompt & Label
+	local lureAnchor = PlotService.ResolveStationAnchor(plotId, "LureStand", "LureStand")
+	if prompts.LureStand ~= nil and lureAnchor ~= nil then
+		if assignment == nil then
+			prompts.LureStand.Enabled = false
+			lureAnchor.Color = Color3.fromRGB(45, 42, 62)
+			setPartLabelText(lureAnchor, "LureLabel", string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST))
+		elseif assignment.Profile.Upgrades["FrostCracker"] ~= true then
+			prompts.LureStand.Enabled = false
+			lureAnchor.Color = PALETTE.LockedSlate
+			setPartLabelText(lureAnchor, "LureLabel", "Frost Lure (Needs Frost Cracker)")
+		else
+			prompts.LureStand.Enabled = true
+			lureAnchor.Color = Color3.fromRGB(45, 42, 62)
+			setPartLabelText(lureAnchor, "LureLabel", string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST))
+		end
 	end
 
 	-- Update Incubators
@@ -376,7 +400,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 	end
 
 	-- Update Pen Slots
-	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
+	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
 		local anchor = PlotService.ResolveStationAnchor(plotId, "Pen", slotId)
 		local prompt = prompts.Pens[slotId]
 		if anchor and prompt then
@@ -426,8 +450,15 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		local anchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
 		local prompt = prompts.Upgrades[upgradeId]
 		if anchor and prompt then
-			local unownedColor = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
+			local unownedColor = if def.Id == "FrostCracker"
+				then PALETTE.OrbitalCyan
+				elseif def.Id == "StarCracker" then PALETTE.AstralViolet
+				elseif def.Id == "PenSlot_4" then PALETTE.StarlightGold
+				else PALETTE.MeadowMint
 			local ownedColor = if def.SlotCategory == "Tool" then PALETTE.StarlightGold else PALETTE.OrbitalCyan
+			local prereqId = def.RequiresUpgradeId
+			local prereqMet = prereqId == nil
+				or (assignment ~= nil and assignment.Profile.Upgrades[prereqId] == true)
 			if assignment == nil then
 				prompt.Enabled = false
 				anchor.Color = unownedColor
@@ -438,6 +469,15 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 				anchor.Color = ownedColor
 				anchor.Transparency = 0.35
 				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (Owned)", def.DisplayName))
+			elseif not prereqMet and prereqId ~= nil then
+				prompt.Enabled = false
+				anchor.Color = PALETTE.LockedSlate
+				anchor.Transparency = 0.35
+				setPartLabelText(
+					anchor,
+					"UpgradeLabel",
+					string.format("%s (Needs %s)", def.DisplayName, UpgradeConfig.ById[prereqId].DisplayName)
+				)
 			else
 				prompt.Enabled = true
 				prompt.ActionText = string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
@@ -608,6 +648,7 @@ local function wirePlotPrompts(plotId: number): ()
 		Incubators = {},
 		Pens = {},
 		SellStand = nil,
+		LureStand = nil,
 		Upgrades = {},
 	}
 
@@ -638,7 +679,7 @@ local function wirePlotPrompts(plotId: number): ()
 	end
 
 	-- Pen Prompts
-	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3" }) do
+	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
 		local anchor = PlotService.ResolveStationAnchor(plotId, "Pen", slotId)
 		assert(anchor ~= nil, "Missing Pen anchor: " .. slotId)
 		local prompt = createPromptOnPart(anchor, "PenPrompt", string.format("Pen Slot #%d", idx), "Place Critter")
@@ -682,6 +723,24 @@ local function wirePlotPrompts(plotId: number): ()
 		end
 	end)
 	prompts.SellStand = sellPrompt
+
+	-- LureStand Prompt
+	local lureAnchor = PlotService.ResolveStationAnchor(plotId, "LureStand", "LureStand")
+	assert(lureAnchor ~= nil, "Missing LureStand anchor")
+	local lurePrompt = createPromptOnPart(
+		lureAnchor,
+		"LurePrompt",
+		"Frost Lure Beacon",
+		string.format("Summon Frost (%d Coins)", Constants.FROST_LURE_COST)
+	)
+	lurePrompt.Triggered:Connect(function(triggeringPlayer: Player)
+		local owner = assignmentsByPlotId[plotId]
+		if owner == nil or owner.UserId ~= triggeringPlayer.UserId then
+			return
+		end
+		EconomyService.HandlePlotAction(triggeringPlayer, "UseFrostLure", "LureStand", nil)
+	end)
+	prompts.LureStand = lurePrompt
 
 	-- Upgrade Pad Prompts
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
@@ -817,11 +876,15 @@ function PlotService.RunSelfTest(): number
 	local inc1Anchor = PlotService.ResolveStationAnchor(1, "Incubator", "Incubator_1") :: BasePart
 	local inc2OtherAnchor = PlotService.ResolveStationAnchor(2, "Incubator", "Incubator_1") :: BasePart
 	local sell1Anchor = PlotService.ResolveStationAnchor(1, "SellStand", "SellStand") :: BasePart
+	local lure1Anchor = PlotService.ResolveStationAnchor(1, "LureStand", "LureStand") :: BasePart
+	local pen4Anchor = PlotService.ResolveStationAnchor(1, "Pen", "Pen_4") :: BasePart
 	local upg1Anchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "PenSlot_2") :: BasePart
 
 	-- Owner standing next to their own Plot_1 anchors succeeds
 	assert((PlotService.AuthorizeStationAtPosition(u1, inc1Anchor.Position, "Incubator", "Incubator_1")), "Owner near own Incubator_1 authorized")
 	assert((PlotService.AuthorizeStationAtPosition(u1, sell1Anchor.Position, "SellStand", "SellStand")), "Owner near own SellStand authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u1, lure1Anchor.Position, "LureStand", "LureStand")), "Owner near own LureStand authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u1, pen4Anchor.Position, "Pen", "Pen_4")), "Owner near own Pen_4 authorized")
 	assert((PlotService.AuthorizeStationAtPosition(u1, upg1Anchor.Position, "UpgradePad", "PenSlot_2")), "Owner near own UpgradePad authorized")
 
 	-- Owner standing on Plot_2 trying to access Plot_1's Incubator_1 rejected

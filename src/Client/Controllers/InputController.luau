@@ -20,6 +20,7 @@ local UIController = require(ControllersFolder:WaitForChild("UIController"))
 local CrackController = require(ControllersFolder:WaitForChild("CrackController"))
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local UpgradeConfig = require(Shared:WaitForChild("Config"):WaitForChild("UpgradeConfig"))
 local FormatUtil = require(Shared:WaitForChild("Util"):WaitForChild("FormatUtil"))
@@ -149,18 +150,35 @@ local function handleRanchPromptFeedback(prompt: ProximityPrompt): ()
 			UIController.ShowToast("No hatched Critters in your Bag to sell! (Pen critters stay safe.)", "Warn")
 			return
 		end
+	elseif prompt.Name == "LurePrompt" and dto ~= nil then
+		if dto.Upgrades["FrostCracker"] ~= true then
+			SoundController.Play("Error")
+			UIController.ShowToast("Buy Frost Cracker (120 Coins) before using Frost Lures!", "Warn")
+			return
+		elseif dto.Coins < Constants.FROST_LURE_COST then
+			SoundController.Play("Error")
+			UIController.ShowToast(string.format("Need %d Coins to summon a Frost Lure!", Constants.FROST_LURE_COST), "Warn")
+			return
+		end
 	elseif prompt.Name == "UpgradePrompt" and dto ~= nil then
 		local pad = prompt.Parent
 		local upgradeAttr = if pad ~= nil then pad:GetAttribute("UpgradeId") else nil
 		if typeof(upgradeAttr) == "string" then
 			local upgradeDef = (UpgradeConfig.ById :: { [string]: Types.UpgradeDefinition })[upgradeAttr]
-			if upgradeDef ~= nil and dto.Coins < upgradeDef.Cost then
-				SoundController.Play("Error")
-				UIController.ShowToast(
-					string.format("Need %s Coins for %s!", FormatUtil.FormatCoins(upgradeDef.Cost), upgradeDef.DisplayName),
-					"Warn"
-				)
-				return
+			if upgradeDef ~= nil then
+				if upgradeDef.RequiresUpgradeId ~= nil and dto.Upgrades[upgradeDef.RequiresUpgradeId] ~= true then
+					local prereq = UpgradeConfig.ById[upgradeDef.RequiresUpgradeId]
+					SoundController.Play("Error")
+					UIController.ShowToast(string.format("Requires %s first!", prereq.DisplayName), "Warn")
+					return
+				elseif dto.Coins < upgradeDef.Cost then
+					SoundController.Play("Error")
+					UIController.ShowToast(
+						string.format("Need %s Coins for %s!", FormatUtil.FormatCoins(upgradeDef.Cost), upgradeDef.DisplayName),
+						"Warn"
+					)
+					return
+				end
 			end
 		end
 	end
@@ -210,6 +228,7 @@ function InputController.Start(self: typeof(InputController)): ()
 				prompt.Name == "IncubatorPrompt"
 				or prompt.Name == "PenPrompt"
 				or prompt.Name == "SellPrompt"
+				or prompt.Name == "LurePrompt"
 				or prompt.Name == "UpgradePrompt"
 			then
 				handleRanchPromptFeedback(prompt)

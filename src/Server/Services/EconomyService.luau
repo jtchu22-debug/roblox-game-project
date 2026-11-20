@@ -53,6 +53,7 @@ local PEN_SLOTS: { [string]: boolean } = table.freeze({
 	Pen_1 = true,
 	Pen_2 = true,
 	Pen_3 = true,
+	Pen_4 = true,
 })
 
 local EconomyService = {
@@ -60,10 +61,12 @@ local EconomyService = {
 }
 
 export type StationAuthorizer = (player: Player, stationKind: string, targetId: string) -> (boolean, string)
+export type LureSpawner = (userId: number, displayName: string, trait: Types.MeteorTraitId, nowClock: number) -> (boolean, string)
 
 local serverRng = Random.new()
 local plotStateListeners: { (player: Player) -> () } = {}
 local stationAuthorizer: StationAuthorizer? = nil
+local lureSpawner: LureSpawner? = nil
 local accrualRunning = false
 
 local function notifyPlotChanged(player: Player): ()
@@ -103,6 +106,8 @@ function EconomyService.IsUnlockedPenSlot(profile: Types.PlayerProfileData, slot
 		return profile.Upgrades["PenSlot_2"] == true
 	elseif slotId == "Pen_3" then
 		return profile.Upgrades["PenSlot_3"] == true
+	elseif slotId == "Pen_4" then
+		return profile.Upgrades["PenSlot_4"] == true
 	end
 	return false
 end
@@ -495,6 +500,9 @@ function EconomyService.BuyUpgradeOnProfile(
 	if profile.Upgrades[upgradeId] == true then
 		return { Ok = false, Reason = "AlreadyOwned" }
 	end
+	if def.RequiresUpgradeId ~= nil and profile.Upgrades[def.RequiresUpgradeId] ~= true then
+		return { Ok = false, Reason = "PrerequisiteRequired" }
+	end
 	if profile.Coins < def.Cost then
 		return { Ok = false, Reason = "InsufficientCoins" }
 	end
@@ -554,6 +562,41 @@ function EconomyService.FeedCritterInPenOnProfile(
 	}
 end
 
+function EconomyService.SetLureSpawner(spawner: LureSpawner?): ()
+	lureSpawner = spawner
+end
+
+function EconomyService.UseFrostLureOnProfile(
+	profile: Types.PlayerProfileData,
+	userId: number,
+	displayName: string,
+	nowClock: number,
+	customSpawner: LureSpawner?
+): EconomyResult
+	if profile.Upgrades["FrostCracker"] ~= true then
+		return { Ok = false, Reason = "ToolRequired" }
+	end
+	if profile.Coins < Constants.FROST_LURE_COST then
+		return { Ok = false, Reason = "InsufficientCoins" }
+	end
+
+	local activeSpawner = customSpawner or lureSpawner
+	if activeSpawner == nil then
+		return { Ok = false, Reason = "LureUnavailable" }
+	end
+
+	local spawnOk, spawnReason = activeSpawner(userId, displayName, "Frost", nowClock)
+	if not spawnOk then
+		return { Ok = false, Reason = spawnReason }
+	end
+
+	EconomyService.SettleProfileCoins(profile, nowClock)
+	profile.Coins -= Constants.FROST_LURE_COST
+	profile.Revision += 1
+
+	return { Ok = true }
+end
+
 function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): EconomyResult
 	if not DataService.IsReady(player) then
 		return { Ok = false, Reason = "ProfileNotReady" }
@@ -606,6 +649,9 @@ function EconomyService.HandlePlotAction(
 	elseif action == "SellCritter" then
 		stationKind = "SellStand"
 		stationTargetId = "SellStand"
+	elseif action == "UseFrostLure" then
+		stationKind = "LureStand"
+		stationTargetId = "LureStand"
 	else
 		return { Ok = false, Reason = "InvalidAction" }
 	end
@@ -636,6 +682,9 @@ function EconomyService.HandlePlotAction(
 		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
 		res = EconomyService.FeedCritterInPenOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
+	elseif action == "UseFrostLure" then
+		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+		res = EconomyService.UseFrostLureOnProfile(profile, player.UserId, player.DisplayName, nowClock)
 	elseif action == "SellCritter" then
 		res = EconomyService.SellCritterOnProfile(profile, targetSlotOrUID, nowClock)
 	else
@@ -847,6 +896,28 @@ function EconomyService.RunSelfTest(): number
 		"Duplicate FeedCritter rejected at MAX_CRITTER_FEED_LEVEL=1"
 	)
 
+	pDup.Coins = 1500
+	local prereqAstral = EconomyService.BuyUpgradeOnProfile(pDup, "StarCracker", 3020)
+	assert(not prereqAstral.Ok and prereqAstral.Reason == "PrerequisiteRequired", "Astral Cracker requires FrostCracker")
+	local prereqPen4 = EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_4", 3020)
+	assert(not prereqPen4.Ok and prereqPen4.Reason == "PrerequisiteRequired", "PenSlot_4 requires PenSlot_3")
+
+	local lureNoTool = EconomyService.UseFrostLureOnProfile(pDup, -9001, "DupTester", 3020, function()
+		return true, "Spawned"
+	end)
+	assert(not lureNoTool.Ok and lureNoTool.Reason == "ToolRequired" and pDup.Coins == 1500, "Frost Lure blocked without FrostCracker with zero debit")
+
+	assert(EconomyService.BuyUpgradeOnProfile(pDup, "FrostCracker", 3020).Ok, "Buy FrostCracker")
+	local lureFailSpawn = EconomyService.UseFrostLureOnProfile(pDup, -9001, "DupTester", 3020, function()
+		return false, "NoFreeMeteorNode"
+	end)
+	assert(not lureFailSpawn.Ok and lureFailSpawn.Reason == "NoFreeMeteorNode" and pDup.Coins == 1380, "Failing Frost Lure spawn charges zero Coins")
+
+	local lureOk = EconomyService.UseFrostLureOnProfile(pDup, -9001, "DupTester", 3020, function()
+		return true, "Spawned"
+	end)
+	assert(lureOk.Ok and pDup.Coins == 1305, "Successful Frost Lure charges exactly 75 Coins")
+
 	pDup.Coins = 100
 	assert(EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3020).Ok, "First BuyUpgrade succeeds")
 	local dupBuyRev = pDup.Revision
@@ -890,11 +961,11 @@ function EconomyService.RunSelfTest(): number
 	assert(not EconomyService.RemoveFromPenOnProfile(pLock, "Pen_1", 3510).Ok, "RemoveFromPen blocked when 10 slots committed")
 
 	-- Both incubating pods MUST still hatch cleanly at maturity
-	local h1 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_1", 3535, rng)
-	local h2 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_2", 3535, rng)
+	local h1 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_1", 3540, rng)
+	local h2 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_2", 3540, rng)
 	assert(h1.Ok and h2.Ok, "Both occupied incubators must hatch cleanly despite full unreserved bag")
 	assert(EconomyService.GetBagCount(pLock) == 10 and EconomyService.GetOccupiedIncubatorCount(pLock) == 0, "All 10 slots now in bag cleanly")
-	assert(EconomyService.SellCritterOnProfile(pLock, "inc-pod-1", 3535).Ok, "Player can immediately sell hatched critter to recover bag space")
+	assert(EconomyService.SellCritterOnProfile(pLock, "inc-pod-1", 3540).Ok, "Player can immediately sell hatched critter to recover bag space")
 	assert((EconomyService.ValidateProfileInvariants(pLock)), "Invariants valid after full-bag hatch recovery")
 	passed += 1
 
@@ -912,7 +983,7 @@ function EconomyService.RunSelfTest(): number
 	}
 	pSub.Items["fox2"] = {
 		UID = "fox2",
-		SpeciesId = "NebulaFox", -- 4/s
+		SpeciesId = "NebulaFox", -- 8/s
 		Variant = "Normal",
 		State = "HatchedInBag",
 		AssignedSlot = nil,
@@ -925,8 +996,8 @@ function EconomyService.RunSelfTest(): number
 	assert(pSub.Coins == 0 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "0.3s at 2/s across 11.0 boundary must carry 0.6 fraction with 0 Coins")
 
 	assert(EconomyService.PlaceInPenOnProfile(pSub, "Pen_1", "fox2", 11.1).Ok, "Place NebulaFox at t=11.1")
-	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 4/s + 0.6 = 1.6 -> credits 1 Coin")
-	assert(pSub.Coins == 1 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "Expected 1 Coin and 0.6 fraction after rate switch")
+	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 8/s + 0.6 = 2.6 -> credits 2 Coins")
+	assert(pSub.Coins == 2 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "Expected 2 Coins and 0.6 fraction after rate switch")
 	assert((EconomyService.ValidateProfileInvariants(pSub)), "Invariant valid after sub-second fractional rate change")
 	passed += 1
 

@@ -101,6 +101,7 @@ local firstBagSelectable: GuiObject? = nil
 local bagButtonsByKey: { [string]: GuiObject } = {}
 local upgradeBuyButtons: { [Types.UpgradeId]: TextButton } = {}
 local feedButtonsBySlot: { [string]: TextButton } = {}
+local frostLureButton: TextButton? = nil
 local lastFocusedBagKey: string? = nil
 local lastBagStructureSignature: string? = nil
 local bagRebuildCount = 0
@@ -250,6 +251,13 @@ function UIController.ComputeBagStructureSignature(dto: Types.OwnerStateDTO, pen
 		table.insert(parts, string.format("u:%s=%s", upgradeId, if dto.Upgrades[upgradeId] == true then "1" else "0"))
 	end
 
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		table.insert(
+			parts,
+			string.format("d:%s=%s", speciesId, if dto.DiscoveredSpecies[speciesId] == true then "1" else "0")
+		)
+	end
+
 	for _, uid in ipairs(itemKeys) do
 		local item = dto.Items[uid]
 		table.insert(
@@ -307,6 +315,9 @@ local function findEmptyUnlockedPen(dto: Types.OwnerStateDTO): string?
 	end
 	if dto.Upgrades["PenSlot_3"] == true and dto.Slots["Pen_3"] == nil then
 		return "Pen_3"
+	end
+	if dto.Upgrades["PenSlot_4"] == true and dto.Slots["Pen_4"] == nil then
+		return "Pen_4"
 	end
 	return nil
 end
@@ -460,24 +471,61 @@ local function updateContextualHint(): ()
 	elseif dto.Upgrades["PenSlot_2"] ~= true and dto.Coins >= UpgradeConfig.ById.PenSlot_2.Cost then
 		label.Text = string.format("Upgrade Ready! Walk to Habitat Slot #2 Pad (%d Coins) on your Ranch!", UpgradeConfig.ById.PenSlot_2.Cost)
 		label.TextColor3 = PALETTE.MeadowMint
-	elseif dto.Upgrades["StarCracker"] ~= true and dto.Coins >= UpgradeConfig.ById.StarCracker.Cost then
-		label.Text = string.format("Tool Ready! Buy Star Cracker (%d Coins) to unlock glowing Astral Meteors!", UpgradeConfig.ById.StarCracker.Cost)
+	elseif dto.Upgrades["FrostCracker"] ~= true and dto.Coins >= UpgradeConfig.ById.FrostCracker.Cost then
+		label.Text = string.format("Tool Ready! Buy Frost Cracker (%d Coins) to unlock Frost Ridge Meteors!", UpgradeConfig.ById.FrostCracker.Cost)
+		label.TextColor3 = PALETTE.OrbitalCyan
+	elseif dto.Upgrades["StarCracker"] ~= true and dto.Upgrades["FrostCracker"] == true and dto.Coins >= UpgradeConfig.ById.StarCracker.Cost then
+		label.Text = string.format("Tool Ready! Buy Astral Cracker (%d Coins) to unlock glowing Astral Meteors!", UpgradeConfig.ById.StarCracker.Cost)
 		label.TextColor3 = PALETTE.AstralViolet
+	elseif dto.Upgrades["PenSlot_4"] ~= true and dto.Upgrades["PenSlot_3"] == true and dto.Coins >= UpgradeConfig.ById.PenSlot_4.Cost then
+		label.Text = string.format(
+			"Big Goal Ready! Buy Habitat Slot #4 (%s Coins) to earn your Gold Ranch Arch!",
+			FormatUtil.FormatCoins(UpgradeConfig.ById.PenSlot_4.Cost)
+		)
+		label.TextColor3 = PALETTE.StarlightGold
 	elseif hasHatchedInBag then
 		label.Text = "Pens full! Visit your Ranch Gate Sell Stand or Bag to Sell extras for Upgrades!"
 		label.TextColor3 = PALETTE.StarlightGold
 	elseif activePenCount == 0 then
 		label.Text = "Next Step: Walk toward the Crater & Rescue your glowing Starter Meteor!"
 		label.TextColor3 = PALETTE.StarlightGold
-	elseif dto.Upgrades["StarCracker"] == true then
-		label.Text = "Star Cracker Ready! Hunt glowing Astral Meteors in Crater for Solar Golems (7/s)!"
+	elseif dto.Upgrades["StarCracker"] == true and dto.Upgrades["PenSlot_4"] ~= true then
+		label.Text = "Astral Cracker Ready! Break Astral Pulse Meteors for Solar Golems (13/s) & Comet Owls (20/s)!"
 		label.TextColor3 = PALETTE.AstralViolet
+	elseif dto.Upgrades["FrostCracker"] == true and dto.Upgrades["StarCracker"] ~= true then
+		label.Text = string.format(
+			"Frost Cracker Ready! Crack Ridge Frost Meteors or Summon a Frost Lure (%d Coins)!",
+			Constants.FROST_LURE_COST
+		)
+		label.TextColor3 = PALETTE.OrbitalCyan
+	elseif dto.Upgrades["PenSlot_4"] == true then
+		local discoveredCount = 0
+		for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+			if dto.DiscoveredSpecies[speciesId] == true then
+				discoveredCount += 1
+			end
+		end
+		if discoveredCount < #CritterConfig.OrderedIds then
+			label.Text = string.format(
+				"Field Guide %d/%d! Hunt Basin, Ridge & Astral Meteors to complete your collection!",
+				discoveredCount,
+				#CritterConfig.OrderedIds
+			)
+			label.TextColor3 = PALETTE.StarlightGold
+		else
+			label.Text = string.format(
+				"Master Rancher! All %d/%d Cosmic Species discovered — keep growing your Starfall Ranch!",
+				discoveredCount,
+				#CritterConfig.OrderedIds
+			)
+			label.TextColor3 = PALETTE.MeadowMint
+		end
 	else
 		label.Text = string.format(
-			"Earn Coins or Feed Pen critters (+%d/s for %d) to unlock Star Cracker (%d)!",
+			"Earn Coins or Feed Pen critters (+%d/s for %d) to unlock Frost Cracker (%d)!",
 			Constants.CRITTER_FEED_BONUS_COINS_PER_SEC,
 			Constants.CRITTER_FEED_COST,
-			UpgradeConfig.ById.StarCracker.Cost
+			UpgradeConfig.ById.FrostCracker.Cost
 		)
 		label.TextColor3 = PALETTE.OrbitalCyan
 	end
@@ -619,6 +667,12 @@ local function refreshUpgradeAffordabilityInPlace(dto: Types.OwnerStateDTO): ()
 		feedBtn.BackgroundColor3 = if canFeed then PALETTE.MeadowMint else PALETTE.CardDark
 		feedBtn.TextColor3 = if canFeed then PALETTE.PanelDark else PALETTE.TextMuted
 	end
+
+	if frostLureButton ~= nil then
+		local canLure = dto.Upgrades["FrostCracker"] == true and dto.Coins >= Constants.FROST_LURE_COST
+		frostLureButton.BackgroundColor3 = if canLure then PALETTE.MeadowMint else PALETTE.CardDark
+		frostLureButton.TextColor3 = if canLure then PALETTE.PanelDark else PALETTE.TextMuted
+	end
 end
 
 local function createSectionHeader(parent: Instance, title: string, accent: Color3, layoutOrder: number): ()
@@ -738,6 +792,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	bagButtonsByKey = {}
 	upgradeBuyButtons = {}
 	feedButtonsBySlot = {}
+	frostLureButton = nil
 	firstBagSelectable = nil
 
 	local function registerBagButton(actionKey: string, btn: GuiObject): ()
@@ -1108,24 +1163,49 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 		local def = UpgradeConfig.ById[upgradeId]
 		local owned = dto.Upgrades[upgradeId] == true
-		local unownedAccent = if def.SlotCategory == "Tool" then PALETTE.AstralViolet else PALETTE.MeadowMint
-		local row, title, subtitle = createRowCard(scroll, if owned then PALETTE.OrbitalCyan else unownedAccent, order)
+		local prereqId = def.RequiresUpgradeId
+		local prereqMet = true
+		local prereqDef: Types.UpgradeDefinition? = nil
+		if prereqId ~= nil then
+			prereqMet = dto.Upgrades[prereqId] == true
+			prereqDef = UpgradeConfig.ById[prereqId]
+		end
+
+		local unownedAccent = if upgradeId == "FrostCracker"
+			then PALETTE.OrbitalCyan
+			elseif def.SlotCategory == "Tool" then PALETTE.AstralViolet
+			elseif upgradeId == "PenSlot_4" then PALETTE.StarlightGold
+			else PALETTE.MeadowMint
+		local row, title, subtitle = createRowCard(
+			scroll,
+			if owned then PALETTE.OrbitalCyan elseif prereqMet then unownedAccent else PALETTE.BorderSoft,
+			order
+		)
 		order += 1
 
 		title.Text = def.DisplayName
-		subtitle.Text = string.format("%s (%s Coins)", def.Description, FormatUtil.FormatCoins(def.Cost))
+		if not owned and not prereqMet and prereqDef ~= nil then
+			subtitle.Text = string.format("%s (%s Coins  |  Needs %s)", def.Description, FormatUtil.FormatCoins(def.Cost), prereqDef.DisplayName)
+		else
+			subtitle.Text = string.format("%s (%s Coins)", def.Description, FormatUtil.FormatCoins(def.Cost))
+		end
 
 		if owned then
 			local ownedBtn = makeTextButton(row, "OwnedTag", "Owned", PALETTE.PanelDark, PALETTE.OrbitalCyan, UDim2.fromOffset(100, 44), 14)
 			ownedBtn.Position = UDim2.new(1, -108, 0.5, -22)
 			ownedBtn.AutoButtonColor = false
 			ownedBtn.Selectable = false
+		elseif not prereqMet then
+			local lockedBtn = makeTextButton(row, "LockedTag", "Locked", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
+			lockedBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			lockedBtn.AutoButtonColor = false
+			lockedBtn.Selectable = false
 		else
 			local canAfford = dto.Coins >= def.Cost
 			local buyBtn = makeTextButton(
 				row,
 				"BuyBtn",
-				string.format("Buy (%d)", def.Cost),
+				string.format("Buy (%s)", FormatUtil.FormatCoins(def.Cost)),
 				if canAfford then PALETTE.MeadowMint else PALETTE.CardDark,
 				if canAfford then PALETTE.PanelDark else PALETTE.TextMuted,
 				UDim2.fromOffset(100, 44),
@@ -1170,6 +1250,118 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 					pendingUpgradeBuy = false
 				end)
 			end)
+		end
+	end
+
+	-- 5B. Crater Lures (Frost Cracker required)
+	createSectionHeader(scroll, "Crater Lures", PALETTE.OrbitalCyan, order)
+	order += 1
+	do
+		local hasFrostTool = dto.Upgrades["FrostCracker"] == true
+		local lureRow, lureTitle, lureSubtitle = createRowCard(
+			scroll,
+			if hasFrostTool then PALETTE.OrbitalCyan else PALETTE.BorderSoft,
+			order
+		)
+		order += 1
+		lureTitle.Text = "Frost Lure Beacon"
+		lureSubtitle.Text = string.format(
+			"Summons your own Frost Meteor on the Ridge (%d Coins — requires Frost Cracker)",
+			Constants.FROST_LURE_COST
+		)
+
+		if not hasFrostTool then
+			local lockedTag = makeTextButton(lureRow, "LockedTag", "Locked", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
+			lockedTag.Position = UDim2.new(1, -108, 0.5, -22)
+			lockedTag.AutoButtonColor = false
+			lockedTag.Selectable = false
+		else
+			local canAffordLure = dto.Coins >= Constants.FROST_LURE_COST
+			local lureBtn = makeTextButton(
+				lureRow,
+				"LureBtn",
+				string.format("Summon (%d)", Constants.FROST_LURE_COST),
+				if canAffordLure then PALETTE.MeadowMint else PALETTE.CardDark,
+				if canAffordLure then PALETTE.PanelDark else PALETTE.TextMuted,
+				UDim2.fromOffset(100, 44),
+				12
+			)
+			lureBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			frostLureButton = lureBtn
+			registerBagButton("Lure:Frost", lureBtn)
+			lureBtn.Activated:Connect(function()
+				local currentDto = latestOwnerState
+				if currentDto == nil then
+					return
+				end
+				if currentDto.Upgrades["FrostCracker"] ~= true then
+					SoundController.Play("Error")
+					UIController.ShowToast("Unlock Frost Cracker (120 Coins) before using a Frost Lure!", "Warn")
+					return
+				end
+				if currentDto.Coins < Constants.FROST_LURE_COST then
+					SoundController.Play("Error")
+					UIController.ShowToast(string.format("Need %d Coins to summon a Frost Meteor!", Constants.FROST_LURE_COST), "Warn")
+					return
+				end
+				local okRange = isWithinStationRange("LureStand", "LureStand")
+				if not okRange then
+					SoundController.Play("Error")
+					UIController.ShowToast("Walk closer to the Frost Lure Stand near your Ranch Gate!", "Warn")
+					return
+				end
+				SoundController.Play("Click")
+				if plotActionRemote ~= nil then
+					plotActionRemote:FireServer("UseFrostLure", "LureStand")
+				end
+			end)
+		end
+	end
+
+	-- 6. Cosmic Field Guide
+	local discoveredCount = 0
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		if dto.DiscoveredSpecies[speciesId] == true then
+			discoveredCount += 1
+		end
+	end
+	createSectionHeader(
+		scroll,
+		string.format("Field Guide (Discovered: %d / %d)", discoveredCount, #CritterConfig.OrderedIds),
+		PALETTE.StarlightGold,
+		order
+	)
+	order += 1
+
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		local def = CritterConfig.ById[speciesId]
+		local discovered = dto.DiscoveredSpecies[speciesId] == true
+		local row, title, subtitle = createRowCard(
+			scroll,
+			if discovered then def.BodyColor else PALETTE.BorderSoft,
+			order
+		)
+		order += 1
+
+		if discovered then
+			title.Text = string.format("%s [%s]", def.DisplayName, def.Rarity)
+			subtitle.Text = string.format(
+				"+%d Coins/s  |  Sell %d  |  Hatch %ds",
+				def.CoinsPerSecond,
+				def.SellPrice,
+				def.HatchSeconds
+			)
+			local foundTag = makeTextButton(row, "FoundTag", "Found", PALETTE.PanelDark, PALETTE.MeadowMint, UDim2.fromOffset(100, 44), 13)
+			foundTag.Position = UDim2.new(1, -108, 0.5, -22)
+			foundTag.AutoButtonColor = false
+			foundTag.Selectable = false
+		else
+			title.Text = string.format("??? [%s]", def.Rarity)
+			subtitle.Text = def.FieldClue
+			local unknownTag = makeTextButton(row, "UnknownTag", "???", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
+			unknownTag.Position = UDim2.new(1, -108, 0.5, -22)
+			unknownTag.AutoButtonColor = false
+			unknownTag.Selectable = false
 		end
 	end
 
@@ -1293,8 +1485,12 @@ local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextD
 		if prevDto.Upgrades[upgradeId] ~= true and nextDto.Upgrades[upgradeId] == true then
 			local def = UpgradeConfig.ById[upgradeId]
 			SoundController.Play("Upgrade")
-			if upgradeId == "StarCracker" then
-				UIController.ShowToast("Unlocked Star Cracker! Crack glowing Astral Meteors in Crater!", "Success")
+			if upgradeId == "FrostCracker" then
+				UIController.ShowToast("Unlocked Frost Cracker! Crack Ridge Frost Meteors & use Frost Lures!", "Success")
+			elseif upgradeId == "StarCracker" then
+				UIController.ShowToast("Unlocked Astral Cracker! Break Astral Pulse Meteors in the Crater!", "Success")
+			elseif upgradeId == "PenSlot_4" then
+				UIController.ShowToast("Unlocked Habitat Slot #4 & earned your Gold Ranch Arch!", "Success")
 			else
 				UIController.ShowToast("Unlocked " .. def.DisplayName .. "!", "Success")
 			end
@@ -1870,17 +2066,17 @@ function UIController.RunSelfTest(): number
 			ReservedBagSlots = 0,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
-			Upgrades = {},
+			Upgrades = { FrostCracker = true },
 			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
 		local dto2: Types.OwnerStateDTO = {
 			Revision = 2,
-			Coins = 60,
+			Coins = 75,
 			BagCap = Constants.MAX_BAG_CAPACITY,
 			ReservedBagSlots = 0,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
-			Upgrades = {},
+			Upgrades = { FrostCracker = true },
 			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
 		}
 
@@ -1899,10 +2095,14 @@ function UIController.RunSelfTest(): number
 		local rebuildsBefore = bagRebuildCount
 		local feedBtnRef = feedButtonsBySlot["Pen_1"]
 		local pen2BtnRef = upgradeBuyButtons["PenSlot_2"]
+		local lureBtnRef = frostLureButton
 		assert(feedBtnRef ~= nil, "Pen_1 Feed button rendered")
 		assert(feedBtnRef.BackgroundColor3 == PALETTE.CardDark, "Pen_1 Feed starts unaffordable at 44 Coins")
 		assert(pen2BtnRef ~= nil, "PenSlot_2 buy button rendered")
 		assert(pen2BtnRef.BackgroundColor3 == PALETTE.CardDark, "PenSlot_2 starts unaffordable at 44 Coins")
+		assert(lureBtnRef ~= nil, "Frost Lure summon button rendered")
+		assert(lureBtnRef.BackgroundColor3 == PALETTE.CardDark, "Frost Lure starts unaffordable at 44 Coins")
+		assert(scroll:FindFirstChild("Section_Field Guide (Discovered: 3 / 6)") ~= nil, "Field Guide header renders 3 / 6 discovered")
 
 		local btnRelY = pen2BtnRef.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y
 		local desiredScrollY = math.clamp(math.floor(btnRelY - scroll.AbsoluteWindowSize.Y * 0.5), 40, maxScrollY)
@@ -1922,6 +2122,8 @@ function UIController.RunSelfTest(): number
 		assert(feedBtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Feed affordability color in place")
 		assert(upgradeBuyButtons["PenSlot_2"] == pen2BtnRef, "Coin-only update preserves exact Buy button instance")
 		assert(pen2BtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Buy affordability color in place")
+		assert(frostLureButton == lureBtnRef, "Coin-only update preserves exact Frost Lure button instance")
+		assert(lureBtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Frost Lure affordability color in place")
 		assert(math.abs(scroll.CanvasPosition.Y - settledScrollY) <= 1, "Coin-only update preserves rendered scroll position")
 		assert(lastFocusedBagKey == "Buy:PenSlot_2", "Coin-only update preserves focused Bag action key")
 
@@ -1963,6 +2165,7 @@ function UIController.RunSelfTest(): number
 	bagButtonsByKey = {}
 	upgradeBuyButtons = {}
 	feedButtonsBySlot = {}
+	frostLureButton = nil
 	activeTimerBindings = {}
 	firstBagSelectable = nil
 	GuiService.SelectedObject = nil

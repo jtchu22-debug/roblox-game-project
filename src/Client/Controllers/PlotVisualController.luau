@@ -88,6 +88,9 @@ local function resolveStationPartOnPlot(plotModel: Model, stationKind: string, t
 	elseif stationKind == "SellStand" then
 		local stand = plotModel:FindFirstChild("SellStand")
 		return if stand ~= nil and stand:IsA("BasePart") then stand else nil
+	elseif stationKind == "LureStand" then
+		local lure = plotModel:FindFirstChild("LureStand")
+		return if lure ~= nil and lure:IsA("BasePart") then lure else nil
 	elseif stationKind == "UpgradePad" then
 		local board = plotModel:FindFirstChild("UpgradeBoard")
 		local pad = if board ~= nil then board:FindFirstChild("UpgradePad_" .. targetId) else nil
@@ -223,6 +226,117 @@ local function buildCritterVisual(
 			Material = Enum.Material.Neon,
 		})
 		haloHeight = bodyScale.Y * 0.5 + 1.0 * scaleMult
+	elseif speciesId == "CinderPup" then
+		-- 7 parts (+1 Radiant halo = 8 <= 8 budget)
+		local torsoScale = Vector3.new(bodyScale.X * 0.85, bodyScale.Y * 0.72, bodyScale.Z * 0.9)
+		local body = createVisualPart(model, partsList, baseCFrame, CFrame.new(), {
+			Name = "Body",
+			Size = torsoScale,
+			Color = def.BodyColor,
+			CastShadow = true,
+		})
+		model.PrimaryPart = body
+
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, -0.05 * scaleMult, -torsoScale.Z * 0.54), {
+			Name = "Snout",
+			Size = Vector3.new(1.05, 0.72, 0.6) * scaleMult,
+			Color = COLOR_CREAM,
+		})
+		for _, xSign in ipairs({ -1, 1 }) do
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.55 * scaleMult, 0.32 * scaleMult, -torsoScale.Z * 0.48), {
+				Name = if xSign < 0 then "LeftEye" else "RightEye",
+				Size = Vector3.new(0.36, 0.4, 0.22) * scaleMult,
+				Color = COLOR_EYE,
+			})
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.7 * scaleMult, torsoScale.Y * 0.5 + 0.35 * scaleMult, -0.25 * scaleMult), {
+				Name = if xSign < 0 then "LeftEar" else "RightEar",
+				Size = Vector3.new(0.45, 0.95, 0.65) * scaleMult,
+				Color = accentColor,
+				Material = Enum.Material.Neon,
+				IsWedge = true,
+			})
+		end
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.52 * scaleMult, torsoScale.Z * 0.54) * CFrame.Angles(math.rad(-25), 0, 0), {
+			Name = "Tail",
+			Size = Vector3.new(0.7, 0.9, 1.35) * scaleMult,
+			Color = accentColor,
+			Material = Enum.Material.Neon,
+		})
+		haloHeight = torsoScale.Y * 0.5 + 1.45 * scaleMult
+	elseif speciesId == "FrostBeetle" then
+		-- 7 parts (+1 Radiant halo = 8 <= 8 budget)
+		local shellScale = Vector3.new(bodyScale.X, bodyScale.Y * 0.85, bodyScale.Z)
+		local body = createVisualPart(model, partsList, baseCFrame, CFrame.new(), {
+			Name = "Body",
+			Size = shellScale,
+			Color = def.BodyColor,
+			CastShadow = true,
+		})
+		model.PrimaryPart = body
+
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, -0.15 * scaleMult, -shellScale.Z * 0.48), {
+			Name = "HeadPlate",
+			Size = Vector3.new(shellScale.X * 0.65, shellScale.Y * 0.55, 0.75) * scaleMult,
+			Color = Color3.fromRGB(55, 115, 175),
+		})
+		for _, xSign in ipairs({ -1, 1 }) do
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.5 * scaleMult, -0.05 * scaleMult, -shellScale.Z * 0.56), {
+				Name = if xSign < 0 then "LeftEye" else "RightEye",
+				Size = Vector3.new(0.32, 0.34, 0.22) * scaleMult,
+				Color = COLOR_EYE,
+			})
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (shellScale.X * 0.54), -0.1 * scaleMult, 0.1 * scaleMult), {
+				Name = if xSign < 0 then "LeftCrystal" else "RightCrystal",
+				Size = Vector3.new(0.55, 0.65, 1.45) * scaleMult,
+				Color = accentColor,
+				Material = Enum.Material.Neon,
+			})
+		end
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, shellScale.Y * 0.45 + 0.45 * scaleMult, -shellScale.Z * 0.42) * CFrame.Angles(math.rad(25), 0, 0), {
+			Name = "IceHorn",
+			Size = Vector3.new(0.5, 1.3, 0.55) * scaleMult,
+			Color = accentColor,
+			Material = Enum.Material.Neon,
+		})
+		haloHeight = shellScale.Y * 0.5 + 1.35 * scaleMult
+	elseif speciesId == "CometOwl" then
+		-- 7 parts (+1 Radiant halo = 8 <= 8 budget)
+		local body = createVisualPart(model, partsList, baseCFrame, CFrame.new(), {
+			Name = "Body",
+			Size = bodyScale,
+			Color = def.BodyColor,
+			CastShadow = true,
+		})
+		model.PrimaryPart = body
+
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, 0.15 * scaleMult, -bodyScale.Z * 0.52), {
+			Name = "Beak",
+			Size = Vector3.new(0.55, 0.45, 0.65) * scaleMult,
+			Color = accentColor,
+			Material = Enum.Material.Neon,
+			IsWedge = true,
+		})
+		for _, xSign in ipairs({ -1, 1 }) do
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * 0.65 * scaleMult, 0.55 * scaleMult, -bodyScale.Z * 0.48), {
+				Name = if xSign < 0 then "LeftEye" else "RightEye",
+				Size = Vector3.new(0.45, 0.45, 0.22) * scaleMult,
+				Color = COLOR_EYE,
+				Shape = Enum.PartType.Ball,
+			})
+			createVisualPart(model, partsList, baseCFrame, CFrame.new(xSign * (bodyScale.X * 0.56), 0.05 * scaleMult, 0.15 * scaleMult) * CFrame.Angles(0, 0, xSign * math.rad(-18)), {
+				Name = if xSign < 0 then "LeftWing" else "RightWing",
+				Size = Vector3.new(0.65, 2.2, 1.9) * scaleMult,
+				Color = accentColor,
+				Material = Enum.Material.Neon,
+			})
+		end
+		createVisualPart(model, partsList, baseCFrame, CFrame.new(0, bodyScale.Y * 0.5 + 0.35 * scaleMult, 0) * CFrame.Angles(0, math.rad(45), 0), {
+			Name = "StarCrest",
+			Size = Vector3.new(1.2, 0.55, 1.2) * scaleMult,
+			Color = accentColor,
+			Material = Enum.Material.Neon,
+		})
+		haloHeight = bodyScale.Y * 0.5 + 1.25 * scaleMult
 	elseif speciesId == "NebulaFox" then
 		-- 7 parts (+1 Radiant halo = 8 <= 8 budget)
 		local torsoScale = Vector3.new(bodyScale.X * 0.8, bodyScale.Y * 0.7, bodyScale.Z * 0.95)
@@ -310,7 +424,10 @@ local function buildCritterVisual(
 		Model = model,
 		BaseCFrame = baseCFrame,
 		Parts = partsList,
-		HopSpeed = if speciesId == "StarSlime" then 4.2 elseif speciesId == "NebulaFox" then 5.0 else 3.1,
+		HopSpeed = if speciesId == "StarSlime" or speciesId == "CinderPup"
+			then 4.3
+			elseif speciesId == "NebulaFox" or speciesId == "CometOwl" then 4.9
+			else 3.2,
 		HopHeight = baseHop + (if fed then 0.15 else 0),
 		Phase = phaseSeed,
 		MaturesAt = nil,

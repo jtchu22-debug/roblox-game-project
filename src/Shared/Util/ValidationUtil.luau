@@ -19,6 +19,7 @@ local VALID_PLOT_ACTIONS: { [string]: boolean } = table.freeze({
 	RemoveFromPen = true,
 	SellCritter = true,
 	FeedCritter = true,
+	UseFrostLure = true,
 })
 
 local ValidationUtil = {}
