@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.2.3-s2b-expanded",
+	GAME_VERSION = "0.2.4-s2c-astral-fall",
 	USE_MOCK_STORE = true,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067, -- Private Stage 2 test place (Bioniccat4000's Place: 11192026_1)
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -19,9 +19,13 @@ local Constants = {
 	STARTER_PEN_SLOTS = 1,
 	STARTER_INCUBATOR_SLOTS = 1,
 	MAX_STATION_INTERACT_DISTANCE = 18,
-	PROMPT_ACTIVATION_DISTANCE = 12,
+	PROMPT_ACTIVATION_DISTANCE = 7.5,
 	MAX_ACTIVE_WILD_METEORS = 4,
-	WILD_METEOR_RESPAWN_SECONDS = 6,
+	WILD_METEOR_RESPAWN_SECONDS = 10,
+	ASTRAL_FALL_FIRST_DELAY_SECONDS = 45,
+	ASTRAL_FALL_INTERVAL_SECONDS = 75,
+	ASTRAL_FALL_WARNING_SECONDS = 3.0,
+	ASTRAL_METEOR_LIFETIME_SECONDS = 55,
 
 	-- Greybox Map Identifiers & CollectionService Tags
 	GREYBOX_ROOT_NAME = "StarfallGreyboxRoot",

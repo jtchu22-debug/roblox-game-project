@@ -1,6 +1,6 @@
 # Stage 2 (`S2-01`) Uncoached Discovery Playtest Kit
 
-> **Applies To:** `v0.2.3-s2b-expanded` (`Stage 2B: Expanded Mid-Game Loop — Review #012 + Gameplay Plan`, allowlisted for private `PlaceId 137485500524067`)  
+> **Applies To:** `v0.2.4-s2c-astral-fall` (`Stage 2C: Timed Astral Fall Event, Crater Routes & Mobile Declutter`, allowlisted for private `PlaceId 137485500524067`)  
 > **Goal:** Observe **5–10 consenting testers** play *Starfall Ranch* uncoached for 5–15 minutes to decide whether to **Go** to Stage 3 (`ProfileStore` + 6 plots), **Iterate** on onboarding/Crater feel, or **Pivot** before writing persistence or Blender art.  
 > **Privacy Rule:** Collect **zero personal data** (no real names, Roblox usernames, UserIds, emails, or ages). Use anonymous tester codes `T-01` through `T-10`.
 
@@ -152,6 +152,31 @@ Share the filled Observation & Timing Sheet and Post-Session Debrief notes back 
 4. **Tactile Excitement / Toy-Factor Gap:** `FeedCritter` and `UseFrostLure` trigger from menu buttons or static `ProximityPrompt` taps rather than physical/playful world interactions (such as throwing food directly to critters in the pen or racing/carrying a contested rare Star-Egg drop before it expires).
 
 ### 6.5 Handoff Status
-- **Stage 3 Status:** Remains **ON HOLD** (`MockStore` preserved; zero `src/` edits made yet).
-- **ChatGPT Review #013 (`d9036b4`):** Independently reviewed build `1da9899` (`APPROVE WITH CHANGES` before Round 2) and flagged missing spatial separation between the two Crater routes, missing Frost Lure `BagFull` pre-check / owner error feedback, and unverified manual pacing — findings that align directly with Round 2's `< 5 min` completion and cramped-world feedback.
-- **Next Gate:** Awaiting **ChatGPT Review #014** and **Human Lead** selection (**Stage 2C** rarity/declutter/Crater-route/toy-factor iteration vs. **Stage 3** vs. **Pivot**).
+- **Stage 3 Status:** Remains **ON HOLD** (`MockStore` preserved; Round 2 + ChatGPT **Review #013 (`d9036b4`)** + **Review #014 (`c604289`)** drove Stage 2C `v0.2.4-s2c-astral-fall`).
+- **ChatGPT Reviews #013–#014 (`d9036b4`, `c604289`):** Flagged missing spatial separation between the two Crater routes, Frost Lure `BagFull` pre-check / error feedback / landing visibility, always-on Astral availability/payout compression, and mobile text/prompt clutter — all addressed in **Section 7 / Stage 2C**.
+
+---
+
+## 7. Stage 2C Round 3 Playtest Protocol (`v0.2.4-s2c-astral-fall`, 3–5 Fresh Testers)
+
+### 7.1 What Changed for Round 3 (Round 2 Feedback + Reviews #013 & #014)
+1. **Astral Worth Chasing (`Astral Fall` Timed Event + Tuned Rarity/Payouts):** Removed automatic `Astral` refill (`0` on startup; wild spawns are Ember `72%` / Frost `28%` with `10s` node respawn). Every `75s` (first event `45s` after boot), a visible `3s` falling Astral meteor announces on North Frost Ridge and stays active for `55s`. `CometOwl` drop rate lowered to `10%` (`18/s | 400`); late-game payouts & upgrade costs tuned (`60 / 150 / 260 / 500 / 850 / 1,850`; `3,670` total upgrades) while preserving the `15s` starter `StarSlime` hatch.
+2. **Two Marked Crater Routes & Decluttered Map / Mobile UI:** Split Crater into **South Ember Basin** (`MeteorNode_1..3`) and ramp-accessed **North Frost Ridge** (`MeteorNode_4..6`) with route markers; compacted world labels (`130x28`, `24` studs) shown contextually only when actionable; shrank prompt range (`12 -> 7.5` studs) and spaced upgrade pads into 2 rows (`>= 8` studs apart); enabled single-row phone HUD (`>= 360px` wide) and auto-hid `BottomHintBar` once a starter critter is placed in Pen #1.
+3. **Frost Lure Completeness (`Review #013`):** Added server + client committed `BagFull` pre-check before spawning/charging (`75 Coins`), owner `LureFailed` error toasts for every failure mode, a visible cyan `LureBeacon` + `8s` guide beam showing where the Frost Lure landed strictly on North Frost Ridge. Keep the same `6` critters.
+
+### 7.2 Round 3 Per-Tester Timing & Choice Log (`R3-01`..`R3-05`)
+Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **desktop**:
+
+| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Chased Astral Fall / Used Frost Lure? | Readability on Mobile / Crater Routes Clear? | Maxed Upgrades / Critters Under 5m? & Reason to Return (`GO` vs. `PIVOT`) |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| `R3-01` | | | | | | | |
+| `R3-02` | | | | | | | |
+| `R3-03` | | | | | | | |
+| `R3-04` | | | | | | | |
+| `R3-05` | | | | | | | |
+
+### 7.3 Round 3 Gate (`GO -> Stage 3` vs. `PIVOT`)
+- **Sample Count (`N / Denominator`):** `___ / 3–5`
+- **Median First Reward (`<= 45s`) & First Hatch & Pen (`<= 90s >= 80%`):** `___s` / `___%`
+- **Chased Timed Astral Fall + Mobile Readability:** `___ / N` noticed/chased the falling Astral meteor & found mobile prompts/routes clear
+- **Decision Rule:** If fresh testers find and play the redesigned Astral encounter and still find the loop flat -> **PIVOT** (`Relic Raiders` / `Potion Pop!`). If they voluntarily chase Astral Fall, value rarer drops/pacing, and have a concrete reason to keep playing -> evaluate **GO -> Stage 3** (`ProfileStore` & `6` plots) in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md).

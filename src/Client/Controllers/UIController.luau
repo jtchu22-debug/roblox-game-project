@@ -52,8 +52,8 @@ type TimerBinding = {
 	WasMature: boolean,
 }
 
-local WIDE_TOP_HUD_MIN_WIDTH = 440
-local ACTION_TRAY_WIDTH = 188
+local WIDE_TOP_HUD_MIN_WIDTH = 360
+local ACTION_TRAY_WIDTH = 138
 
 local PALETTE = {
 	PanelDark = Color3.fromRGB(24, 22, 38),
@@ -90,6 +90,7 @@ local bagLabel: TextLabel? = nil
 local bagButton: TextButton? = nil
 local settingsButton: TextButton? = nil
 local toastLabel: TextLabel? = nil
+local hintBarFrame: Frame? = nil
 local hintLabel: TextLabel? = nil
 
 local bagDrawer: Frame? = nil
@@ -166,7 +167,7 @@ function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
 	local width = if typeof(safeWidth) == "number" and safeWidth == safeWidth and safeWidth > 0 then safeWidth else 320
 
 	if width >= WIDE_TOP_HUD_MIN_WIDTH then
-		local resWidth = math.clamp(width - 218, 210, 390)
+		local resWidth = math.clamp(width - 166, 174, 390)
 		local actWidth = ACTION_TRAY_WIDTH
 		local settingsWidth = 278
 		return {
@@ -174,34 +175,34 @@ function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
 			ResourceX = 10,
 			ResourceY = 8,
 			ResourceWidth = resWidth,
-			ResourceHeight = 46,
+			ResourceHeight = 42,
 			ActionsX = width - 10 - actWidth,
 			ActionsY = 8,
 			ActionsWidth = actWidth,
-			ActionsHeight = 46,
-			ToastY = 62,
+			ActionsHeight = 44,
+			ToastY = 58,
 			SettingsX = width - 10 - settingsWidth,
-			SettingsY = 62,
+			SettingsY = 58,
 			SettingsWidth = settingsWidth,
 		}
 	end
 
 	local resWidth = math.max(200, width - 16)
-	local actWidth = math.min(ACTION_TRAY_WIDTH, math.max(160, width - 16))
+	local actWidth = math.min(ACTION_TRAY_WIDTH, math.max(138, width - 16))
 	local settingsWidth = math.clamp(width - 16, 220, 278)
 	return {
 		Stacked = true,
 		ResourceX = math.floor((width - resWidth) * 0.5),
 		ResourceY = 8,
 		ResourceWidth = resWidth,
-		ResourceHeight = 44,
+		ResourceHeight = 40,
 		ActionsX = width - 8 - actWidth,
-		ActionsY = 58,
+		ActionsY = 54,
 		ActionsWidth = actWidth,
 		ActionsHeight = 44,
-		ToastY = 108,
+		ToastY = 104,
 		SettingsX = width - 8 - settingsWidth,
-		SettingsY = 108,
+		SettingsY = 104,
 		SettingsWidth = settingsWidth,
 	}
 end
@@ -378,19 +379,23 @@ end
 
 local function updateActionButtonsText(): ()
 	local btn = bagButton
+	local isNarrow = hudGui ~= nil and hudGui.AbsoluteSize.X > 0 and hudGui.AbsoluteSize.X < 440
 	if btn ~= nil then
 		local count = 0
 		if latestOwnerState ~= nil then
 			local bCount = countBagAndIncome(latestOwnerState)
 			count = bCount
 		end
-		if currentInputMode == "Gamepad" then
-			btn.Text = string.format("Bag [%d] (Y)", count)
-		elseif currentInputMode == "Keyboard" then
-			btn.Text = string.format("Bag [%d] (B)", count)
+		if currentInputMode == "Gamepad" and not isNarrow then
+			btn.Text = string.format("Bag (%d) [Y]", count)
+		elseif currentInputMode == "Keyboard" and not isNarrow then
+			btn.Text = string.format("Bag (%d) [B]", count)
 		else
-			btn.Text = string.format("Bag [%d]", count)
+			btn.Text = string.format("Bag (%d)", count)
 		end
+	end
+	if settingsButton ~= nil then
+		settingsButton.Text = "⚙"
 	end
 
 	if controlsHintLabel ~= nil then
@@ -419,13 +424,18 @@ end
 
 local function updateContextualHint(): ()
 	local label = hintLabel
+	local bar = hintBarFrame
 	if label == nil then
 		return
 	end
 
 	local dto = latestOwnerState
 	if dto == nil then
-		label.Text = "Connecting to your Starfall Ranch..."
+		label.Text = "Connecting to Ranch..."
+		label.TextColor3 = PALETTE.StarlightGold
+		if bar ~= nil then
+			bar.Visible = true
+		end
 		return
 	end
 
@@ -457,77 +467,32 @@ local function updateContextualHint(): ()
 	local freeIncubator = findEmptyUnlockedIncubator(dto)
 
 	if hasMatureIncubator then
-		label.Text = "Next Step: Return to your glowing Incubator Pad to Hatch your Cosmic Critter!"
+		label.Text = "Hatch Ready at your Incubator!"
 		label.TextColor3 = PALETTE.StarlightGold
-	elseif hasHatchedInBag and freePen ~= nil then
-		label.Text = "Next Step: Walk to an open Pen Slot (or open Bag) to Place your Critter!"
-		label.TextColor3 = PALETTE.MeadowMint
-	elseif hasPodInBag and freeIncubator ~= nil then
-		label.Text = "Next Step: Walk to your Incubator Pad (or open Bag) to Incubate your Star-Pod!"
-		label.TextColor3 = PALETTE.OrbitalCyan
-	elseif shortestRemaining < math.huge then
-		label.Text = string.format("Incubating Star-Pod (%s left) — Rescue more Crater Meteors while waiting!", FormatUtil.FormatTimer(shortestRemaining))
-		label.TextColor3 = PALETTE.TextCream
-	elseif dto.Upgrades["PenSlot_2"] ~= true and dto.Coins >= UpgradeConfig.ById.PenSlot_2.Cost then
-		label.Text = string.format("Upgrade Ready! Walk to Habitat Slot #2 Pad (%d Coins) on your Ranch!", UpgradeConfig.ById.PenSlot_2.Cost)
-		label.TextColor3 = PALETTE.MeadowMint
-	elseif dto.Upgrades["FrostCracker"] ~= true and dto.Coins >= UpgradeConfig.ById.FrostCracker.Cost then
-		label.Text = string.format("Tool Ready! Buy Frost Cracker (%d Coins) to unlock Frost Ridge Meteors!", UpgradeConfig.ById.FrostCracker.Cost)
-		label.TextColor3 = PALETTE.OrbitalCyan
-	elseif dto.Upgrades["StarCracker"] ~= true and dto.Upgrades["FrostCracker"] == true and dto.Coins >= UpgradeConfig.ById.StarCracker.Cost then
-		label.Text = string.format("Tool Ready! Buy Astral Cracker (%d Coins) to unlock glowing Astral Meteors!", UpgradeConfig.ById.StarCracker.Cost)
-		label.TextColor3 = PALETTE.AstralViolet
-	elseif dto.Upgrades["PenSlot_4"] ~= true and dto.Upgrades["PenSlot_3"] == true and dto.Coins >= UpgradeConfig.ById.PenSlot_4.Cost then
-		label.Text = string.format(
-			"Big Goal Ready! Buy Habitat Slot #4 (%s Coins) to earn your Gold Ranch Arch!",
-			FormatUtil.FormatCoins(UpgradeConfig.ById.PenSlot_4.Cost)
-		)
-		label.TextColor3 = PALETTE.StarlightGold
-	elseif hasHatchedInBag then
-		label.Text = "Pens full! Visit your Ranch Gate Sell Stand or Bag to Sell extras for Upgrades!"
-		label.TextColor3 = PALETTE.StarlightGold
-	elseif activePenCount == 0 then
-		label.Text = "Next Step: Walk toward the Crater & Rescue your glowing Starter Meteor!"
-		label.TextColor3 = PALETTE.StarlightGold
-	elseif dto.Upgrades["StarCracker"] == true and dto.Upgrades["PenSlot_4"] ~= true then
-		label.Text = "Astral Cracker Ready! Break Astral Pulse Meteors for Solar Golems (13/s) & Comet Owls (20/s)!"
-		label.TextColor3 = PALETTE.AstralViolet
-	elseif dto.Upgrades["FrostCracker"] == true and dto.Upgrades["StarCracker"] ~= true then
-		label.Text = string.format(
-			"Frost Cracker Ready! Crack Ridge Frost Meteors or Summon a Frost Lure (%d Coins)!",
-			Constants.FROST_LURE_COST
-		)
-		label.TextColor3 = PALETTE.OrbitalCyan
-	elseif dto.Upgrades["PenSlot_4"] == true then
-		local discoveredCount = 0
-		for _, speciesId in ipairs(CritterConfig.OrderedIds) do
-			if dto.DiscoveredSpecies[speciesId] == true then
-				discoveredCount += 1
-			end
+		if bar ~= nil then
+			bar.Visible = true
 		end
-		if discoveredCount < #CritterConfig.OrderedIds then
-			label.Text = string.format(
-				"Field Guide %d/%d! Hunt Basin, Ridge & Astral Meteors to complete your collection!",
-				discoveredCount,
-				#CritterConfig.OrderedIds
-			)
-			label.TextColor3 = PALETTE.StarlightGold
-		else
-			label.Text = string.format(
-				"Master Rancher! All %d/%d Cosmic Species discovered — keep growing your Starfall Ranch!",
-				discoveredCount,
-				#CritterConfig.OrderedIds
-			)
+	elseif activePenCount == 0 then
+		if hasHatchedInBag and freePen ~= nil then
+			label.Text = "Walk to Pen #1 to place your Critter!"
 			label.TextColor3 = PALETTE.MeadowMint
+		elseif hasPodInBag and freeIncubator ~= nil then
+			label.Text = "Walk to Incubator #1 to hatch!"
+			label.TextColor3 = PALETTE.OrbitalCyan
+		elseif shortestRemaining < math.huge then
+			label.Text = string.format("Hatching (%s) — crack Basin Meteors!", FormatUtil.FormatTimer(shortestRemaining))
+			label.TextColor3 = PALETTE.TextCream
+		else
+			label.Text = "Rescue your glowing Starter Meteor!"
+			label.TextColor3 = PALETTE.StarlightGold
+		end
+		if bar ~= nil then
+			bar.Visible = true
 		end
 	else
-		label.Text = string.format(
-			"Earn Coins or Feed Pen critters (+%d/s for %d) to unlock Frost Cracker (%d)!",
-			Constants.CRITTER_FEED_BONUS_COINS_PER_SEC,
-			Constants.CRITTER_FEED_COST,
-			UpgradeConfig.ById.FrostCracker.Cost
-		)
-		label.TextColor3 = PALETTE.OrbitalCyan
+		if bar ~= nil then
+			bar.Visible = false
+		end
 	end
 end
 
@@ -1296,7 +1261,16 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				end
 				if currentDto.Upgrades["FrostCracker"] ~= true then
 					SoundController.Play("Error")
-					UIController.ShowToast("Unlock Frost Cracker (120 Coins) before using a Frost Lure!", "Warn")
+					UIController.ShowToast(
+						string.format("Unlock Frost Cracker (%d Coins) before using a Frost Lure!", UpgradeConfig.ById.FrostCracker.Cost),
+						"Warn"
+					)
+					return
+				end
+				local curBagCount, curIncCount = countBagAndIncome(currentDto)
+				if (curBagCount + curIncCount) >= currentDto.BagCap then
+					SoundController.Play("Error")
+					UIController.ShowToast("Bag full! Sell a critter before using a Frost Lure.", "Warn")
 					return
 				end
 				if currentDto.Coins < Constants.FROST_LURE_COST then
@@ -1424,15 +1398,18 @@ end
 local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
 	local bagCount, incubatingCount, _, totalRate = countBagAndIncome(dto)
 	local committed = bagCount + incubatingCount
+	local isNarrow = hudGui ~= nil and hudGui.AbsoluteSize.X > 0 and hudGui.AbsoluteSize.X < 440
 
 	if coinsLabel ~= nil then
-		coinsLabel.Text = FormatUtil.FormatCoins(dto.Coins) .. " Coins"
+		coinsLabel.Text = if isNarrow then FormatUtil.FormatCoins(dto.Coins) else (FormatUtil.FormatCoins(dto.Coins) .. " Coins")
 	end
 	if rateLabel ~= nil then
-		rateLabel.Text = FormatUtil.FormatRate(totalRate)
+		rateLabel.Text = if isNarrow then string.format("+%d/s", totalRate) else FormatUtil.FormatRate(totalRate)
 	end
 	if bagLabel ~= nil then
-		if incubatingCount > 0 then
+		if isNarrow then
+			bagLabel.Text = string.format("%d/%d", committed, dto.BagCap)
+		elseif incubatingCount > 0 then
 			bagLabel.Text = string.format("Bag: %d/%d (+%d Inc)", committed, dto.BagCap, incubatingCount)
 		else
 			bagLabel.Text = string.format("Bag: %d/%d", committed, dto.BagCap)
@@ -1590,14 +1567,14 @@ function UIController.Init(self: typeof(UIController)): ()
 	actionLayout.Padding = UDim.new(0, 6)
 	actionLayout.Parent = actionRow
 
-	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag [0] (B)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(102, 44), 13)
+	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag (0)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(88, 44), 13)
 	bagBtn.Activated:Connect(function()
 		SoundController.Play("Click")
 		UIController.ToggleBag()
 	end)
 	bagButton = bagBtn
 
-	local setBtn = makeTextButton(actionRow, "SettingsButton", "Settings", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(80, 44), 13)
+	local setBtn = makeTextButton(actionRow, "SettingsButton", "⚙", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(44, 44), 18)
 	addStroke(setBtn, PALETTE.BorderSoft, 1.5)
 	setBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -1627,7 +1604,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	toast.Parent = screenGui
 	toastLabel = toast
 
-	-- Bottom-Center Contextual Guidance Bar
+	-- Bottom-Center Contextual Guidance Bar (shown during onboarding & Hatch Ready only)
 	local hintFrame = Instance.new("Frame")
 	hintFrame.Name = "BottomHintBar"
 	hintFrame.AnchorPoint = Vector2.new(0.5, 1)
@@ -1643,6 +1620,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	hintConstraint.MaxSize = Vector2.new(580, 42)
 	hintConstraint.Parent = hintFrame
 	hintFrame.Parent = screenGui
+	hintBarFrame = hintFrame
 
 	local hLabel = Instance.new("TextLabel")
 	hLabel.Name = "HintText"
@@ -1984,7 +1962,7 @@ function UIController.RunSelfTest(): number
 		-- 1. Narrow & wide safe-width top HUD geometry invariants (zero overlap, inside bounds)
 		for _, w in ipairs({ 320, 360, 375, 439, 440, 667, 1280 }) do
 			local layout = UIController.ComputeTopHudLayout(w)
-			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout below 440px")
+			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout only below 360px")
 			assert(layout.ResourceX >= 0 and (layout.ResourceX + layout.ResourceWidth) <= w, "ResourceBar stays in bounds")
 			assert(layout.ActionsX >= 0 and (layout.ActionsX + layout.ActionsWidth) <= w, "ActionTray stays in bounds")
 			assert(layout.SettingsX >= 0 and (layout.SettingsX + layout.SettingsWidth) <= w, "SettingsDrawer stays in bounds")
@@ -2126,6 +2104,7 @@ function UIController.RunSelfTest(): number
 		assert(lureBtnRef.BackgroundColor3 == PALETTE.MeadowMint, "Coin-only update refreshes Frost Lure affordability color in place")
 		assert(math.abs(scroll.CanvasPosition.Y - settledScrollY) <= 1, "Coin-only update preserves rendered scroll position")
 		assert(lastFocusedBagKey == "Buy:PenSlot_2", "Coin-only update preserves focused Bag action key")
+		assert(hintBarFrame ~= nil and hintBarFrame.Visible == false, "BottomHintBar auto-hides after Pen #1 placed")
 
 		-- Structural rebuild preserves lower-row focus & rendered scroll position after layout settles
 		pendingSellConfirmUID = "h-2"
@@ -2186,6 +2165,9 @@ function UIController.RunSelfTest(): number
 	if bagLabel ~= nil then
 		bagLabel.Text = "Bag: 0/10"
 		bagLabel.TextColor3 = PALETTE.TextCream
+	end
+	if hintBarFrame ~= nil then
+		hintBarFrame.Visible = true
 	end
 	if hintLabel ~= nil then
 		hintLabel.Text = "Connecting to your Starfall Ranch..."

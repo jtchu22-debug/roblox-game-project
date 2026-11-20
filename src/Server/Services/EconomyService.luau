@@ -579,6 +579,9 @@ function EconomyService.UseFrostLureOnProfile(
 	if profile.Coins < Constants.FROST_LURE_COST then
 		return { Ok = false, Reason = "InsufficientCoins" }
 	end
+	if EconomyService.GetCommittedBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
+		return { Ok = false, Reason = "BagFull" }
+	end
 
 	local activeSpawner = customSpawner or lureSpawner
 	if activeSpawner == nil then
@@ -597,6 +600,10 @@ function EconomyService.UseFrostLureOnProfile(
 	return { Ok = true }
 end
 
+function EconomyService.NotifyPlotChangedForPlayer(player: Player): ()
+	notifyPlotChanged(player)
+end
+
 function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): EconomyResult
 	if not DataService.IsReady(player) then
 		return { Ok = false, Reason = "ProfileNotReady" }
@@ -609,6 +616,7 @@ function EconomyService.GrantPod(player: Player, speciesId: Types.SpeciesId): Ec
 	local res = EconomyService.GrantPodToProfile(profile, speciesId, workspace:GetServerTimeNow())
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
+		notifyPlotChanged(player)
 	end
 	return res
 end
@@ -658,6 +666,12 @@ function EconomyService.HandlePlotAction(
 
 	local authOk, authReason = EconomyService.CheckStationAuthorization(player, stationKind, stationTargetId)
 	if not authOk then
+		if action == "UseFrostLure" then
+			NetworkService.SendMeteorLifecycleToPlayer(player, {
+				Action = "LureFailed",
+				Reason = authReason,
+			})
+		end
 		return { Ok = false, Reason = authReason }
 	end
 
@@ -685,8 +699,15 @@ function EconomyService.HandlePlotAction(
 	elseif action == "UseFrostLure" then
 		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
 		res = EconomyService.UseFrostLureOnProfile(profile, player.UserId, player.DisplayName, nowClock)
+		if not res.Ok then
+			NetworkService.SendMeteorLifecycleToPlayer(player, {
+				Action = "LureFailed",
+				Reason = res.Reason or "LureUnavailable",
+			})
+		end
 	elseif action == "SellCritter" then
 		res = EconomyService.SellCritterOnProfile(profile, targetSlotOrUID, nowClock)
+		affectsPublicPlot = true
 	else
 		return { Ok = false, Reason = "InvalidAction" }
 	end
@@ -911,12 +932,12 @@ function EconomyService.RunSelfTest(): number
 	local lureFailSpawn = EconomyService.UseFrostLureOnProfile(pDup, -9001, "DupTester", 3020, function()
 		return false, "NoFreeMeteorNode"
 	end)
-	assert(not lureFailSpawn.Ok and lureFailSpawn.Reason == "NoFreeMeteorNode" and pDup.Coins == 1380, "Failing Frost Lure spawn charges zero Coins")
+	assert(not lureFailSpawn.Ok and lureFailSpawn.Reason == "NoFreeMeteorNode" and pDup.Coins == 1350, "Failing Frost Lure spawn charges zero Coins")
 
 	local lureOk = EconomyService.UseFrostLureOnProfile(pDup, -9001, "DupTester", 3020, function()
 		return true, "Spawned"
 	end)
-	assert(lureOk.Ok and pDup.Coins == 1305, "Successful Frost Lure charges exactly 75 Coins")
+	assert(lureOk.Ok and pDup.Coins == 1275, "Successful Frost Lure charges exactly 75 Coins")
 
 	pDup.Coins = 100
 	assert(EconomyService.BuyUpgradeOnProfile(pDup, "PenSlot_2", 3020).Ok, "First BuyUpgrade succeeds")
@@ -960,12 +981,22 @@ function EconomyService.RunSelfTest(): number
 	assert(not EconomyService.GrantPodToProfile(pLock, "StarSlime", 3500, "extra-pod").Ok, "GrantPod blocked when 10 slots committed")
 	assert(not EconomyService.RemoveFromPenOnProfile(pLock, "Pen_1", 3510).Ok, "RemoveFromPen blocked when 10 slots committed")
 
+	-- Frost Lure must reject BagFull BEFORE invoking spawner or charging Coins
+	pLock.Upgrades["FrostCracker"] = true
+	pLock.Coins = 500
+	local lureSpawnerCalls = 0
+	local fullLure = EconomyService.UseFrostLureOnProfile(pLock, -9002, "FullBagTester", 3515, function()
+		lureSpawnerCalls += 1
+		return true, "Spawned"
+	end)
+	assert(not fullLure.Ok and fullLure.Reason == "BagFull" and lureSpawnerCalls == 0 and pLock.Coins == 500, "Full committed bag blocks Frost Lure before spawn/debit")
+
 	-- Both incubating pods MUST still hatch cleanly at maturity
-	local h1 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_1", 3540, rng)
-	local h2 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_2", 3540, rng)
+	local h1 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_1", 3545, rng)
+	local h2 = EconomyService.HatchFromSlotOnProfile(pLock, "Incubator_2", 3545, rng)
 	assert(h1.Ok and h2.Ok, "Both occupied incubators must hatch cleanly despite full unreserved bag")
 	assert(EconomyService.GetBagCount(pLock) == 10 and EconomyService.GetOccupiedIncubatorCount(pLock) == 0, "All 10 slots now in bag cleanly")
-	assert(EconomyService.SellCritterOnProfile(pLock, "inc-pod-1", 3540).Ok, "Player can immediately sell hatched critter to recover bag space")
+	assert(EconomyService.SellCritterOnProfile(pLock, "inc-pod-1", 3545).Ok, "Player can immediately sell hatched critter to recover bag space")
 	assert((EconomyService.ValidateProfileInvariants(pLock)), "Invariants valid after full-bag hatch recovery")
 	passed += 1
 
@@ -983,7 +1014,7 @@ function EconomyService.RunSelfTest(): number
 	}
 	pSub.Items["fox2"] = {
 		UID = "fox2",
-		SpeciesId = "NebulaFox", -- 8/s
+		SpeciesId = "NebulaFox", -- 7/s
 		Variant = "Normal",
 		State = "HatchedInBag",
 		AssignedSlot = nil,
@@ -996,8 +1027,8 @@ function EconomyService.RunSelfTest(): number
 	assert(pSub.Coins == 0 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "0.3s at 2/s across 11.0 boundary must carry 0.6 fraction with 0 Coins")
 
 	assert(EconomyService.PlaceInPenOnProfile(pSub, "Pen_1", "fox2", 11.1).Ok, "Place NebulaFox at t=11.1")
-	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 8/s + 0.6 = 2.6 -> credits 2 Coins")
-	assert(pSub.Coins == 2 and math.abs(pSub.PendingFraction - 0.6) < 1e-6, "Expected 2 Coins and 0.6 fraction after rate switch")
+	assert(EconomyService.SettleProfileCoins(pSub, 11.35), "0.25s at 7/s + 0.6 = 2.35 -> credits 2 Coins")
+	assert(pSub.Coins == 2 and math.abs(pSub.PendingFraction - 0.35) < 1e-6, "Expected 2 Coins and 0.35 fraction after rate switch")
 	assert((EconomyService.ValidateProfileInvariants(pSub)), "Invariant valid after sub-second fractional rate change")
 	passed += 1
 

@@ -30,15 +30,20 @@ local UpgradeConfig = require(Shared:WaitForChild("Config"):WaitForChild("Upgrad
 type CrackMode = "Standard" | "FrostFracture" | "AstralPulse"
 
 local FRIENDLY_ERROR_MESSAGES: { [string]: string } = {
-	BagFull = "Bag Full! Place a hatched Critter in your Pen or Sell one at your Gate.",
+	BagFull = "Bag full! Place or sell a critter first.",
 	NotStarterOwner = "That Starter Meteor belongs to another player's Ranch!",
 	NotLureOwner = "That Frost Meteor belongs to another player's Frost Lure!",
 	MeteorAlreadyClaimed = "Another player is rescuing that Meteor!",
-	OutOfRange = "Move closer to rescue that Meteor!",
+	OutOfRange = "Move closer to the station or Meteor!",
 	AlreadyCracking = "Already rescuing a Meteor!",
-	CharacterUnavailable = "Wait until your character respawns to rescue!",
-	ClaimExpired = "Rescue timed out — try triggering the Meteor again!",
-	ToolRequired = "Locked! Upgrade your Cracker on the Ranch Upgrade Board first!",
+	CharacterUnavailable = "Wait until your character respawns!",
+	ClaimExpired = "Rescue timed out — try again!",
+	ToolRequired = "Locked! Buy the required Cracker upgrade first!",
+	AlreadyHasActiveLure = "Your Frost Lure is already waiting on North Ridge!",
+	LureCooldown = "Lure cooling down — wait a few seconds.",
+	NoFreeMeteorNode = "North Ridge is full! Crack a Ridge meteor first.",
+	InsufficientCoins = string.format("Need %d Coins for a Frost Lure!", Constants.FROST_LURE_COST),
+	LureUnavailable = "Frost Lure unavailable right now.",
 }
 
 local PALETTE = {
@@ -223,6 +228,114 @@ local function spawnArrivalStreak(pos: Vector3?, color: Color3): ()
 	landTween:Play()
 	Debris:AddItem(streak, 0.65)
 	spawnBurstEffect(pos, color, 18)
+end
+
+local function spawnIncomingAstralFall(pos: Vector3?, duration: number): ()
+	if pos == nil then
+		return
+	end
+
+	local parentFolder = workspace:FindFirstChild("StarfallClientVisuals") or workspace
+	local totalLifetime = math.max(0.5, duration) + 0.4
+
+	local targetRing = Instance.new("Part")
+	targetRing.Name = "AstralTargetRing"
+	targetRing.Shape = Enum.PartType.Cylinder
+	targetRing.Size = Vector3.new(0.35, 11, 11)
+	targetRing.CFrame = CFrame.new(pos + Vector3.new(0, 0.25, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	targetRing.Color = PALETTE.AstralViolet
+	targetRing.Material = Enum.Material.Neon
+	targetRing.Transparency = 0.28
+	targetRing.Anchored = true
+	targetRing.CanCollide = false
+	targetRing.CanQuery = false
+	targetRing.CanTouch = false
+	targetRing.Parent = parentFolder
+	Debris:AddItem(targetRing, totalLifetime)
+
+	local shaft = Instance.new("Part")
+	shaft.Name = "AstralWarningShaft"
+	shaft.Size = Vector3.new(0.85, 90, 0.85)
+	shaft.CFrame = CFrame.new(pos + Vector3.new(0, 45, 0))
+	shaft.Color = PALETTE.AstralViolet
+	shaft.Material = Enum.Material.Neon
+	shaft.Transparency = 0.65
+	shaft.Anchored = true
+	shaft.CanCollide = false
+	shaft.CanQuery = false
+	shaft.CanTouch = false
+	shaft.Parent = parentFolder
+	Debris:AddItem(shaft, totalLifetime)
+
+	if not SoundController.IsReducedMotion() then
+		local orb = Instance.new("Part")
+		orb.Name = "AstralFallingOrb"
+		orb.Shape = Enum.PartType.Ball
+		orb.Size = Vector3.new(4.2, 4.2, 4.2)
+		orb.CFrame = CFrame.new(pos + Vector3.new(-36, 100, -22))
+		orb.Color = PALETTE.StarlightGold
+		orb.Material = Enum.Material.Neon
+		orb.Transparency = 0.1
+		orb.Anchored = true
+		orb.CanCollide = false
+		orb.CanQuery = false
+		orb.CanTouch = false
+		orb.Parent = parentFolder
+
+		local descentTween = TweenService:Create(
+			orb,
+			TweenInfo.new(math.max(0.25, duration), Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ CFrame = CFrame.new(pos + Vector3.new(0, 2.4, 0)) }
+		)
+		descentTween:Play()
+		Debris:AddItem(orb, math.max(0.25, duration) + 0.2)
+	end
+end
+
+local function spawnLureGuideBeam(targetPos: Vector3?): ()
+	if targetPos == nil then
+		return
+	end
+	local lp = Players.LocalPlayer
+	local char = if lp ~= nil then lp.Character else nil
+	local hrp = if char ~= nil then char:FindFirstChild("HumanoidRootPart") else nil
+	if hrp == nil or not hrp:IsA("BasePart") then
+		return
+	end
+
+	local parentFolder = workspace:FindFirstChild("StarfallClientVisuals") or workspace
+	local targetAnchor = Instance.new("Part")
+	targetAnchor.Name = "LureBeamTarget"
+	targetAnchor.Size = Vector3.new(0.5, 0.5, 0.5)
+	targetAnchor.Position = targetPos + Vector3.new(0, 3, 0)
+	targetAnchor.Anchored = true
+	targetAnchor.CanCollide = false
+	targetAnchor.CanQuery = false
+	targetAnchor.CanTouch = false
+	targetAnchor.Transparency = 1
+	targetAnchor.Parent = parentFolder
+
+	local att0 = Instance.new("Attachment")
+	att0.Name = "LureBeamStart"
+	att0.Parent = hrp
+
+	local att1 = Instance.new("Attachment")
+	att1.Name = "LureBeamEnd"
+	att1.Parent = targetAnchor
+
+	local beam = Instance.new("Beam")
+	beam.Name = "FrostLureGuideBeam"
+	beam.Attachment0 = att0
+	beam.Attachment1 = att1
+	beam.Width0 = 0.55
+	beam.Width1 = 0.85
+	beam.FaceCamera = true
+	beam.Color = ColorSequence.new(PALETTE.OrbitalCyan)
+	beam.Transparency = NumberSequence.new(0.25)
+	beam.Parent = targetAnchor
+
+	Debris:AddItem(att0, 8)
+	Debris:AddItem(targetAnchor, 8)
 end
 
 local function configureFeelBeat(beat: number): ()
@@ -553,8 +666,33 @@ function CrackController.Start(self: typeof(CrackController)): ()
 				return
 			end
 			local action = payload.Action
+			if typeof(action) ~= "string" then
+				return
+			end
+
+			if action == "AstralIncoming" then
+				local pos = if typeof(payload.Position) == "Vector3" then payload.Position else nil
+				local duration = if typeof(payload.Duration) == "number" then payload.Duration else Constants.ASTRAL_FALL_WARNING_SECONDS
+				local dto = UIController.GetLatestOwnerState()
+				local hasAstralTool = dto ~= nil and dto.Upgrades["StarCracker"] == true
+				SoundController.Play("CrackChime")
+				UIController.ShowToast(
+					if hasAstralTool
+						then "ASTRAL FALL on North Ridge! Chase it!"
+						else "ASTRAL FALL on North Ridge! (Needs Astral Cracker)",
+					"Info"
+				)
+				spawnIncomingAstralFall(pos, duration)
+				return
+			elseif action == "LureFailed" then
+				local reason = if typeof(payload.Reason) == "string" then payload.Reason else "LureUnavailable"
+				SoundController.Play("Error")
+				UIController.ShowToast(formatReasonMessage(reason, nil), "Warn")
+				return
+			end
+
 			local meteorUID = payload.MeteorUID
-			if typeof(action) ~= "string" or typeof(meteorUID) ~= "string" then
+			if typeof(meteorUID) ~= "string" then
 				return
 			end
 
@@ -573,15 +711,16 @@ function CrackController.Start(self: typeof(CrackController)): ()
 						SoundController.Play("CrackChime")
 						UIController.ShowToast(
 							if hasAstralTool
-								then "Astral Meteor crashed in the Crater! Break its Pulse!"
-								else "Astral Meteor crashed in the Crater! (Needs Astral Cracker)",
+								then "ASTRAL METEOR landed on North Ridge! Break it!"
+								else "ASTRAL METEOR landed! (Needs Astral Cracker)",
 							"Info"
 						)
 						spawnArrivalStreak(pos, PALETTE.AstralViolet)
 					elseif typeof(payload.LuredBy) == "number" and lp ~= nil and payload.LuredBy == lp.UserId then
 						SoundController.Play("CrackChime")
-						UIController.ShowToast("Frost Lure landed! Chase your Frost Meteor on the Ridge!", "Success")
+						UIController.ShowToast("Frost Lure landed on North Ridge! Follow the cyan beam!", "Success")
 						spawnArrivalStreak(pos, PALETTE.OrbitalCyan)
+						spawnLureGuideBeam(pos)
 					end
 				end
 			elseif action == "Claimed" then

@@ -36,11 +36,12 @@ function SharedSelfTest.RunAll(): number
 		assert(#CritterConfig.OrderedIds == 6, "Expected 6 Critter species (2 per family)")
 		assert(#MeteorConfig.OrderedIds == 3, "Expected 3 Meteor traits")
 		assert(#UpgradeConfig.OrderedIds == 6, "Expected 6 Ranch/Tool upgrades")
-		assert(UpgradeConfig.ById.FrostCracker.Cost == 120 and UpgradeConfig.ById.FrostCracker.SlotCategory == "Tool", "FrostCracker tool upgrade configured")
-		assert(UpgradeConfig.ById.StarCracker.Cost == 550 and UpgradeConfig.ById.StarCracker.RequiresUpgradeId == "FrostCracker", "Astral Cracker requires FrostCracker")
+		assert(UpgradeConfig.ById.FrostCracker.Cost == 150 and UpgradeConfig.ById.FrostCracker.SlotCategory == "Tool", "FrostCracker tool upgrade configured")
+		assert(UpgradeConfig.ById.StarCracker.Cost == 850 and UpgradeConfig.ById.StarCracker.RequiresUpgradeId == "FrostCracker", "Astral Cracker requires FrostCracker")
 		assert(UpgradeConfig.ById.PenSlot_4.RequiresUpgradeId == "PenSlot_3", "PenSlot_4 follow-up upgrade requires PenSlot_3")
 		assert(MeteorConfig.ById.Frost.RequiredUpgradeId == "FrostCracker", "Frost requires FrostCracker")
 		assert(MeteorConfig.ById.Astral.RequiredUpgradeId == "StarCracker", "Astral requires StarCracker")
+		assert(MeteorConfig.ById.Astral.DropWeights.CometOwl == 10, "CometOwl Astral weight tuned to 10%")
 		assert(Constants.CRITTER_FEED_SELL_BONUS < Constants.CRITTER_FEED_COST, "Feed sell bonus must stay strictly below feed cost")
 
 		for _, speciesId in ipairs(CritterConfig.OrderedIds) do
@@ -145,7 +146,7 @@ function SharedSelfTest.RunAll(): number
 		}
 
 		local rate = EconomyMath.CalculateActivePenRate(items)
-		assert(rate == 12, string.format("Expected active pen rate 12 (2 + 8 + 2 feed bonus), got %d", rate))
+		assert(rate == 11, string.format("Expected active pen rate 11 (2 + 7 + 2 feed bonus), got %d", rate))
 		assert(EconomyMath.GetCritterCoinsPerSecond("StarSlime", "Normal", 1) == 4, "FeedLevel 1 adds +2 Coins/s")
 		assert(EconomyMath.GetCritterSellPrice("StarSlime", "Normal", 1) == 60, "FeedLevel 1 adds +20 sell bonus (40+20)")
 
@@ -254,6 +255,30 @@ function SharedSelfTest.RunAll(): number
 		assert(existingPenSlots:FindFirstChild("Pen_4") ~= nil, "Missing Pen_4 restored")
 		assert(existingBoard1:FindFirstChild("UpgradePad_FrostCracker") ~= nil, "Missing UpgradePad_FrostCracker restored")
 		assert(existingBoard1:FindFirstChild("UpgradePad_PenSlot_4") ~= nil, "Missing UpgradePad_PenSlot_4 restored")
+
+		-- Verify Crater two-route separation & spacious UpgradePad layout
+		local builtCrater = (root :: Folder):FindFirstChild("CentralCrater") :: Model
+		local builtLandmarks = builtCrater:FindFirstChild("RouteLandmarks")
+		assert(builtLandmarks ~= nil and builtLandmarks:FindFirstChild("EmberBasinPath") ~= nil and builtLandmarks:FindFirstChild("FrostRidgePlatform") ~= nil, "Crater route landmarks present")
+		local spawnNodesFolder = builtCrater:FindFirstChild("MeteorSpawnNodes") :: Folder
+		for idx = 1, 3 do
+			local bNode = spawnNodesFolder:FindFirstChild("MeteorNode_" .. tostring(idx)) :: BasePart
+			assert(bNode:GetAttribute("Region") == "EmberBasin" and bNode.Position.Z > 0, "Nodes 1..3 in South EmberBasin")
+		end
+		for idx = 4, 6 do
+			local rNode = spawnNodesFolder:FindFirstChild("MeteorNode_" .. tostring(idx)) :: BasePart
+			assert(rNode:GetAttribute("Region") == "FrostRidge" and rNode.Position.Z < 0, "Nodes 4..6 on North FrostRidge")
+		end
+		local padPositions: { Vector3 } = {}
+		for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+			local p = existingBoard1:FindFirstChild("UpgradePad_" .. upgradeId) :: BasePart
+			table.insert(padPositions, p.Position)
+		end
+		for a = 1, #padPositions do
+			for b = a + 1, #padPositions do
+				assert((padPositions[a] - padPositions[b]).Magnitude >= 7.5, "Upgrade pads must stay >= 7.5 studs apart")
+			end
+		end
 
 		-- Explicit ConfirmReplace=true must rebuild root WITHOUT removing unrelated sibling objects
 		local replaced, replaceStatus, newRoot = GreyboxBuilder.Generate({

@@ -112,6 +112,7 @@ export type UpgradeDefinition = {
 	UnlocksSlotId: string,
 	SlotCategory: SlotCategory,
 	PadOffsetX: number,
+	PadOffsetZ: number,
 	RequiresUpgradeId: UpgradeId?,
 	Description: string,
 }

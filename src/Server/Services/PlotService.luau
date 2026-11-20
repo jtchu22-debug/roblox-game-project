@@ -81,9 +81,10 @@ local function getPlotModel(plotId: number): Model?
 	return plotModelsById[plotId]
 end
 
-local function setPartLabelText(part: BasePart, guiName: string, text: string): ()
+local function setPartLabelState(part: BasePart, guiName: string, text: string, visible: boolean): ()
 	local gui = part:FindFirstChild(guiName)
 	if gui and gui:IsA("BillboardGui") then
+		gui.Enabled = visible
 		local lbl = gui:FindFirstChild("Label")
 		if lbl and lbl:IsA("TextLabel") then
 			lbl.Text = text
@@ -91,9 +92,14 @@ local function setPartLabelText(part: BasePart, guiName: string, text: string): 
 	end
 end
 
+local function setPartLabelText(part: BasePart, guiName: string, text: string): ()
+	setPartLabelState(part, guiName, text, true)
+end
+
 local function createPromptOnPart(parentPart: BasePart, promptName: string, objectText: string, actionText: string): ProximityPrompt
 	local existing = parentPart:FindFirstChild(promptName)
 	if existing and existing:IsA("ProximityPrompt") then
+		existing.MaxActivationDistance = Constants.PROMPT_ACTIVATION_DISTANCE
 		return existing
 	end
 	local prompt = Instance.new("ProximityPrompt")
@@ -318,26 +324,44 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		end
 	end
 
-	-- Update SellStand Prompt
-	if prompts.SellStand ~= nil then
-		prompts.SellStand.Enabled = assignment ~= nil
+	local hasPodInBag = false
+	local hasHatchedInBag = false
+	local hasFrostCracker = false
+	if assignment ~= nil then
+		hasFrostCracker = assignment.Profile.Upgrades["FrostCracker"] == true
+		for _, item in pairs(assignment.Profile.Items) do
+			if item.State == "PodInBag" then
+				hasPodInBag = true
+			elseif item.State == "HatchedInBag" then
+				hasHatchedInBag = true
+			end
+		end
 	end
 
-	-- Update LureStand Prompt & Label
+	-- Update SellStand Prompt & Label (visible only when holding hatched critter)
+	local sellAnchor = PlotService.ResolveStationAnchor(plotId, "SellStand", "SellStand")
+	if prompts.SellStand ~= nil then
+		prompts.SellStand.Enabled = hasHatchedInBag
+		prompts.SellStand.ActionText = "Sell"
+		prompts.SellStand.ObjectText = "Critter"
+	end
+	if sellAnchor ~= nil then
+		setPartLabelState(sellAnchor, "SellLabel", "Sell", hasHatchedInBag)
+	end
+
+	-- Update LureStand Prompt & Label (visible only once FrostCracker is owned)
 	local lureAnchor = PlotService.ResolveStationAnchor(plotId, "LureStand", "LureStand")
 	if prompts.LureStand ~= nil and lureAnchor ~= nil then
-		if assignment == nil then
-			prompts.LureStand.Enabled = false
-			lureAnchor.Color = Color3.fromRGB(45, 42, 62)
-			setPartLabelText(lureAnchor, "LureLabel", string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST))
-		elseif assignment.Profile.Upgrades["FrostCracker"] ~= true then
-			prompts.LureStand.Enabled = false
-			lureAnchor.Color = PALETTE.LockedSlate
-			setPartLabelText(lureAnchor, "LureLabel", "Frost Lure (Needs Frost Cracker)")
-		else
+		if hasFrostCracker then
 			prompts.LureStand.Enabled = true
+			prompts.LureStand.ActionText = string.format("Lure %d", Constants.FROST_LURE_COST)
+			prompts.LureStand.ObjectText = "Frost"
 			lureAnchor.Color = Color3.fromRGB(45, 42, 62)
-			setPartLabelText(lureAnchor, "LureLabel", string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST))
+			setPartLabelState(lureAnchor, "LureLabel", string.format("Frost Lure • %d", Constants.FROST_LURE_COST), true)
+		else
+			prompts.LureStand.Enabled = false
+			lureAnchor.Color = if assignment == nil then Color3.fromRGB(45, 42, 62) else PALETTE.LockedSlate
+			setPartLabelState(lureAnchor, "LureLabel", "Frost Lure", false)
 		end
 	end
 
@@ -352,7 +376,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 				anchor.Color = if defaultUnlocked then PALETTE.OrbitalCyan else PALETTE.LockedSlate
 				anchor.Material = if defaultUnlocked then Enum.Material.Neon else Enum.Material.SmoothPlastic
 				anchor.Transparency = if defaultUnlocked then 0.1 else 0.45
-				setPartLabelText(anchor, "SlotLabel", if defaultUnlocked then "Incubator #1" else "Incubator #2 (Locked)")
+				setPartLabelState(anchor, "SlotLabel", string.format("Incubator #%d", idx), false)
 			else
 				local profile = assignment.Profile
 				local unlocked = EconomyService.IsUnlockedIncubatorSlot(profile, slotId)
@@ -361,37 +385,37 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 					anchor.Color = PALETTE.LockedSlate
 					anchor.Material = Enum.Material.SmoothPlastic
 					anchor.Transparency = 0.45
-					setPartLabelText(anchor, "SlotLabel", string.format("Incubator #%d (Locked)", idx))
+					setPartLabelState(anchor, "SlotLabel", string.format("Incubator #%d", idx), false)
 				else
 					local occupantUID = profile.Slots[slotId]
 					local occupant = if occupantUID then profile.Items[occupantUID] else nil
 					if occupant == nil then
-						prompt.Enabled = true
-						prompt.ActionText = "Incubate Pod"
+						prompt.Enabled = hasPodInBag
+						prompt.ActionText = "Incubate"
 						prompt.ObjectText = string.format("Incubator #%d", idx)
 						anchor.Color = PALETTE.OrbitalCyan
 						anchor.Material = Enum.Material.Neon
 						anchor.Transparency = 0.1
-						setPartLabelText(anchor, "SlotLabel", string.format("Incubator #%d (Ready)", idx))
+						setPartLabelState(anchor, "SlotLabel", string.format("Incubator #%d", idx), hasPodInBag)
 					else
 						local mature = occupant.MaturesAt ~= nil and nowClock >= occupant.MaturesAt
 						local speciesName = CritterConfig.ById[occupant.SpeciesId].DisplayName
 						if mature then
 							incubatorMatureNotified[plotId][slotId] = true
 							prompt.Enabled = true
-							prompt.ActionText = "Hatch Critter!"
+							prompt.ActionText = "Hatch!"
 							prompt.ObjectText = speciesName
 							anchor.Color = PALETTE.StarlightGold
 							anchor.Material = Enum.Material.Neon
 							anchor.Transparency = 0
-							setPartLabelText(anchor, "SlotLabel", string.format("HATCH %s!", speciesName))
+							setPartLabelState(anchor, "SlotLabel", "HATCH!", true)
 						else
 							prompt.Enabled = false
 							anchor.Color = PALETTE.OrbitalCyan
 							anchor.Material = Enum.Material.Neon
 							anchor.Transparency = 0.1
 							local remaining = math.max(1, math.ceil((occupant.MaturesAt :: number) - nowClock))
-							setPartLabelText(anchor, "SlotLabel", string.format("%s (%ds)", speciesName, remaining))
+							setPartLabelState(anchor, "SlotLabel", string.format("%s • %ds", speciesName, remaining), true)
 						end
 					end
 				end
@@ -409,7 +433,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 				prompt.Enabled = false
 				anchor.Color = if defaultUnlocked then PALETTE.StarlightGold else PALETTE.LockedSlate
 				anchor.Transparency = if defaultUnlocked then 0.15 else 0.5
-				setPartLabelText(anchor, "SlotLabel", if defaultUnlocked then "Pen Slot #1" else string.format("Pen Slot #%d (Locked)", idx))
+				setPartLabelState(anchor, "SlotLabel", string.format("Pen #%d", idx), false)
 			else
 				local profile = assignment.Profile
 				local unlocked = EconomyService.IsUnlockedPenSlot(profile, slotId)
@@ -417,34 +441,34 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 					prompt.Enabled = false
 					anchor.Color = PALETTE.LockedSlate
 					anchor.Transparency = 0.5
-					setPartLabelText(anchor, "SlotLabel", string.format("Pen Slot #%d (Locked)", idx))
+					setPartLabelState(anchor, "SlotLabel", string.format("Pen #%d", idx), false)
 				else
 					local occupantUID = profile.Slots[slotId]
 					local occupant = if occupantUID then profile.Items[occupantUID] else nil
 					if occupant == nil then
-						prompt.Enabled = true
-						prompt.ActionText = "Place Critter"
-						prompt.ObjectText = string.format("Pen Slot #%d", idx)
+						prompt.Enabled = hasHatchedInBag
+						prompt.ActionText = "Place"
+						prompt.ObjectText = string.format("Pen #%d", idx)
 						anchor.Color = PALETTE.StarlightGold
 						anchor.Transparency = 0.15
-						setPartLabelText(anchor, "SlotLabel", string.format("Pen Slot #%d (Empty)", idx))
+						setPartLabelState(anchor, "SlotLabel", string.format("Pen #%d", idx), hasHatchedInBag)
 					else
 						local def = CritterConfig.ById[occupant.SpeciesId]
 						local effRate = EconomyMath.GetCritterCoinsPerSecond(occupant.SpeciesId, occupant.Variant, occupant.FeedLevel)
 						local feedStar = if (occupant.FeedLevel or 0) >= 1 then " ★" else ""
 						prompt.Enabled = true
-						prompt.ActionText = "Pick Up Critter"
+						prompt.ActionText = "Pick Up"
 						prompt.ObjectText = def.DisplayName
 						anchor.Color = def.BodyColor
 						anchor.Transparency = 0.05
-						setPartLabelText(anchor, "SlotLabel", string.format("%s%s (+%d/s)", def.DisplayName, feedStar, effRate))
+						setPartLabelState(anchor, "SlotLabel", string.format("%s%s +%d/s", def.DisplayName, feedStar, effRate), true)
 					end
 				end
 			end
 		end
 	end
 
-	-- Update Upgrade Pads
+	-- Update Upgrade Pads (only show labels/prompts for currently buyable next-step upgrades)
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 		local def = UpgradeConfig.ById[upgradeId]
 		local anchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
@@ -463,28 +487,29 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 				prompt.Enabled = false
 				anchor.Color = unownedColor
 				anchor.Transparency = 0
-				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)))
+				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
 			elseif assignment.Profile.Upgrades[upgradeId] == true then
 				prompt.Enabled = false
 				anchor.Color = ownedColor
 				anchor.Transparency = 0.35
-				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (Owned)", def.DisplayName))
+				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
 			elseif not prereqMet and prereqId ~= nil then
 				prompt.Enabled = false
 				anchor.Color = PALETTE.LockedSlate
 				anchor.Transparency = 0.35
-				setPartLabelText(
-					anchor,
-					"UpgradeLabel",
-					string.format("%s (Needs %s)", def.DisplayName, UpgradeConfig.ById[prereqId].DisplayName)
-				)
+				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
 			else
 				prompt.Enabled = true
-				prompt.ActionText = string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
+				prompt.ActionText = string.format("Buy %s", FormatUtil.FormatCoins(def.Cost))
 				prompt.ObjectText = def.DisplayName
 				anchor.Color = unownedColor
 				anchor.Transparency = 0
-				setPartLabelText(anchor, "UpgradeLabel", string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)))
+				setPartLabelState(
+					anchor,
+					"UpgradeLabel",
+					string.format("%s • %s", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
+					true
+				)
 			end
 		end
 	end

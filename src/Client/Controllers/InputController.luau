@@ -132,32 +132,42 @@ local function handleRanchPromptFeedback(prompt: ProximityPrompt): ()
 	local podsInBag, hatchedInBag = countBagStates()
 	local dto = UIController.GetLatestOwnerState()
 
-	if prompt.Name == "IncubatorPrompt" and prompt.ActionText == "Incubate Pod" then
+	if prompt.Name == "IncubatorPrompt" and prompt.ActionText == "Incubate" then
 		if podsInBag == 0 then
 			SoundController.Play("Error")
-			UIController.ShowToast("No Star-Pods in your Bag! Rescue a Meteor in the Crater first.", "Warn")
+			UIController.ShowToast("No Star-Pods in your Bag!", "Warn")
 			return
 		end
-	elseif prompt.Name == "PenPrompt" and prompt.ActionText == "Place Critter" then
+	elseif prompt.Name == "PenPrompt" and prompt.ActionText == "Place" then
 		if hatchedInBag == 0 then
 			SoundController.Play("Error")
-			UIController.ShowToast("No hatched Critters in your Bag yet! Incubate & hatch a Pod first.", "Warn")
+			UIController.ShowToast("Hatch a Star-Pod first!", "Warn")
 			return
 		end
 	elseif prompt.Name == "SellPrompt" then
 		if hatchedInBag == 0 then
 			SoundController.Play("Error")
-			UIController.ShowToast("No hatched Critters in your Bag to sell! (Pen critters stay safe.)", "Warn")
+			UIController.ShowToast("No hatched Critters to sell!", "Warn")
 			return
 		end
 	elseif prompt.Name == "LurePrompt" and dto ~= nil then
+		local committed = 0
+		for _, item in pairs(dto.Items) do
+			if item.State ~= "InPen" then
+				committed += 1
+			end
+		end
 		if dto.Upgrades["FrostCracker"] ~= true then
 			SoundController.Play("Error")
-			UIController.ShowToast("Buy Frost Cracker (120 Coins) before using Frost Lures!", "Warn")
+			UIController.ShowToast(string.format("Need Frost Cracker (%d Coins) first!", UpgradeConfig.ById.FrostCracker.Cost), "Warn")
+			return
+		elseif committed >= dto.BagCap then
+			SoundController.Play("Error")
+			UIController.ShowToast("Bag full! Sell or hatch before using a Lure.", "Warn")
 			return
 		elseif dto.Coins < Constants.FROST_LURE_COST then
 			SoundController.Play("Error")
-			UIController.ShowToast(string.format("Need %d Coins to summon a Frost Lure!", Constants.FROST_LURE_COST), "Warn")
+			UIController.ShowToast(string.format("Need %d Coins for a Frost Lure!", Constants.FROST_LURE_COST), "Warn")
 			return
 		end
 	elseif prompt.Name == "UpgradePrompt" and dto ~= nil then

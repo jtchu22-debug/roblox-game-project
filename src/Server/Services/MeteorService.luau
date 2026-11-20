@@ -48,20 +48,25 @@ export type ActiveClaim = {
 	Deadline: number,
 }
 
+export type PendingAstralFall = {
+	NodeName: string,
+	Position: Vector3,
+	LandAt: number,
+}
+
 local WILD_TRAIT_WEIGHTS: { { Trait: Types.MeteorTraitId, Weight: number } } = table.freeze({
-	table.freeze({ Trait = "Ember" :: Types.MeteorTraitId, Weight = 45 }),
-	table.freeze({ Trait = "Frost" :: Types.MeteorTraitId, Weight = 30 }),
-	table.freeze({ Trait = "Astral" :: Types.MeteorTraitId, Weight = 25 }),
+	table.freeze({ Trait = "Ember" :: Types.MeteorTraitId, Weight = 72 }),
+	table.freeze({ Trait = "Frost" :: Types.MeteorTraitId, Weight = 28 }),
 })
 
 local EMBER_BASIN_NODES: { [string]: boolean } = table.freeze({
 	MeteorNode_1 = true,
+	MeteorNode_2 = true,
 	MeteorNode_3 = true,
-	MeteorNode_4 = true,
 })
 
 local FROST_ASTRAL_RIDGE_NODES: { [string]: boolean } = table.freeze({
-	MeteorNode_2 = true,
+	MeteorNode_4 = true,
 	MeteorNode_5 = true,
 	MeteorNode_6 = true,
 })
@@ -83,6 +88,9 @@ local starterClaimedByUserId: { [number]: boolean } = {}
 local luredMeteorByUserId: { [number]: string } = {}
 local lastLureClockByUserId: { [number]: number } = {}
 local activeClaimsByUserId: { [number]: ActiveClaim } = {}
+local activeAstralUID: string? = nil
+local pendingAstralFall: PendingAstralFall? = nil
+local nextAstralFallAt = 0
 local characterConnsByUserId: { [number]: { RBXScriptConnection } } = {}
 local activeHumanoidConnsByUserId: { [number]: { RBXScriptConnection } } = {}
 local lifecycleObserver: ((payload: { [string]: any }) -> ())? = nil
@@ -219,15 +227,37 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		end
 	end
 
+	if isLured then
+		local lureBeacon = Instance.new("Part")
+		lureBeacon.Name = "LureBeacon"
+		lureBeacon.Size = Vector3.new(0.85, 30, 0.85)
+		lureBeacon.CFrame = body.CFrame * CFrame.new(0, 16, 0)
+		lureBeacon.Color = Color3.fromRGB(65, 210, 255)
+		lureBeacon.Material = Enum.Material.Neon
+		lureBeacon.Transparency = 0.52
+		lureBeacon.Anchored = true
+		lureBeacon.CanCollide = false
+		lureBeacon.CanQuery = false
+		lureBeacon.CanTouch = false
+		lureBeacon.Parent = model
+	end
+
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "MeteorLabel"
-	gui.Size = if isWildAstral
-		then UDim2.fromOffset(235, 52)
-		elseif isWildFrost then UDim2.fromOffset(220, 48)
-		else UDim2.fromOffset(205, 44)
-	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.6, 0) else Vector3.new(0, 4.4, 0)
+	gui.Size = if meteor.IsStarter
+		then UDim2.fromOffset(110, 26)
+		elseif isWildAstral then UDim2.fromOffset(130, 30)
+		elseif isLured then UDim2.fromOffset(148, 28)
+		elseif isWildFrost then UDim2.fromOffset(100, 24)
+		else UDim2.fromOffset(96, 24)
+	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.2, 0) else Vector3.new(0, 3.8, 0)
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = if isWildAstral then 140 elseif isWildFrost then 115 else 95
+	gui.MaxDistance = if meteor.IsStarter
+		then 65
+		elseif isWildAstral then 95
+		elseif isLured then 95
+		elseif isWildFrost then 42
+		else 38
 	gui.Adornee = body
 	gui.Parent = body
 
@@ -240,11 +270,11 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	label.TextScaled = true
 	label.Font = Enum.Font.GothamBold
 	label.Text = if meteor.IsStarter
-		then "STARTER METEOR"
-		elseif isWildAstral then "[ASTRAL - RARE]\nAstral Cracker (Golem / Owl!)"
-		elseif isLured then string.format("[FROST - LURED]\n%s's Frost Meteor", meteor.LuredOwnerName or "Rancher")
-		elseif isWildFrost then "[FROST - RIDGE]\nFrost Cracker (Beetle / Fox)"
-		else "[EMBER]\nStarter Glove (Slime / Pup)"
+		then "STARTER"
+		elseif isWildAstral then "ASTRAL FALL"
+		elseif isLured then "YOUR FROST LURE"
+		elseif isWildFrost then "FROST"
+		else "EMBER"
 	label.Parent = gui
 
 	local corner = Instance.new("UICorner")
@@ -254,15 +284,12 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "RescuePrompt"
 	prompt.ObjectText = if meteor.IsStarter
-		then "Starter Meteor"
-		elseif isWildAstral then "Astral Meteor (Needs Astral Cracker)"
-		elseif isLured then string.format("%s's Lured Frost Meteor", meteor.LuredOwnerName or "Rancher")
-		elseif isWildFrost then "Frost Meteor (Needs Frost Cracker)"
-		else traitDef.DisplayName
-	prompt.ActionText = if isWildAstral
-		then "Break Astral Pulse"
-		elseif isWildFrost then "Fracture Frost Core"
-		else "Rescue Star-Pod"
+		then "Starter"
+		elseif isWildAstral then "Astral"
+		elseif isLured then "Frost Lure"
+		elseif isWildFrost then "Frost"
+		else "Ember"
+	prompt.ActionText = "Crack"
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = Constants.PROMPT_ACTIVATION_DISTANCE
 	prompt.RequiresLineOfSight = false
@@ -289,10 +316,18 @@ local function rollWeightedWildTrait(rng: Random): Types.MeteorTraitId
 	return WILD_TRAIT_WEIGHTS[1].Trait
 end
 
+local function isNodeReservedForAstral(nodeName: string): boolean
+	return pendingAstralFall ~= nil and pendingAstralFall.NodeName == nodeName
+end
+
 local function removeMeteorInternal(meteorUID: string): ()
 	local meteor = activeMeteors[meteorUID]
 	if meteor == nil then
 		return
+	end
+
+	if activeAstralUID == meteorUID then
+		activeAstralUID = nil
 	end
 
 	if meteor.ClaimedByUserId ~= nil then
@@ -417,6 +452,9 @@ function MeteorService.SpawnWildMeteorAtNode(
 	meteor.Model = createMeteorModel(meteor)
 	activeMeteors[uid] = meteor
 	wildNodeOccupied[nodeName] = uid
+	if trait == "Astral" then
+		activeAstralUID = uid
+	end
 	if luredByUserId ~= nil then
 		luredMeteorByUserId[luredByUserId] = uid
 	end
@@ -444,19 +482,9 @@ function MeteorService.SpawnLuredMeteorForPlayer(
 	for _, node in ipairs(wildNodes) do
 		local name = node.Name
 		local cooldownUntil = wildNodeCooldownUntil[name] or 0
-		if preferredNodes[name] and wildNodeOccupied[name] == nil and clock >= cooldownUntil then
+		if preferredNodes[name] and not isNodeReservedForAstral(name) and wildNodeOccupied[name] == nil and clock >= cooldownUntil then
 			selectedNodeName = name
 			break
-		end
-	end
-	if selectedNodeName == nil then
-		for _, node in ipairs(wildNodes) do
-			local name = node.Name
-			local cooldownUntil = wildNodeCooldownUntil[name] or 0
-			if wildNodeOccupied[name] == nil and clock >= cooldownUntil then
-				selectedNodeName = name
-				break
-			end
 		end
 	end
 	if selectedNodeName == nil then
@@ -746,6 +774,9 @@ function MeteorService.FinishCrackAtPosition(
 		starterClaimedByUserId[userId] = true
 	else
 		wildNodeCooldownUntil[meteor.NodeName] = nowClock + Constants.WILD_METEOR_RESPAWN_SECONDS
+		if meteor.Trait == "Astral" then
+			nextAstralFallAt = nowClock + Constants.ASTRAL_FALL_INTERVAL_SECONDS
+		end
 	end
 
 	removeMeteorInternal(meteorUID)
@@ -779,6 +810,7 @@ local function handleFinishCrackRequest(player: Player, meteorUID: string, attem
 	local res = MeteorService.FinishCrackAtPosition(player.UserId, pos, meteorUID, attemptNonce, workspace:GetServerTimeNow())
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
+		EconomyService.NotifyPlotChangedForPlayer(player)
 	end
 	return res
 end
@@ -905,49 +937,148 @@ local function pickOpenNodeNameForTrait(trait: Types.MeteorTraitId, nowClock: nu
 	for _, node in ipairs(wildNodes) do
 		local name = node.Name
 		local cooldownUntil = wildNodeCooldownUntil[name] or 0
-		if preferred[name] and wildNodeOccupied[name] == nil and nowClock >= cooldownUntil then
-			return name
-		end
-	end
-	for _, node in ipairs(wildNodes) do
-		local name = node.Name
-		local cooldownUntil = wildNodeCooldownUntil[name] or 0
-		if wildNodeOccupied[name] == nil and nowClock >= cooldownUntil then
+		if preferred[name] and not isNodeReservedForAstral(name) and wildNodeOccupied[name] == nil and nowClock >= cooldownUntil then
 			return name
 		end
 	end
 	return nil
 end
 
+function MeteorService.TriggerAstralFallNow(nowClock: number?): (boolean, string, PendingAstralFall?)
+	local clock = nowClock or workspace:GetServerTimeNow()
+	if pendingAstralFall ~= nil or (activeAstralUID ~= nil and activeMeteors[activeAstralUID] ~= nil) then
+		return false, "AstralAlreadyActive", nil
+	end
+
+	local chosenNode: BasePart? = nil
+	for _, node in ipairs(wildNodes) do
+		local name = node.Name
+		local cooldownUntil = wildNodeCooldownUntil[name] or 0
+		if FROST_ASTRAL_RIDGE_NODES[name] and wildNodeOccupied[name] == nil and clock >= cooldownUntil then
+			chosenNode = node
+			break
+		end
+	end
+
+	if chosenNode == nil then
+		-- Evict the oldest unclaimed, un-lured wild meteor on North Ridge so scheduled Astral Falls can still arrive cleanly.
+		local oldestEvictable: ActiveMeteor? = nil
+		local oldestNode: BasePart? = nil
+		for _, node in ipairs(wildNodes) do
+			if FROST_ASTRAL_RIDGE_NODES[node.Name] then
+				local occUid = wildNodeOccupied[node.Name]
+				local occ = if occUid ~= nil then activeMeteors[occUid] else nil
+				if occ ~= nil and not occ.IsStarter and occ.LuredByUserId == nil and occ.ClaimedByUserId == nil then
+					if oldestEvictable == nil or occ.SpawnedAt < oldestEvictable.SpawnedAt then
+						oldestEvictable = occ
+						oldestNode = node
+					end
+				end
+			end
+		end
+		if oldestEvictable ~= nil and oldestNode ~= nil then
+			local evictUID = oldestEvictable.UID
+			wildNodeCooldownUntil[oldestEvictable.NodeName] = nil
+			removeMeteorInternal(evictUID)
+			publishMeteorLifecycle({
+				Action = "Despawn",
+				MeteorUID = evictUID,
+			})
+			chosenNode = oldestNode
+		end
+	end
+
+	if chosenNode == nil then
+		nextAstralFallAt = clock + 5
+		return false, "NoRidgeNodeAvailable", nil
+	end
+
+	wildNodeCooldownUntil[chosenNode.Name] = clock + Constants.ASTRAL_FALL_WARNING_SECONDS + 2
+	local incoming: PendingAstralFall = {
+		NodeName = chosenNode.Name,
+		Position = chosenNode.Position,
+		LandAt = clock + Constants.ASTRAL_FALL_WARNING_SECONDS,
+	}
+	pendingAstralFall = incoming
+	publishMeteorLifecycle({
+		Action = "AstralIncoming",
+		NodeName = incoming.NodeName,
+		Position = incoming.Position,
+		Duration = Constants.ASTRAL_FALL_WARNING_SECONDS,
+	})
+	return true, "Incoming", incoming
+end
+
+local function stepAstralFallEvent(nowClock: number): ()
+	if pendingAstralFall ~= nil and nowClock >= pendingAstralFall.LandAt then
+		local fall = pendingAstralFall
+		pendingAstralFall = nil
+		wildNodeCooldownUntil[fall.NodeName] = nil
+		if wildNodeOccupied[fall.NodeName] == nil then
+			local ok, _, meteor = MeteorService.SpawnWildMeteorAtNode(fall.NodeName, "Astral", nowClock)
+			if ok and meteor ~= nil then
+				publishMeteorLifecycle({
+					Action = "Spawn",
+					MeteorUID = meteor.UID,
+					Trait = meteor.Trait,
+					Position = meteor.Position,
+					ArrivalEffect = true,
+				})
+			end
+		end
+	end
+
+	if activeAstralUID ~= nil then
+		local astralMeteor = activeMeteors[activeAstralUID]
+		if astralMeteor == nil then
+			activeAstralUID = nil
+		elseif astralMeteor.ClaimedByUserId == nil and (nowClock - astralMeteor.SpawnedAt) >= Constants.ASTRAL_METEOR_LIFETIME_SECONDS then
+			local expiredUID = astralMeteor.UID
+			wildNodeCooldownUntil[astralMeteor.NodeName] = nowClock + Constants.WILD_METEOR_RESPAWN_SECONDS
+			removeMeteorInternal(expiredUID)
+			publishMeteorLifecycle({
+				Action = "Despawn",
+				MeteorUID = expiredUID,
+			})
+			nextAstralFallAt = nowClock + Constants.ASTRAL_FALL_INTERVAL_SECONDS
+		end
+	end
+
+	if nextAstralFallAt > 0 and nowClock >= nextAstralFallAt and pendingAstralFall == nil and activeAstralUID == nil then
+		MeteorService.TriggerAstralFallNow(nowClock)
+	end
+end
+
 local function populateWildMeteorsUpToCap(nowClock: number): ()
 	local activeEmber = 0
 	local activeFrost = 0
-	local activeAstral = 0
 	for _, meteor in pairs(activeMeteors) do
 		if not meteor.IsStarter and meteor.LuredByUserId == nil then
 			if meteor.Trait == "Ember" then
 				activeEmber += 1
 			elseif meteor.Trait == "Frost" then
 				activeFrost += 1
-			elseif meteor.Trait == "Astral" then
-				activeAstral += 1
 			end
 		end
 	end
 
-	while MeteorService.GetActiveWildMeteorCount() < Constants.MAX_ACTIVE_WILD_METEORS do
+	local steps = 0
+	while MeteorService.GetActiveWildMeteorCount() < Constants.MAX_ACTIVE_WILD_METEORS and steps < 8 do
+		steps += 1
 		local nextTrait: Types.MeteorTraitId
-		if activeEmber == 0 then
+		if activeEmber < 2 then
 			nextTrait = "Ember"
-		elseif activeFrost == 0 then
+		elseif activeFrost < 1 then
 			nextTrait = "Frost"
-		elseif activeAstral == 0 then
-			nextTrait = "Astral"
 		else
 			nextTrait = rollWeightedWildTrait(serverRng)
 		end
 
 		local nodeName = pickOpenNodeNameForTrait(nextTrait, nowClock)
+		if nodeName == nil then
+			nextTrait = if nextTrait == "Ember" then "Frost" else "Ember"
+			nodeName = pickOpenNodeNameForTrait(nextTrait, nowClock)
+		end
 		if nodeName == nil then
 			break
 		end
@@ -958,15 +1089,13 @@ local function populateWildMeteorsUpToCap(nowClock: number): ()
 				activeEmber += 1
 			elseif meteor.Trait == "Frost" then
 				activeFrost += 1
-			elseif meteor.Trait == "Astral" then
-				activeAstral += 1
 			end
 			publishMeteorLifecycle({
 				Action = "Spawn",
 				MeteorUID = meteor.UID,
 				Trait = meteor.Trait,
 				Position = meteor.Position,
-				ArrivalEffect = meteor.Trait == "Astral",
+				ArrivalEffect = false,
 			})
 		else
 			break
@@ -1056,9 +1185,18 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 				ClaimedBy = meteor.ClaimedByUserId,
 			})
 		end
+		if pendingAstralFall ~= nil then
+			NetworkService.SendMeteorLifecycleToPlayer(player, {
+				Action = "AstralIncoming",
+				NodeName = pendingAstralFall.NodeName,
+				Position = pendingAstralFall.Position,
+				Duration = math.max(0.25, pendingAstralFall.LandAt - workspace:GetServerTimeNow()),
+			})
+		end
 	end)
 
-	-- Seed initial wild meteors in the Crater immediately
+	-- Schedule first timed Astral Fall cleanly after startup, and seed wild Basin/Ridge meteors (no initial Astral)
+	nextAstralFallAt = workspace:GetServerTimeNow() + Constants.ASTRAL_FALL_FIRST_DELAY_SECONDS
 	populateWildMeteorsUpToCap(workspace:GetServerTimeNow())
 
 	if not watcherRunning then
@@ -1068,6 +1206,7 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 				task.wait(0.5)
 				local nowClock = workspace:GetServerTimeNow()
 				MeteorService.SweepActiveClaims(nowClock)
+				stepAstralFallEvent(nowClock)
 				populateWildMeteorsUpToCap(nowClock)
 			end
 		end)
@@ -1232,9 +1371,9 @@ function MeteorService.RunSelfTest(): number
 		assert(not replay.Ok and replay.Reason == "InvalidClaim", "Nonce replay rejected")
 		passed += 1
 
-		-- 3. Frost pre-claim ToolRequired, OutOfRange, BagFull & Lured Meteor isolation
-		local wOk2, _, wild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Frost", 5010)
-		assert(wOk2 and wild2 ~= nil, "Wild meteor 2 spawns")
+		-- 3. Frost pre-claim ToolRequired, OutOfRange, BagFull, strict Ridge Lure isolation & Timed Astral Fall
+		local wOk2, _, wild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_4", "Frost", 5010)
+		assert(wOk2 and wild2 ~= nil, "Wild meteor 2 spawns on North Frost Ridge")
 		local wildObj2 = wild2 :: ActiveMeteor
 		table.insert(createdMeteorUIDs, wildObj2.UID)
 
@@ -1246,17 +1385,51 @@ function MeteorService.RunSelfTest(): number
 		p1.Upgrades["FrostCracker"] = true
 		p2.Upgrades["FrostCracker"] = true
 
-		-- Verify personal Frost Lure ownership isolation and double-lure guard
+		-- Verify personal Frost Lure lands strictly on North Frost Ridge & never spills into Ember Basin when Ridge is full
 		local lOk, _, luredMeteorRaw = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5010.8)
 		assert(lOk and luredMeteorRaw ~= nil, "Frost Lure spawns personal Frost meteor")
 		local luredObj = luredMeteorRaw :: ActiveMeteor
+		assert(FROST_ASTRAL_RIDGE_NODES[luredObj.NodeName] == true, "Frost Lure spawns strictly on North Frost Ridge")
+		assert(luredObj.Model ~= nil and luredObj.Model:FindFirstChild("LureBeacon") ~= nil, "Lured Frost meteor builds visible LureBeacon")
 		table.insert(createdMeteorUIDs, luredObj.UID)
 		local stealLure = MeteorService.StartCrackAtPosition(u2, luredObj.Position, luredObj.UID, 5010.9)
 		assert(not stealLure.Ok and stealLure.Reason == "NotLureOwner", "Other player blocked from Lured Frost meteor")
 		local dupOk, dupReason = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5010.9)
 		assert(not dupOk and dupReason == "AlreadyHasActiveLure", "Second concurrent lure blocked")
+
+		local tempRidgeUids: { string } = {}
+		for nodeName in pairs(FROST_ASTRAL_RIDGE_NODES) do
+			if wildNodeOccupied[nodeName] == nil then
+				local fOk, _, fRaw = MeteorService.SpawnWildMeteorAtNode(nodeName, "Frost", 5010.85)
+				assert(fOk and fRaw ~= nil, "Occupy Ridge node " .. nodeName)
+				table.insert(tempRidgeUids, (fRaw :: ActiveMeteor).UID)
+			end
+		end
+		local noBasinSpillOk, noBasinSpillReason = MeteorService.SpawnLuredMeteorForPlayer(u2, "MeteorTester2", "Frost", 5010.9)
+		assert(not noBasinSpillOk and noBasinSpillReason == "NoFreeMeteorNode", "Full Ridge returns NoFreeMeteorNode without spilling into Ember Basin")
+		for _, tmpUid in ipairs(tempRidgeUids) do
+			removeMeteorInternal(tmpUid)
+		end
+
 		removeMeteorInternal(luredObj.UID)
 		lastLureClockByUserId[u1] = nil
+
+		-- Verify Timed Astral Fall: warning -> spawn on Ridge -> expiry
+		clearEvents()
+		local afOk, _, afPending = MeteorService.TriggerAstralFallNow(5010.95)
+		assert(afOk and afPending ~= nil and FROST_ASTRAL_RIDGE_NODES[(afPending :: PendingAstralFall).NodeName] == true, "TriggerAstralFallNow announces North Ridge fall")
+		assert(countEvents("AstralIncoming") == 1, "TriggerAstralFallNow broadcasts AstralIncoming")
+		stepAstralFallEvent(5010.95 + Constants.ASTRAL_FALL_WARNING_SECONDS + 0.1)
+		assert(activeAstralUID ~= nil and activeMeteors[activeAstralUID] ~= nil, "Astral Fall spawns Astral meteor after warning")
+		local spawnedAstral = activeMeteors[activeAstralUID :: string] :: ActiveMeteor
+		assert(spawnedAstral.Trait == "Astral" and FROST_ASTRAL_RIDGE_NODES[spawnedAstral.NodeName] == true, "Spawned Astral sits on North Ridge")
+		assert(spawnedAstral.Model ~= nil and spawnedAstral.Model:FindFirstChild("AstralBeacon") ~= nil, "Spawned Astral has visible AstralBeacon")
+		clearEvents()
+		stepAstralFallEvent(spawnedAstral.SpawnedAt + Constants.ASTRAL_METEOR_LIFETIME_SECONDS + 0.1)
+		assert(activeMeteors[spawnedAstral.UID] == nil and countEvents("Despawn", spawnedAstral.UID) == 1, "Unclaimed Astral expires cleanly after lifetime")
+		activeAstralUID = nil
+		pendingAstralFall = nil
+		nextAstralFallAt = 0
 
 		local nanStart = MeteorService.StartCrackAtPosition(u2, Vector3.new(0 / 0, 0, 0), wildObj2.UID, 5011)
 		assert(not nanStart.Ok and nanStart.Reason == "OutOfRange", "NaN start pos rejected")
@@ -1399,6 +1572,9 @@ function MeteorService.RunSelfTest(): number
 	end)
 
 	lifecycleObserver = nil
+	activeAstralUID = nil
+	pendingAstralFall = nil
+	nextAstralFallAt = 0
 	for _, uid in ipairs(createdMeteorUIDs) do
 		removeMeteorInternal(uid)
 	end

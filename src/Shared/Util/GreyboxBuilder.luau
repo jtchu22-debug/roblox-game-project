@@ -28,6 +28,8 @@ local PALETTE = {
 	CreamWood = Color3.fromRGB(245, 235, 220),
 	OrbitalCyan = Color3.fromRGB(65, 210, 255),
 	StarlightGold = Color3.fromRGB(255, 205, 45),
+	EmberCoral = Color3.fromRGB(255, 130, 75),
+	FrostIce = Color3.fromRGB(130, 195, 240),
 	LockedSlate = Color3.fromRGB(140, 145, 165),
 	PenGrass = Color3.fromRGB(115, 228, 160),
 	DarkSlate = Color3.fromRGB(45, 42, 62),
@@ -72,13 +74,21 @@ local function createPart(props: {
 	return part
 end
 
-local function attachLabel(adornee: BasePart, name: string, text: string, studsOffset: Vector3, accentColor: Color3?): BillboardGui
+local function attachLabel(
+	adornee: BasePart,
+	name: string,
+	text: string,
+	studsOffset: Vector3,
+	accentColor: Color3?,
+	size: UDim2?,
+	maxDistance: number?
+): BillboardGui
 	local gui = Instance.new("BillboardGui")
 	gui.Name = name
-	gui.Size = UDim2.fromOffset(180, 44)
+	gui.Size = size or UDim2.fromOffset(130, 28)
 	gui.StudsOffset = studsOffset
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = 90
+	gui.MaxDistance = maxDistance or 24
 	gui.Adornee = adornee
 	gui.Parent = adornee
 
@@ -94,10 +104,10 @@ local function attachLabel(adornee: BasePart, name: string, text: string, studsO
 	label.Parent = gui
 
 	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, 8)
-	padding.PaddingRight = UDim.new(0, 8)
-	padding.PaddingTop = UDim.new(0, 4)
-	padding.PaddingBottom = UDim.new(0, 4)
+	padding.PaddingLeft = UDim.new(0, 6)
+	padding.PaddingRight = UDim.new(0, 6)
+	padding.PaddingTop = UDim.new(0, 3)
+	padding.PaddingBottom = UDim.new(0, 3)
 	padding.Parent = label
 
 	local corner = Instance.new("UICorner")
@@ -105,6 +115,118 @@ local function attachLabel(adornee: BasePart, name: string, text: string, studsO
 	corner.Parent = label
 
 	return gui
+end
+
+local CRATER_NODE_SPECS: { { Index: number, Name: string, Position: Vector3, Region: string, Color: Color3 } } = {
+	{ Index = 1, Name = "MeteorNode_1", Position = Vector3.new(-18, 1.0, 22), Region = "EmberBasin", Color = PALETTE.EmberCoral },
+	{ Index = 2, Name = "MeteorNode_2", Position = Vector3.new(0, 1.0, 30), Region = "EmberBasin", Color = PALETTE.EmberCoral },
+	{ Index = 3, Name = "MeteorNode_3", Position = Vector3.new(18, 1.0, 22), Region = "EmberBasin", Color = PALETTE.EmberCoral },
+	{ Index = 4, Name = "MeteorNode_4", Position = Vector3.new(-18, 2.5, -22), Region = "FrostRidge", Color = PALETTE.OrbitalCyan },
+	{ Index = 5, Name = "MeteorNode_5", Position = Vector3.new(0, 2.5, -31), Region = "FrostRidge", Color = PALETTE.OrbitalCyan },
+	{ Index = 6, Name = "MeteorNode_6", Position = Vector3.new(18, 2.5, -22), Region = "FrostRidge", Color = PALETTE.OrbitalCyan },
+}
+
+local function ensureCraterRouteLandmarks(craterModel: Model): ()
+	local spawnNodes = craterModel:FindFirstChild("MeteorSpawnNodes")
+	if spawnNodes ~= nil then
+		for _, spec in ipairs(CRATER_NODE_SPECS) do
+			local node = spawnNodes:FindFirstChild(spec.Name)
+			if node ~= nil and node:IsA("BasePart") then
+				node.CFrame = CFrame.new(spec.Position)
+				node.Color = spec.Color
+				node:SetAttribute("NodeIndex", spec.Index)
+				node:SetAttribute("Region", spec.Region)
+			end
+		end
+	end
+
+	local existingLandmarks = craterModel:FindFirstChild("RouteLandmarks")
+	if existingLandmarks ~= nil then
+		return
+	end
+
+	local landmarks = Instance.new("Folder")
+	landmarks.Name = "RouteLandmarks"
+	landmarks.Parent = craterModel
+
+	-- South Route: Ember Basin floor path & side marker
+	createPart({
+		Name = "EmberBasinPath",
+		Size = Vector3.new(12, 0.16, 16),
+		CFrame = CFrame.new(0, 1.02, 17),
+		Color = PALETTE.EmberCoral,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.35,
+		CanCollide = false,
+		Parent = landmarks,
+	})
+	local emberMarker = createPart({
+		Name = "EmberRouteMarker",
+		Size = Vector3.new(1.2, 4.0, 1.2),
+		CFrame = CFrame.new(-8, 3.0, 13),
+		Color = PALETTE.EmberCoral,
+		Material = Enum.Material.Neon,
+		Parent = landmarks,
+	})
+	attachLabel(
+		emberMarker,
+		"RouteLabel",
+		"EMBER BASIN",
+		Vector3.new(0, 2.8, 0),
+		PALETTE.EmberCoral,
+		UDim2.fromOffset(135, 30),
+		55
+	)
+
+	-- North Route: Elevated icy Frost Ridge platform, walkable ramp & crystal spires
+	createPart({
+		Name = "FrostRidgePlatform",
+		Size = Vector3.new(54, 1.5, 24),
+		CFrame = CFrame.new(0, 1.25, -26),
+		Color = PALETTE.FrostIce,
+		Material = Enum.Material.SmoothPlastic,
+		Parent = landmarks,
+	})
+
+	local ramp = Instance.new("WedgePart")
+	ramp.Name = "FrostRidgeRamp"
+	ramp.Size = Vector3.new(14, 1.0, 6)
+	ramp.CFrame = CFrame.new(0, 1.5, -11) * CFrame.Angles(0, math.rad(180), 0)
+	ramp.Color = PALETTE.OrbitalCyan
+	ramp.Material = Enum.Material.SmoothPlastic
+	ramp.Anchored = true
+	ramp.CanCollide = true
+	ramp.Parent = landmarks
+
+	for idx, xPos in ipairs({ -24, 24 }) do
+		createPart({
+			Name = "FrostSpire_" .. tostring(idx),
+			Size = Vector3.new(2.4, 6.0, 2.4),
+			CFrame = CFrame.new(xPos, 5.0, -28) * CFrame.Angles(0.08, math.rad(idx * 35), if xPos < 0 then -0.12 else 0.12),
+			Color = PALETTE.OrbitalCyan,
+			Material = Enum.Material.Neon,
+			Transparency = 0.2,
+			Parent = landmarks,
+		})
+	end
+
+	local frostMarker = createPart({
+		Name = "FrostRouteMarker",
+		Size = Vector3.new(1.2, 4.0, 1.2),
+		CFrame = CFrame.new(-9, 3.0, -11),
+		Color = PALETTE.OrbitalCyan,
+		Material = Enum.Material.Neon,
+		Parent = landmarks,
+	})
+	attachLabel(
+		frostMarker,
+		"RouteLabel",
+		"FROST RIDGE",
+		Vector3.new(0, 2.8, 0),
+		PALETTE.OrbitalCyan,
+		UDim2.fromOffset(140, 30),
+		60
+	)
 end
 
 local function buildCentralCrater(root: Folder): ()
@@ -165,27 +287,28 @@ local function buildCentralCrater(root: Folder): ()
 		})
 	end
 
-	-- 6 wild Meteor Spawn Nodes inside Crater (explicitly tagged StarfallMeteorNode)
+	-- 6 wild Meteor Spawn Nodes inside Crater (South EmberBasin 1..3, North FrostRidge 4..6)
 	local spawnNodes = Instance.new("Folder")
 	spawnNodes.Name = "MeteorSpawnNodes"
 	spawnNodes.Parent = craterModel
 
-	for i = 1, 6 do
-		local angle = math.rad((i - 1) * 60 + 30)
-		local nodePos = Vector3.new(math.cos(angle) * 22, 1.0, math.sin(angle) * 22)
+	for _, spec in ipairs(CRATER_NODE_SPECS) do
 		local node = createPart({
-			Name = "MeteorNode_" .. tostring(i),
+			Name = spec.Name,
 			Size = Vector3.new(3, 0.25, 3),
-			CFrame = CFrame.new(nodePos),
-			Color = PALETTE.LilacStone,
+			CFrame = CFrame.new(spec.Position),
+			Color = spec.Color,
 			Material = Enum.Material.Neon,
 			Transparency = 0.65,
 			CanCollide = false,
 			Parent = spawnNodes,
 		})
-		node:SetAttribute("NodeIndex", i)
+		node:SetAttribute("NodeIndex", spec.Index)
+		node:SetAttribute("Region", spec.Region)
 		CollectionService:AddTag(node, Constants.TAG_METEOR_NODE)
 	end
+
+	ensureCraterRouteLandmarks(craterModel)
 
 	-- 2 Starter Meteor Nodes kept separate from wild TAG_METEOR_NODE pool
 	local starterNodes = Instance.new("Folder")
@@ -213,10 +336,10 @@ local function buildCentralCrater(root: Folder): ()
 end
 
 local PEN_SLOT_SPECS = {
-	{ SlotId = "Pen_1", Offset = Vector3.new(8, 0.95, 2), Unlocked = true, Label = "Pen Slot #1" },
-	{ SlotId = "Pen_2", Offset = Vector3.new(2, 0.95, 10), Unlocked = false, Label = "Pen Slot #2 (Locked)" },
-	{ SlotId = "Pen_3", Offset = Vector3.new(14, 0.95, 10), Unlocked = false, Label = "Pen Slot #3 (Locked)" },
-	{ SlotId = "Pen_4", Offset = Vector3.new(15, 0.95, 1.5), Unlocked = false, Label = "Pen Slot #4 (Locked)" },
+	{ SlotId = "Pen_1", Offset = Vector3.new(3, 0.95, 1), Unlocked = true, Label = "Pen #1" },
+	{ SlotId = "Pen_2", Offset = Vector3.new(13, 0.95, 1), Unlocked = false, Label = "Pen #2" },
+	{ SlotId = "Pen_3", Offset = Vector3.new(3, 0.95, 10), Unlocked = false, Label = "Pen #3" },
+	{ SlotId = "Pen_4", Offset = Vector3.new(13, 0.95, 10), Unlocked = false, Label = "Pen #4" },
 }
 
 local function getUpgradePadColor(def: Types.UpgradeDefinition): Color3
@@ -252,8 +375,8 @@ local function createLureStand(plotModel: Model, plotFrame: CFrame, plotId: numb
 	attachLabel(
 		lureStand,
 		"LureLabel",
-		string.format("Frost Lure (%d Coins)", Constants.FROST_LURE_COST),
-		Vector3.new(0, 3.4, 0),
+		string.format("Frost Lure (%d)", Constants.FROST_LURE_COST),
+		Vector3.new(0, 3.2, 0),
 		PALETTE.OrbitalCyan
 	)
 	return lureStand
@@ -289,7 +412,7 @@ local function createUpgradePad(upgradeBoard: Folder, plotFrame: CFrame, plotId:
 	local pad = createPart({
 		Name = "UpgradePad_" .. def.Id,
 		Size = Vector3.new(0.6, 5.5, 5.5),
-		CFrame = (plotFrame * CFrame.new(def.PadOffsetX, 0.9, 19)) * CFrame.Angles(0, 0, math.rad(90)),
+		CFrame = (plotFrame * CFrame.new(def.PadOffsetX, 0.9, def.PadOffsetZ)) * CFrame.Angles(0, 0, math.rad(90)),
 		Color = baseColor,
 		Material = Enum.Material.Neon,
 		Shape = Enum.PartType.Cylinder,
@@ -302,8 +425,8 @@ local function createUpgradePad(upgradeBoard: Folder, plotFrame: CFrame, plotId:
 	attachLabel(
 		pad,
 		"UpgradeLabel",
-		string.format("%s (%s Coins)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
-		Vector3.new(0, 2.8, 0),
+		string.format("%s (%s)", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
+		Vector3.new(0, 2.6, 0),
 		baseColor
 	)
 	return pad
@@ -374,7 +497,23 @@ local function buildPlot(plotsFolder: Folder, plotId: number, origin: Vector3): 
 		CanCollide = false,
 		Parent = archModel,
 	})
-	attachLabel(header, "OwnerSign", string.format("Ranch Plot %d (Open)", plotId), Vector3.new(0, 2.8, 0), PALETTE.StarlightGold)
+	attachLabel(
+		header,
+		"OwnerSign",
+		string.format("Ranch Plot %d (Open)", plotId),
+		Vector3.new(0, 2.8, 0),
+		PALETTE.StarlightGold,
+		UDim2.fromOffset(160, 34),
+		55
+	)
+
+	createPart({
+		Name = "UpgradeDeck",
+		Size = Vector3.new(44, 1, 10),
+		CFrame = plotFrame * CFrame.new(0, 0, 26),
+		Color = PALETTE.MeadowMint,
+		Parent = plotModel,
+	})
 
 	local sellStand = createPart({
 		Name = "SellStand",
@@ -770,7 +909,23 @@ function GreyboxBuilder.Generate(options: GenerateOptions?): (boolean, string, F
 	return true, "Created", candidateRoot
 end
 
+local function shrinkBillboard(inst: Instance?, guiName: string, size: UDim2, maxDistance: number): ()
+	if inst == nil then
+		return
+	end
+	local gui = inst:FindFirstChild(guiName)
+	if gui ~= nil and gui:IsA("BillboardGui") then
+		gui.Size = size
+		gui.MaxDistance = maxDistance
+	end
+end
+
 function GreyboxBuilder.EnsureMissingStage2BPads(root: Folder): number
+	local crater = root:FindFirstChild("CentralCrater")
+	if crater ~= nil and crater:IsA("Model") then
+		ensureCraterRouteLandmarks(crater)
+	end
+
 	local plotsFolder = root:FindFirstChild("Plots")
 	if plotsFolder == nil or not plotsFolder:IsA("Folder") then
 		return 0
@@ -782,18 +937,49 @@ function GreyboxBuilder.EnsureMissingStage2BPads(root: Folder): number
 		if plotModel ~= nil and plotModel:IsA("Model") then
 			local plotBase = plotModel:FindFirstChild("PlotBase")
 			if plotBase ~= nil and plotBase:IsA("BasePart") then
-				if plotModel:FindFirstChild("LureStand") == nil then
+				if plotModel:FindFirstChild("UpgradeDeck") == nil then
+					createPart({
+						Name = "UpgradeDeck",
+						Size = Vector3.new(44, 1, 10),
+						CFrame = plotBase.CFrame * CFrame.new(0, 0, 26),
+						Color = PALETTE.MeadowMint,
+						Parent = plotModel,
+					})
+					added += 1
+				end
+
+				local arch = plotModel:FindFirstChild("RanchArch")
+				local header = if arch then arch:FindFirstChild("Header") else nil
+				shrinkBillboard(header, "OwnerSign", UDim2.fromOffset(160, 34), 55)
+
+				shrinkBillboard(plotModel:FindFirstChild("SellStand"), "SellLabel", UDim2.fromOffset(130, 28), 24)
+
+				local lureStand = plotModel:FindFirstChild("LureStand")
+				if lureStand == nil then
 					createLureStand(plotModel, plotBase.CFrame, plotId)
 					added += 1
+				else
+					shrinkBillboard(lureStand, "LureLabel", UDim2.fromOffset(130, 28), 24)
+				end
+
+				local incubators = plotModel:FindFirstChild("Incubators")
+				if incubators ~= nil then
+					for _, slotId in ipairs({ "Incubator_1", "Incubator_2" }) do
+						shrinkBillboard(incubators:FindFirstChild(slotId), "SlotLabel", UDim2.fromOffset(130, 28), 24)
+					end
 				end
 
 				local pen = plotModel:FindFirstChild("HabitatPen")
 				local penSlots = if pen then pen:FindFirstChild("PenSlots") else nil
 				if penSlots ~= nil and penSlots:IsA("Folder") then
 					for _, spec in ipairs(PEN_SLOT_SPECS) do
-						if penSlots:FindFirstChild(spec.SlotId) == nil then
+						local slotPad = penSlots:FindFirstChild(spec.SlotId)
+						if slotPad == nil then
 							createPenSlotPad(penSlots, plotBase.CFrame, plotId, spec)
 							added += 1
+						elseif slotPad:IsA("BasePart") then
+							slotPad.CFrame = (plotBase.CFrame * CFrame.new(spec.Offset)) * CFrame.Angles(0, 0, math.rad(90))
+							shrinkBillboard(slotPad, "SlotLabel", UDim2.fromOffset(130, 28), 24)
 						end
 					end
 				end
@@ -807,14 +993,10 @@ function GreyboxBuilder.EnsureMissingStage2BPads(root: Folder): number
 						if existingPad == nil then
 							createUpgradePad(upgradeBoard, plotBase.CFrame, plotId, def)
 							added += 1
-						elseif def.Id == "StarCracker" and existingPad:IsA("BasePart") then
-							-- If an earlier 1-tier build placed StarCracker at X=6, move it to its Stage 2B slot (X=14)
-							-- so FrostCracker at X=6 never overlaps it.
-							local localPos = plotBase.CFrame:PointToObjectSpace(existingPad.Position)
-							if math.abs(localPos.X - 6) < 1.5 then
-								existingPad.CFrame = (plotBase.CFrame * CFrame.new(def.PadOffsetX, 0.9, 19))
-									* CFrame.Angles(0, 0, math.rad(90))
-							end
+						elseif existingPad:IsA("BasePart") then
+							existingPad.CFrame = (plotBase.CFrame * CFrame.new(def.PadOffsetX, 0.9, def.PadOffsetZ))
+								* CFrame.Angles(0, 0, math.rad(90))
+							shrinkBillboard(existingPad, "UpgradeLabel", UDim2.fromOffset(130, 28), 24)
 						end
 					end
 				end
@@ -826,6 +1008,7 @@ function GreyboxBuilder.EnsureMissingStage2BPads(root: Folder): number
 end
 
 GreyboxBuilder.EnsureMissingUpgradePads = GreyboxBuilder.EnsureMissingStage2BPads
+GreyboxBuilder.EnsureStage2CLayout = GreyboxBuilder.EnsureMissingStage2BPads
 
 function GreyboxBuilder.EnsureExists(parent: Instance?): (boolean, string, Folder?)
 	local targetParent: Instance = parent or workspace
