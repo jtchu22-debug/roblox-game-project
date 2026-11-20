@@ -128,20 +128,30 @@ Share the filled Observation & Timing Sheet and Post-Session Debrief notes back 
 4. **Ongoing Coin Sinks:** `Frost Lure` (`75 Coins`, personal `LuredByUserId` Frost meteor on Ridge — requires `FrostCracker`) on Ranch Gate `LureStand` & Bag UI, plus capped `Critter Feeding` (`45 Coins`, `+2 Coins/s`, `+20` sell bonus `< 45`, `1.15x` growth & gold `★`).
 5. **10–15 Min Progression & Follow-up Goal:** `PenSlot_2 (60)` -> `FrostCracker (120)` -> `Incubator_2 (190)` -> `PenSlot_3 (360, req PenSlot_2)` -> `StarCracker (550, req FrostCracker)` -> `PenSlot_4 (1,150, req PenSlot_3, Gold Ranch Arch)`. Run a 10–15 min solo pre-check before inviting testers.
 
-### 6.2 Round 2 Per-Tester Timing & Choice Log (`R2-01`..`R2-05`)
-Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **desktop**. Fill exact timestamps, counts, and open-ended choices:
+### 6.2 Round 2 Per-Tester Timing & Choice Log (`R2-01`..`R2-03`, `v0.2.3-s2b-expanded` / `1da9899`)
+> **Data Completeness Note:** Individual timestamps (`First Reward`, `First Hatch & Pen`, `1P`/`2P` mode) and exact purchase orders were not individually timed in the cohort readout; fields below reflect only directly reported observations (`< 5 min` completion across all `N = 3` testers).
 
 | Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Voluntary 2nd+ Rescue `<= 5m`? | Purchases Made (`Feed` / `FrostLure` / `Crackers` / `Pads`) | Discovered (`X/6`), Chased Frost/Astral & Named Next Goal |
 | :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
-| `R2-01` | | | | | | | |
-| `R2-02` | | | | | | | |
-| `R2-03` | | | | | | | |
-| `R2-04` | | | | | | | |
-| `R2-05` | | | | | | | |
+| `R2-01` | PC | `Unconfirmed` | `Not individually timed (< 5m)` | `Not individually timed (< 5m)` | `Yes (< 5m)` | Completed all `6` upgrades (`2,430` total Coins) `< 5m` | `6/6` critters `< 5m`; recognized max upgrades + rarest critter goal; wanted harder rarity, lower spawn rates & more excitement |
+| `R2-02` | PC | `Unconfirmed` | `Not individually timed (< 5m)` | `Not individually timed (< 5m)` | `Yes (< 5m)` | Completed all `6` upgrades (`2,430` total Coins) `< 5m` | `6/6` critters `< 5m`; recognized max upgrades + rarest critter goal; wanted harder rarity, lower spawn rates & more excitement |
+| `R2-03` | Mobile (Touch) | `Unconfirmed` | `Not individually timed (< 5m)` | `Not individually timed (< 5m)` | `Yes (< 5m)` | Completed all `6` upgrades (`2,430` total Coins) `< 5m` | `6/6` critters `< 5m`; screen felt cluttered with text & push/interact buttons; wording made world feel small & cluttered |
 
-### 6.3 Round 2 Rollup (`GO` vs. `PIVOT` — Review #012)
-- **Sample Count (`N / Denominator`):** `___ / 3–5`
-- **Median First Reward (`<= 45s`):** `___s` (`___ / N`)
-- **First Hatch & Pen (`<= 90s >= 80%`):** `___ / N` (`___%`)
-- **Voluntary 2nd+ Rescue (`<= 5m >= 70%`):** `___ / N` (`___%`)
-- **Session Endurance (`~10–15m`), Coin Sink Use & Next Goal Clarity:** `___ / N` testers used active Coin sinks (`FrostLure` / `Feed` / `Crackers`), noticed distinct Frost/Astral encounters, and named a concrete next goal -> **Decision: `GO -> Stage 3` / `PIVOT`** (recorded in `docs/AGENT_REVIEWS.md`).
+### 6.3 Round 2 Rollup (`GO` vs. `PIVOT` — Review #012 / Awaiting Review #014)
+- **Sample Count (`N / Denominator`):** `3 / 3–5` (`2` PC, `1` Mobile)
+- **Median First Reward (`<= 45s`):** `Not individually timed` (all `3 / 3` testers progressed through all upgrades & critters in `< 5m`)
+- **First Hatch & Pen (`<= 90s >= 80%`):** `Not individually timed` (all `3 / 3` testers hatched/collected all `6` species in `< 5m`)
+- **Voluntary 2nd+ Rescue (`<= 5m >= 70%`):** `3 / 3 (100%)` — all testers repeatedly rescued meteors to complete all `6` critters & all `6` upgrades inside `5 min`
+- **Clear Purpose / Next-Goal Clarity (Improved vs. Round 1):** **Positive** — testers understood that the goal is reaching max upgrades and chasing the rarest critter
+- **Pacing, Rarity, Excitement & Mobile UX:** **FAIL / Blocker (`Stage 3` stays on hold)** — `< 5 min` completion for both upgrades and critters; rare meteors and pets feel too easy/common; lacks playful excitement (*Steal an Egg* / *Throw Food for Animals* energy); mobile screen and ranch world feel cramped and cluttered with text and interact prompts
+
+### 6.4 Code-Level Diagnosis (Mapped to Build `1da9899`)
+1. **Always-On Rare Spawns & Fast Respawn ([MeteorService.luau](../src/Server/Services/MeteorService.luau#L51-L55), [`#L938-L948`](../src/Server/Services/MeteorService.luau#L938-L948); [Constants.luau](../src/Shared/Constants.luau#L24)):** `populateWildMeteorsUpToCap` forces `>= 1` `Frost` and `>= 1` `Astral` meteor onto the map whenever the Crater populates, `WILD_TRAIT_WEIGHTS` rolls `Astral = 25%` / `Frost = 30%`, and wild nodes respawn every `WILD_METEOR_RESPAWN_SECONDS = 6`.
+2. **High Rare-Critter Odds & Payout Compression ([MeteorConfig.luau](../src/Shared/Config/MeteorConfig.luau#L58-L65); [CritterConfig.luau](../src/Shared/Config/CritterConfig.luau#L52-L90)):** `Astral` meteors drop Legendary `CometOwl` at `30%` (`450 Coins` / `20/s`) and Epic `SolarGolem` at `55%` (`290 Coins` / `13/s`), while `Frost` drops `NebulaFox` at `45%` (`175 Coins` / `8/s`), compressing all `6` upgrades (`2,430` Coins total) and `6/6` Field Guide completion into `< 5` minutes.
+3. **Mobile & World Text/Button Clutter ([GreyboxBuilder.luau](../src/Shared/Util/GreyboxBuilder.luau#L75-L100), [`#L215-L260`](../src/Shared/Util/GreyboxBuilder.luau#L215-L260); [PlotService.luau](../src/Server/Services/PlotService.luau#L94-L108); [Constants.luau](../src/Shared/Constants.luau#L22); [UIController.luau](../src/Client/Controllers/UIController.luau#L165-L235), [`#L1645-L1657`](../src/Client/Controllers/UIController.luau#L1645-L1657)):** Each plot spawns `15` `180x44` floating `BillboardGui` labels (`MaxDistance = 90`), `6` `UpgradePad_*` cylinders spaced only `7–8` studs apart (`PadOffsetX = -18, -10, -2, 6, 14, 21`) with `PROMPT_ACTIVATION_DISTANCE = 12` and `RequiresLineOfSight = false` (causing `3–4` stacked touch prompts simultaneously on phone screens), plus the stacked mobile top HUD and permanent full-width bottom `HintText` banner.
+4. **Tactile Excitement / Toy-Factor Gap:** `FeedCritter` and `UseFrostLure` trigger from menu buttons or static `ProximityPrompt` taps rather than physical/playful world interactions (such as throwing food directly to critters in the pen or racing/carrying a contested rare Star-Egg drop before it expires).
+
+### 6.5 Handoff Status
+- **Stage 3 Status:** Remains **ON HOLD** (`MockStore` preserved; zero `src/` edits made yet).
+- **ChatGPT Review #013 (`d9036b4`):** Independently reviewed build `1da9899` (`APPROVE WITH CHANGES` before Round 2) and flagged missing spatial separation between the two Crater routes, missing Frost Lure `BagFull` pre-check / owner error feedback, and unverified manual pacing — findings that align directly with Round 2's `< 5 min` completion and cramped-world feedback.
+- **Next Gate:** Awaiting **ChatGPT Review #014** and **Human Lead** selection (**Stage 2C** rarity/declutter/Crater-route/toy-factor iteration vs. **Stage 3** vs. **Pivot**).
