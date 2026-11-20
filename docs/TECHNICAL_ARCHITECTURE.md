@@ -27,7 +27,7 @@ src/
 │   ├── Types.luau                       # Strict Luau DTO, Item, Plot, and Config types
 │   ├── Constants.luau                   # Bounded caps (MAX_BAG=10, MAX_PLOTS=2..6, COIN_CAP)
 │   ├── Config/
-│   │   ├── CritterConfig.luau           # 3 MVP Species (StarSlime, NebulaFox, SolarGolem) + Radiant cosmetic
+│   │   ├── CritterConfig.luau           # 3 prototype species, expanding to 24 with Stage 6
 │   │   ├── MeteorConfig.luau            # 3 Meteor Traits (Ember, Frost, Astral) & drop weights
 │   │   └── UpgradeConfig.luau           # 3 Prototype Upgrades + Stage 3 alpha expansions
 │   └── Util/
@@ -167,11 +167,20 @@ Every `OnServerEvent` and `OnServerInvoke` passes through a centralized validato
    - On `PlayerRemoving` and `game:BindToClose`: end sessions gracefully within the `BindToClose` shutdown window.
    - Use isolated DataStore scopes (`StarfallRanch_Alpha_v1` vs `StarfallRanch_Prod_v1`) so Studio tests never touch live player data.
 
-### 5.2 Offline Incubation Math (No Offline Coin Faucet)
+### 5.2 Offline Incubation and Stage 6 Coin Settlement
 - When a pod starts incubating, server records `MaturesAt = os.time() + SpeciesConfig.HatchSeconds`.
 - On profile load, **only `MaturesAt`** is checked on demand when hatching (`os.time() >= Item.MaturesAt`).
-- `LastAccrualTimestamp` is updated on logout and reset cleanly to `os.time()` on login **without** granting elapsed offline coin income—guaranteeing zero offline inflation and zero rejoin-spam exploits.
+- Through Stage 5, reset `LastAccrualTimestamp` on login with zero offline Coin payout.
+- In Stage 6, compute offline Coins from the durable logout pen rate and elapsed server time within configured caps. Resolve the 2× pass server-side and commit the credited balance and settlement checkpoint in one durable update. Start online accrual from the new session timestamp. Verify a failed save or repeated join cannot consume or duplicate the same interval. [Purchase and settlement contract](./MONETIZATION.md#4-purchase-delivery-and-receipt-durability)
 
 ### 5.3 Mandatory Adversarial & Persistence Test Matrix (Every Milestone)
 - **Stage 1 Tests:** 2-player simultaneous meteor finish race; expired/forged `AttemptNonce`; out-of-range finish; `NaN`/`nil`/wrong-type remote fuzzing; bag-full crack attempt; player leaving/respawning mid-crack; rapid plot upgrade spam.
 - **Stage 3 Tests:** Join/save/rejoin preservation; forced `DataStore` load failure (verifies clean kick without overwriting data); overlapping dual-server session lock recovery; `OnSessionEnd` lock theft handling; server `BindToClose` shutdown save completion; clock boundary tests (`MaturesAt` 1s before vs. 12h after).
+
+---
+
+## 6. Stage 6 Critter Traits and Economy
+
+- Extend the saved critter record with a server-rolled weight band and one optional income mutation. Migrate existing records to Normal weight and no income mutation. Keep the Radiant cosmetic field independent.
+- Resolve progression and select the eligible meteor pool on the server. Derive the integer pen rate from the species config and saved traits using the [launch economy limits](./GAME_DESIGN.md#72-weight-and-income-mutations). Accrue at the old rate before a pen changes, then apply the capped new rate. Snapshot the same effective rate for offline settlement.
+- Give the owner DTO the displayed kilograms, mutation, and effective Coins/s. Use capped cosmetic size and mutation visuals for public plot DTOs. Verify the migration, exact cap boundaries, paid and free pool eligibility, and reconnect settlement at the highest configured earn rates.

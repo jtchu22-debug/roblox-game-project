@@ -34,15 +34,15 @@ roblox-game-project/
 │   ├── CODING_STANDARDS.md            # Mandatory --!strict Luau rules, Init/Start pattern & Rojo ownership
 │   ├── GAME_DESIGN.md                 # Narrowed Prototype & MVP spec, bounded integer economy & 5-min simulation
 │   ├── TECHNICAL_ARCHITECTURE.md      # Single-item-map schema, nonce claim protocol, DTOs & ProfileStore lifecycle
-│   ├── DEVELOPMENT_ROADMAP.md         # 5-stage gated roadmap (Mock Vertical Slice -> Playtest -> Alpha -> Launch)
+│   ├── DEVELOPMENT_ROADMAP.md         # Gated roadmap from the mock vertical slice to the Stage 6 public launch
 │   ├── ART_DIRECTION.md               # Low-poly style guide, accessibility, scale/instance budgets & Blender caveats
-│   ├── MONETIZATION.md                # Child-safe policy (Creator Rewards, zero paid random items, cosmetics-only)
+│   ├── MONETIZATION.md                # Stage 6 launch passes, Developer Products, cosmetics, and purchase guardrails
 │   ├── MARKET_RESEARCH.md             # Verified 2025–2026 CCU snapshots, rivals, negative controls & hypotheses
 │   ├── TREND_ANALYSIS.md              # Post-audit disposition of 8 Roblox design trends
 │   ├── GAME_CONCEPTS.md               # 12 original concepts, qualitative audit & Top 3 selection
 │   ├── CHATGPT_REVIEW.md              # Full independent Phase 0 Technical Director audit report
 │   ├── AGENT_RULES.md                 # Multi-agent collaboration protocol between Gemini and ChatGPT
-│   ├── AGENT_TASKS.md                 # Prioritized Stage 1–5 MVP task list with clear dependencies
+│   ├── AGENT_TASKS.md                 # Prioritized Stage 1–6 task list with clear dependencies
 │   ├── AGENT_REVIEWS.md               # Structured review log and audit trail
 │   └── DECISIONS.md                   # Approved Architecture & Design Decision Records (ADR-001 to ADR-007)
 ├── src/
