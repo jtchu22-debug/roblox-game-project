@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
 > **Last Updated:** November 21, 2026  
-> **Current Active Milestone:** Stage 3A (`S3-01` & `S3-02` + Review #015 Cadence Fix) Implemented — Awaiting ChatGPT Review Before `S3-03`
+> **Current Active Milestone** — S3-01 approved. S3-02 save fixes and API-backed verification are next. S3-03 greybox planning can use the [ranch and hub brief](./STARFALL_RANCH_GAMEPLAY_PLAN.md#ranch-plots-central-hub-and-navigation). [Review #016](./AGENT_REVIEWS.md#review-016--stage-3a-persistence-and-astral-cadence)
 
 ---
 
@@ -54,9 +54,9 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S3-01** | **P1** | `S2-01` (Fast-Track) | Gemini | Vendor pinned `MadStudioRoblox/ProfileStore` (`v1.0.3`, commit `45c9847cbcf1fc260369c50eb335aba7c35aecdd`, preserving upstream **Apache-2.0** `LICENSE` — correcting Stage 0 MIT note) and document commit/SHA-256 in `VERSION.md`. | `src/Server/Libs/ProfileStore/` | `[~]` |
-| **S3-02** | **P1** | `S3-01` | Gemini | Upgrade `DataService` to `ProfileStore` (`StartSessionAsync`, `OnSessionEnd` lock-loss kick, `ReconcileAndMigrateProfileData`, `OnBeforeSave` coin flush, `BindToClose` flush, zero silent blank live fallback) + offline `MaturesAt` incubation check + 9 `DataService` / 7 `EconomyService` self-test suites. | `src/Server/Services/DataService.luau`, `EconomyService.luau`, `PlotService.luau` | `[~]` |
-| **S3-03** | **P1** | `S3-02` | Gemini | Scale greybox map & `PlotService` from `2` $\rightarrow$ `6` plots (`MaxPlayers = 6`), add late-join `PublicPlotDTO` resync and plot reuse revision cleanup, add Stage 3 upgrades (`PenSlot_4`, `BagCap_20`, `PenSlot_5`). | `PlotService.luau`, `GenerateGreyboxMap.luau` | `[ ]` |
+| **S3-01** | **P1** | `S2-01` (Fast-Track) | Gemini | Vendor pinned `MadStudioRoblox/ProfileStore` (`v1.0.3`, commit `45c9847cbcf1fc260369c50eb335aba7c35aecdd`, preserving upstream **Apache-2.0** `LICENSE` — correcting Stage 0 MIT note) and document commit/SHA-256 in `VERSION.md`. | `src/Server/Libs/ProfileStore/` | `[x]` |
+| **S3-02** | **P1** | `S3-01` | Gemini | Upgrade `DataService` to `ProfileStore` (`StartSessionAsync`, `OnSessionEnd` lock-loss kick, `ReconcileAndMigrateProfileData`, `OnBeforeSave` coin flush, `BindToClose` flush, zero silent blank live fallback) + offline `MaturesAt` incubation check + 9 `DataService` / 7 `EconomyService` self-test suites. Complete final Coin settlement and verify an API-backed save and reload per [Review #016](./AGENT_REVIEWS.md#review-016--stage-3a-persistence-and-astral-cadence). | `src/Server/Services/DataService.luau`, `EconomyService.luau`, `PlotService.luau` | `[~]` |
+| **S3-03** | **P1** | `S3-02` | Gemini | Scale greybox map & `PlotService` from `2` $\rightarrow$ `6` plots (`MaxPlayers = 6`), use the [ranch and hub brief](./STARFALL_RANCH_GAMEPLAY_PLAN.md#ranch-plots-central-hub-and-navigation) for open plot aisles, the plaza and separate meteor routes, add late-join `PublicPlotDTO` resync and plot reuse revision cleanup, preserve the existing `PenSlot_4` and add `BagCap_20` and `PenSlot_5`. | `PlotService.luau`, `GenerateGreyboxMap.luau` | `[ ]` |
 | **S3-04** | **P1** | `S3-03` | ChatGPT + Gemini | Pass full persistence failure-injection suite (load fail clean kick, dual-server lock theft, shutdown flush, `MaturesAt` clock boundary tests) and 6-player full-server exploit review. | `docs/AGENT_REVIEWS.md` | `[ ]` |
 
 ---
