@@ -774,9 +774,6 @@ function MeteorService.FinishCrackAtPosition(
 		starterClaimedByUserId[userId] = true
 	else
 		wildNodeCooldownUntil[meteor.NodeName] = nowClock + Constants.WILD_METEOR_RESPAWN_SECONDS
-		if meteor.Trait == "Astral" then
-			nextAstralFallAt = nowClock + Constants.ASTRAL_FALL_INTERVAL_SECONDS
-		end
 	end
 
 	removeMeteorInternal(meteorUID)
@@ -994,6 +991,8 @@ function MeteorService.TriggerAstralFallNow(nowClock: number?): (boolean, string
 	end
 
 	wildNodeCooldownUntil[chosenNode.Name] = clock + Constants.ASTRAL_FALL_WARNING_SECONDS + 2
+	-- Schedule the next fall against this fall's warning timestamp (75s fall-to-fall cadence).
+	nextAstralFallAt = clock + Constants.ASTRAL_FALL_INTERVAL_SECONDS
 	local incoming: PendingAstralFall = {
 		NodeName = chosenNode.Name,
 		Position = chosenNode.Position,
@@ -1040,7 +1039,6 @@ local function stepAstralFallEvent(nowClock: number): ()
 				Action = "Despawn",
 				MeteorUID = expiredUID,
 			})
-			nextAstralFallAt = nowClock + Constants.ASTRAL_FALL_INTERVAL_SECONDS
 		end
 	end
 
@@ -1414,12 +1412,14 @@ function MeteorService.RunSelfTest(): number
 		removeMeteorInternal(luredObj.UID)
 		lastLureClockByUserId[u1] = nil
 
-		-- Verify Timed Astral Fall: warning -> spawn on Ridge -> expiry
+		-- Verify Timed Astral Fall: warning -> spawn on Ridge -> expiry -> exact 75s fall-to-fall next warning
 		clearEvents()
-		local afOk, _, afPending = MeteorService.TriggerAstralFallNow(5010.95)
+		local tFallStart = 5010.95
+		local afOk, _, afPending = MeteorService.TriggerAstralFallNow(tFallStart)
 		assert(afOk and afPending ~= nil and FROST_ASTRAL_RIDGE_NODES[(afPending :: PendingAstralFall).NodeName] == true, "TriggerAstralFallNow announces North Ridge fall")
 		assert(countEvents("AstralIncoming") == 1, "TriggerAstralFallNow broadcasts AstralIncoming")
-		stepAstralFallEvent(5010.95 + Constants.ASTRAL_FALL_WARNING_SECONDS + 0.1)
+		assert(math.abs(nextAstralFallAt - (tFallStart + Constants.ASTRAL_FALL_INTERVAL_SECONDS)) < 1e-6, "Astral Fall schedules next event against warning timestamp")
+		stepAstralFallEvent(tFallStart + Constants.ASTRAL_FALL_WARNING_SECONDS + 0.1)
 		assert(activeAstralUID ~= nil and activeMeteors[activeAstralUID] ~= nil, "Astral Fall spawns Astral meteor after warning")
 		local spawnedAstral = activeMeteors[activeAstralUID :: string] :: ActiveMeteor
 		assert(spawnedAstral.Trait == "Astral" and FROST_ASTRAL_RIDGE_NODES[spawnedAstral.NodeName] == true, "Spawned Astral sits on North Ridge")
@@ -1427,6 +1427,13 @@ function MeteorService.RunSelfTest(): number
 		clearEvents()
 		stepAstralFallEvent(spawnedAstral.SpawnedAt + Constants.ASTRAL_METEOR_LIFETIME_SECONDS + 0.1)
 		assert(activeMeteors[spawnedAstral.UID] == nil and countEvents("Despawn", spawnedAstral.UID) == 1, "Unclaimed Astral expires cleanly after lifetime")
+		assert(math.abs(nextAstralFallAt - (tFallStart + Constants.ASTRAL_FALL_INTERVAL_SECONDS)) < 1e-6, "Expiry must NOT push next Astral Fall out to 133s")
+		clearEvents()
+		stepAstralFallEvent(tFallStart + Constants.ASTRAL_FALL_INTERVAL_SECONDS)
+		assert(countEvents("AstralIncoming") == 1 and pendingAstralFall ~= nil, "Next Astral Fall fires on exact 75s fall-to-fall cadence")
+		if pendingAstralFall ~= nil then
+			wildNodeCooldownUntil[pendingAstralFall.NodeName] = nil
+		end
 		activeAstralUID = nil
 		pendingAstralFall = nil
 		nextAstralFallAt = 0

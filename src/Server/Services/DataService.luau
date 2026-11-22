@@ -1,14 +1,17 @@
 --!strict
 --[[
 	Service: DataService
-	Purpose: Manages Stage 1 MockStore player profile lifecycle (Loading -> Ready -> Closing), environment guards,
-	         readiness checks, and strictly scoped single-player OwnerStateDTO snapshot delivery.
-	Connections: Binds NetworkService.BindSnapshotHandler; enforces IsReady(player) boundary for EconomyService,
-	             PlotService, and MeteorService. Stage 3 swaps MockStore cleanly to pinned ProfileStore.
-	How to Test in Studio: Press Play (F5) and 2-Player Local Server; verify DataService self-tests pass
-	                       and each client prints Synced OwnerStateDTO in Output.
+	Purpose: Manages authoritative Stage 3 ProfileStore player persistence (Loading -> Ready -> Closing),
+	         environment-aware Live vs. Mock store resolution, schema reconciliation & legacy migration,
+	         fail-closed load/lock-loss kicks, BindToClose flush, offline MaturesAt preservation,
+	         and strictly scoped OwnerStateDTO delivery.
+	Connections: Wraps vendored Server.Libs.ProfileStore; binds NetworkService.BindSnapshotHandler;
+	             exposes OnBeforeSave / OnPlayerReady / OnPlayerClosing for EconomyService, PlotService,
+	             and MeteorService; retains BeginMockSession helpers for unit self-test suites.
+	How to Test in Studio: Press Play (F5) and inspect [DataService] logs and 9 self-test suites in Output.
 ]]
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -16,31 +19,129 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
+local CritterConfig = require(Shared:WaitForChild("Config"):WaitForChild("CritterConfig"))
+
+local ServerRoot = script.Parent.Parent
+local LibsFolder = ServerRoot:WaitForChild("Libs")
+local ProfileStore = require(LibsFolder:WaitForChild("ProfileStore"))
 
 local ServicesFolder = script.Parent
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 
 export type SessionStatus = "Loading" | "Ready" | "Closing"
+export type PersistenceBackendMode = "LiveProfileStore" | "MockProfileStore"
+
+type SignalConnectionLike = {
+	Disconnect: (self: any) -> (),
+}
+
+type SignalLike = {
+	Connect: (self: any, listener: (...any) -> ()) -> SignalConnectionLike,
+}
+
+type ProfileHandleLike = {
+	Data: any,
+	UserIds: { number },
+	OnSave: SignalLike,
+	OnLastSave: SignalLike,
+	OnSessionEnd: SignalLike,
+	IsActive: (self: any) -> boolean,
+	Reconcile: (self: any) -> (),
+	EndSession: (self: any) -> (),
+	AddUserId: (self: any, userId: number) -> (),
+	Save: (self: any) -> (),
+}
+
+type ProfileStoreLike = {
+	Name: string,
+	StartSessionAsync: (self: any, profileKey: string, params: { Cancel: (() -> boolean)?, Steal: boolean? }?) -> ProfileHandleLike?,
+}
+
+export type StartSessionOptions = {
+	Store: any?,
+	NowClock: number?,
+	OnKick: ((reason: string) -> ())?,
+}
 
 type PlayerSession = {
 	UserId: number,
 	Player: Player?,
 	Status: SessionStatus,
 	Profile: Types.PlayerProfileData?,
+	ProfileHandle: ProfileHandleLike?,
+	DataInitialized: boolean,
+	FinalSaveCompleted: boolean,
+	ClosingNotified: boolean,
 	PendingSnapshotRequest: boolean,
+	OnSaveConn: SignalConnectionLike?,
+	OnLastSaveConn: SignalConnectionLike?,
+	OnSessionEndConn: SignalConnectionLike?,
+	KickCallback: ((reason: string) -> ())?,
 }
+
+local PROFILE_TEMPLATE: Types.PlayerProfileData = {
+	SchemaVersion = Constants.SCHEMA_VERSION,
+	Coins = 0,
+	PendingFraction = 0,
+	LastAccrualTimestamp = 0,
+	Revision = 1,
+	Items = {},
+	Slots = {},
+	Upgrades = {},
+	DiscoveredSpecies = {},
+}
+
+local LOAD_FAILED_KICK_MESSAGE = "Unable to load your Starfall Ranch save right now. Please rejoin in a moment."
+local SESSION_ENDED_KICK_MESSAGE = "Your Starfall Ranch session ended on this server (loaded elsewhere or server closing). Please rejoin."
+local SHUTTING_DOWN_KICK_MESSAGE = "This Starfall Ranch server is restarting. Please rejoin in a moment."
+
+local VALID_VARIANTS: { [string]: boolean } = table.freeze({
+	Normal = true,
+	Radiant = true,
+})
+
+local VALID_STATES: { [string]: boolean } = table.freeze({
+	PodInBag = true,
+	Incubating = true,
+	HatchedInBag = true,
+	InPen = true,
+})
+
+local INCUBATOR_SLOT_ORDER: { [string]: boolean } = table.freeze({
+	Incubator_1 = true,
+	Incubator_2 = true,
+})
+
+local PEN_SLOT_UPGRADE_MAP: { [string]: string } = table.freeze({
+	Pen_2 = "PenSlot_2",
+	Pen_3 = "PenSlot_3",
+	Pen_4 = "PenSlot_4",
+})
 
 local DataService = {
 	Name = "DataService",
 }
 
 local sessions: { [number]: PlayerSession } = {}
+local closingHandlesByUserId: { [number]: ProfileHandleLike } = {}
 local pendingEarlySnapshots: { [number]: boolean } = {}
 local readyCallbacks: { (player: Player, profile: Types.PlayerProfileData) -> () } = {}
 local closingCallbacks: { (player: Player) -> () } = {}
+local beforeSaveCallbacks: { (player: Player?, profile: Types.PlayerProfileData) -> () } = {}
 local snapshotRequestedCallbacks: { (player: Player) -> () } = {}
+
+local activeStore: ProfileStoreLike? = nil
+local resolvedBackendMode: PersistenceBackendMode = "MockProfileStore"
+local resolvedStoreName = Constants.DATASTORE_NAME_DEV
+local isShuttingDown = false
+local bindToCloseRegistered = false
+local onErrorConn: SignalConnectionLike? = nil
 local playerAddedConn: RBXScriptConnection? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
+
+local function isFiniteNumber(val: unknown): boolean
+	return typeof(val) == "number" and val == val and math.abs(val) ~= math.huge
+end
 
 local function cloneCritterRecord(src: Types.CritterItemRecord): Types.CritterItemRecord
 	return {
@@ -80,6 +181,93 @@ local function cloneDiscoveredMap(src: { [Types.SpeciesId]: boolean }): { [Types
 	return out
 end
 
+local function disconnectHandleSignals(session: PlayerSession): ()
+	if session.OnSaveConn ~= nil then
+		session.OnSaveConn:Disconnect()
+		session.OnSaveConn = nil
+	end
+	if session.OnLastSaveConn ~= nil then
+		session.OnLastSaveConn:Disconnect()
+		session.OnLastSaveConn = nil
+	end
+	if session.OnSessionEndConn ~= nil then
+		session.OnSessionEndConn:Disconnect()
+		session.OnSessionEndConn = nil
+	end
+end
+
+local function kickSessionOwner(player: Player?, customKick: ((reason: string) -> ())?, reason: string): ()
+	if customKick ~= nil then
+		local ok, err = pcall(customKick, reason)
+		if not ok then
+			warn("[DataService] Custom kick callback error: " .. tostring(err))
+		end
+	elseif player ~= nil and player.Parent ~= nil then
+		player:Kick(reason)
+	end
+end
+
+local function notifyClosingOnce(session: PlayerSession): ()
+	if session.ClosingNotified then
+		return
+	end
+	session.ClosingNotified = true
+	local ownerPlayer = session.Player
+	if ownerPlayer == nil then
+		return
+	end
+	for _, cb in ipairs(closingCallbacks) do
+		local ok, err = pcall(cb, ownerPlayer)
+		if not ok then
+			warn("[DataService] OnPlayerClosing callback error: " .. tostring(err))
+		end
+	end
+end
+
+local function finalizeSession(userId: number, session: PlayerSession, kickReason: string?): ()
+	pendingEarlySnapshots[userId] = nil
+	if session.Status ~= "Closing" then
+		session.Status = "Closing"
+	end
+	if sessions[userId] == session then
+		sessions[userId] = nil
+	end
+
+	disconnectHandleSignals(session)
+
+	local handle = session.ProfileHandle
+	if handle ~= nil and handle:IsActive() then
+		closingHandlesByUserId[userId] = handle
+	elseif closingHandlesByUserId[userId] == handle then
+		closingHandlesByUserId[userId] = nil
+	end
+
+	notifyClosingOnce(session)
+
+	local ownerPlayer = session.Player
+	local customKick = session.KickCallback
+	session.Profile = nil
+	session.ProfileHandle = nil
+	session.Player = nil
+	session.KickCallback = nil
+
+	if kickReason ~= nil then
+		kickSessionOwner(ownerPlayer, customKick, kickReason)
+	end
+end
+
+local function deliverInitialSnapshotToPlayer(player: Player, session: PlayerSession): ()
+	session.PendingSnapshotRequest = false
+	if DataService.SendOwnerStateSnapshot(player) then
+		for _, snapCb in ipairs(snapshotRequestedCallbacks) do
+			local ok, err = pcall(snapCb, player)
+			if not ok then
+				warn("[DataService] OnSnapshotDelivered error: " .. tostring(err))
+			end
+		end
+	end
+end
+
 function DataService.CanUseMockStoreInEnvironment(
 	isStudio: boolean,
 	placeId: number,
@@ -96,6 +284,181 @@ function DataService.CanUseMockStoreInEnvironment(
 		return true, "DesignatedPrototypePlace"
 	end
 	return false, string.format("MockStore blocked on published PlaceId %d", placeId)
+end
+
+function DataService.ResolvePersistenceBackend(
+	isStudio: boolean,
+	placeId: number,
+	useMockStore: boolean,
+	allowedPrototypePlaceId: number
+): (PersistenceBackendMode, string, string)
+	if not isStudio then
+		if useMockStore and allowedPrototypePlaceId > 0 and placeId == allowedPrototypePlaceId then
+			return "MockProfileStore", Constants.DATASTORE_NAME_DEV, "DesignatedPrototypePlace"
+		end
+		-- Never silently fall back to MockStore or blank profiles on live published servers.
+		return "LiveProfileStore", Constants.DATASTORE_NAME_LIVE, "PublishedLiveDataStore"
+	end
+
+	if useMockStore then
+		return "MockProfileStore", Constants.DATASTORE_NAME_DEV, "StudioExplicitMockFlag"
+	end
+	if placeId == 0 then
+		return "MockProfileStore", Constants.DATASTORE_NAME_DEV, "StudioUnpublishedLocalPlace"
+	end
+	return "LiveProfileStore", Constants.DATASTORE_NAME_DEV, "StudioPublishedDevStore"
+end
+
+function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: number): Types.PlayerProfileData
+	assert(typeof(rawData) == "table", "Profile.Data must be a table")
+	local data = rawData :: { [string]: any }
+
+	data.SchemaVersion = Constants.SCHEMA_VERSION
+
+	local coinsNum = tonumber(data.Coins)
+	if coinsNum == nil or not isFiniteNumber(coinsNum) then
+		coinsNum = 0
+	end
+	data.Coins = math.clamp(math.floor(coinsNum :: number), 0, Constants.MAX_COINS)
+
+	local pendingNum = tonumber(data.PendingFraction)
+	if pendingNum == nil or not isFiniteNumber(pendingNum) or (pendingNum :: number) < 0 or (pendingNum :: number) >= 1 then
+		pendingNum = 0
+	end
+	data.PendingFraction = pendingNum :: number
+
+	-- Stage 3 policy: zero offline Coin payout; reset accrual baseline to current login clock.
+	local safeClock = if isFiniteNumber(nowClock) and nowClock >= 0 then nowClock else workspace:GetServerTimeNow()
+	data.LastAccrualTimestamp = safeClock
+
+	local revisionNum = tonumber(data.Revision)
+	if revisionNum == nil or not isFiniteNumber(revisionNum) or (revisionNum :: number) < 1 then
+		revisionNum = 1
+	else
+		revisionNum = math.floor(revisionNum :: number)
+	end
+	data.Revision = revisionNum :: number
+
+	local cleanUpgrades: { [string]: boolean } = {}
+	if typeof(data.Upgrades) == "table" then
+		for k, v in pairs(data.Upgrades :: { [any]: any }) do
+			if typeof(k) == "string" and v == true then
+				cleanUpgrades[k] = true
+			end
+		end
+	end
+	data.Upgrades = cleanUpgrades
+
+	local cleanDiscovered: { [Types.SpeciesId]: boolean } = {}
+	if typeof(data.DiscoveredSpecies) == "table" then
+		for k, v in pairs(data.DiscoveredSpecies :: { [any]: any }) do
+			if typeof(k) == "string" and (CritterConfig.ById :: { [string]: any })[k] ~= nil and v == true then
+				cleanDiscovered[k :: Types.SpeciesId] = true
+			end
+		end
+	end
+
+	local cleanItems: { [string]: Types.CritterItemRecord } = {}
+	local cleanSlots: { [string]: string } = {}
+	local sortedKeys: { string } = {}
+	if typeof(data.Items) == "table" then
+		for k in pairs(data.Items :: { [any]: any }) do
+			if typeof(k) == "string" and #k > 0 then
+				table.insert(sortedKeys, k)
+			end
+		end
+	end
+	table.sort(sortedKeys)
+
+	for _, itemKey in ipairs(sortedKeys) do
+		local rawItem = (data.Items :: { [string]: any })[itemKey]
+		if typeof(rawItem) == "table" then
+			local speciesId = rawItem.SpeciesId
+			local state = rawItem.State
+			local speciesDef = if typeof(speciesId) == "string" then (CritterConfig.ById :: { [string]: any })[speciesId] else nil
+			if speciesDef ~= nil and typeof(state) == "string" and VALID_STATES[state] then
+				local variant: Types.VariantId = if typeof(rawItem.Variant) == "string" and VALID_VARIANTS[rawItem.Variant]
+					then rawItem.Variant :: Types.VariantId
+					else "Normal"
+				local createdNum = tonumber(rawItem.CreatedAt)
+				local createdAt = if createdNum ~= nil and isFiniteNumber(createdNum) and (createdNum :: number) >= 0
+					then math.floor(createdNum :: number)
+					else math.floor(safeClock)
+				local feedNum = tonumber(rawItem.FeedLevel)
+				local feedLevel = if feedNum ~= nil and isFiniteNumber(feedNum)
+					then math.clamp(math.floor(feedNum :: number), 0, Constants.MAX_CRITTER_FEED_LEVEL)
+					else 0
+
+				local assignedSlot: string? = if typeof(rawItem.AssignedSlot) == "string" then rawItem.AssignedSlot else nil
+				local plantedAt: number? = if isFiniteNumber(rawItem.PlantedAt) and rawItem.PlantedAt >= 0 then rawItem.PlantedAt else nil
+				local maturesAt: number? = if isFiniteNumber(rawItem.MaturesAt) and rawItem.MaturesAt >= 0 then rawItem.MaturesAt else nil
+				local finalState: Types.ItemState = state :: Types.ItemState
+
+				if finalState == "Incubating" then
+					local slotUnlocked = assignedSlot == "Incubator_1"
+						or (assignedSlot == "Incubator_2" and cleanUpgrades["Incubator_2"] == true)
+					if assignedSlot ~= nil and INCUBATOR_SLOT_ORDER[assignedSlot] and slotUnlocked and cleanSlots[assignedSlot] == nil then
+						-- Preserve persisted MaturesAt intact so offline incubation completes on rejoin.
+						local basePlanted = if plantedAt ~= nil then plantedAt else math.floor(safeClock)
+						plantedAt = basePlanted
+						if maturesAt == nil then
+							maturesAt = basePlanted + (speciesDef.HatchSeconds :: number)
+						end
+						cleanSlots[assignedSlot] = itemKey
+					else
+						finalState = "PodInBag"
+						assignedSlot = nil
+						plantedAt = nil
+						maturesAt = nil
+					end
+				elseif finalState == "InPen" then
+					local reqUpgrade = if assignedSlot ~= nil then PEN_SLOT_UPGRADE_MAP[assignedSlot] else nil
+					local penValid = assignedSlot == "Pen_1"
+						or (reqUpgrade ~= nil and cleanUpgrades[reqUpgrade] == true)
+					if assignedSlot ~= nil and penValid and cleanSlots[assignedSlot] == nil then
+						cleanSlots[assignedSlot] = itemKey
+						plantedAt = nil
+						maturesAt = nil
+						cleanDiscovered[speciesId :: Types.SpeciesId] = true
+					else
+						finalState = "HatchedInBag"
+						assignedSlot = nil
+						plantedAt = nil
+						maturesAt = nil
+						cleanDiscovered[speciesId :: Types.SpeciesId] = true
+					end
+				elseif finalState == "HatchedInBag" then
+					assignedSlot = nil
+					plantedAt = nil
+					maturesAt = nil
+					cleanDiscovered[speciesId :: Types.SpeciesId] = true
+				else
+					-- PodInBag
+					assignedSlot = nil
+					plantedAt = nil
+					maturesAt = nil
+				end
+
+				cleanItems[itemKey] = {
+					UID = itemKey,
+					SpeciesId = speciesId :: Types.SpeciesId,
+					Variant = variant,
+					State = finalState,
+					AssignedSlot = assignedSlot,
+					PlantedAt = plantedAt,
+					MaturesAt = maturesAt,
+					CreatedAt = createdAt,
+					FeedLevel = feedLevel,
+				}
+			end
+		end
+	end
+
+	data.Items = cleanItems
+	data.Slots = cleanSlots
+	data.DiscoveredSpecies = cleanDiscovered
+
+	return data :: Types.PlayerProfileData
 end
 
 function DataService.CreateDefaultProfile(nowClock: number?): Types.PlayerProfileData
@@ -133,6 +496,10 @@ function DataService.BuildOwnerStateDTO(profile: Types.PlayerProfileData): Types
 		Upgrades = cloneBoolMap(profile.Upgrades),
 		DiscoveredSpecies = cloneDiscoveredMap(profile.DiscoveredSpecies),
 	}
+end
+
+function DataService.GetPersistenceInfo(): (PersistenceBackendMode, string, string)
+	return resolvedBackendMode, resolvedStoreName, ProfileStore.DataStoreState
 end
 
 function DataService.IsUserIdReady(userId: number): boolean
@@ -182,15 +549,38 @@ function DataService.SendOwnerStateSnapshot(player: Player): boolean
 	return true
 end
 
+function DataService.OnBeforeSave(callback: (player: Player?, profile: Types.PlayerProfileData) -> ()): ()
+	table.insert(beforeSaveCallbacks, callback)
+end
+
 function DataService.OnSnapshotDelivered(callback: (player: Player) -> ()): ()
 	table.insert(snapshotRequestedCallbacks, callback)
 end
 
-function DataService.BeginMockSession(userId: number, player: Player?): PlayerSession
+function DataService.StartProfileSessionForUserId(
+	userId: number,
+	player: Player?,
+	options: StartSessionOptions?
+): (boolean, string)
+	local customKick = if options ~= nil then options.OnKick else nil
+	if isShuttingDown then
+		kickSessionOwner(player, customKick, SHUTTING_DOWN_KICK_MESSAGE)
+		return false, "ServerShuttingDown"
+	end
+
+	if player ~= nil and player.Parent ~= Players then
+		return false, "PlayerNotInGame"
+	end
+
 	local existing = sessions[userId]
 	if existing ~= nil then
-		existing.Status = "Closing"
-		sessions[userId] = nil
+		return false, "SessionAlreadyExists"
+	end
+
+	local targetStore = (if options ~= nil and options.Store ~= nil then options.Store else activeStore) :: ProfileStoreLike?
+	if targetStore == nil then
+		kickSessionOwner(player, customKick, LOAD_FAILED_KICK_MESSAGE)
+		return false, "StoreNotInitialized"
 	end
 
 	local hadEarlySnapshot = pendingEarlySnapshots[userId] == true
@@ -201,7 +591,243 @@ function DataService.BeginMockSession(userId: number, player: Player?): PlayerSe
 		Player = player,
 		Status = "Loading",
 		Profile = nil,
+		ProfileHandle = nil,
+		DataInitialized = false,
+		FinalSaveCompleted = false,
+		ClosingNotified = false,
 		PendingSnapshotRequest = hadEarlySnapshot,
+		OnSaveConn = nil,
+		OnLastSaveConn = nil,
+		OnSessionEndConn = nil,
+		KickCallback = customKick,
+	}
+	sessions[userId] = session
+
+	local function shouldCancel(): boolean
+		if isShuttingDown or session.Status == "Closing" or sessions[userId] ~= session then
+			return true
+		end
+		if player ~= nil and player.Parent ~= Players then
+			return true
+		end
+		return false
+	end
+
+	-- Wait briefly if a same-server previous ProfileHandle for this userId is still releasing its session token.
+	local prevHandle = closingHandlesByUserId[userId]
+	if prevHandle ~= nil then
+		local waitDeadline = os.clock() + 5
+		while prevHandle:IsActive() and os.clock() < waitDeadline and not shouldCancel() do
+			task.wait()
+		end
+		if not prevHandle:IsActive() and closingHandlesByUserId[userId] == prevHandle then
+			closingHandlesByUserId[userId] = nil
+		elseif shouldCancel() then
+			if sessions[userId] == session then
+				sessions[userId] = nil
+			end
+			return false, "CancelledDuringLoad"
+		end
+	end
+
+	local profileKey = Constants.PROFILE_KEY_PREFIX .. tostring(userId)
+	local okLoad, handleOrErr = pcall(function()
+		return targetStore:StartSessionAsync(profileKey, {
+			Cancel = shouldCancel,
+		})
+	end)
+
+	local profileHandle: ProfileHandleLike? = if okLoad then handleOrErr :: ProfileHandleLike? else nil
+	if not okLoad then
+		warn(string.format("[DataService] StartSessionAsync error for key %s: %s", profileKey, tostring(handleOrErr)))
+	end
+
+	if shouldCancel() then
+		if profileHandle ~= nil and profileHandle:IsActive() then
+			closingHandlesByUserId[userId] = profileHandle
+			pcall(function()
+				profileHandle:EndSession()
+			end)
+		end
+		if sessions[userId] == session then
+			sessions[userId] = nil
+		end
+		return false, "CancelledDuringLoad"
+	end
+
+	if profileHandle == nil then
+		if sessions[userId] == session then
+			sessions[userId] = nil
+		end
+		-- Fail closed: NEVER fabricate a blank profile when persistence load fails.
+		kickSessionOwner(player, customKick, LOAD_FAILED_KICK_MESSAGE)
+		return false, "LoadFailed"
+	end
+
+	profileHandle:AddUserId(userId)
+	profileHandle:Reconcile()
+
+	local loginClock = if options ~= nil and options.NowClock ~= nil
+		then options.NowClock
+		else workspace:GetServerTimeNow()
+	local migratedProfile = DataService.ReconcileAndMigrateProfileData(profileHandle.Data, loginClock)
+
+	session.ProfileHandle = profileHandle
+	session.Profile = migratedProfile
+	session.DataInitialized = true
+
+	session.OnSaveConn = profileHandle.OnSave:Connect(function()
+		if not session.DataInitialized or session.FinalSaveCompleted then
+			return
+		end
+		local activeProfile = session.Profile
+		if activeProfile == nil then
+			return
+		end
+		for _, cb in ipairs(beforeSaveCallbacks) do
+			local okCb, errCb = pcall(cb, session.Player, activeProfile)
+			if not okCb then
+				warn("[DataService] OnBeforeSave callback error: " .. tostring(errCb))
+			end
+		end
+	end)
+
+	session.OnLastSaveConn = profileHandle.OnLastSave:Connect(function(_reason: string)
+		session.FinalSaveCompleted = true
+	end)
+
+	session.OnSessionEndConn = profileHandle.OnSessionEnd:Connect(function()
+		if sessions[userId] ~= session and session.Status == "Closing" then
+			return
+		end
+		local activePlayer = session.Player
+		local stillInServer = activePlayer ~= nil and activePlayer.Parent == Players
+		local needKick = stillInServer or session.KickCallback ~= nil
+		finalizeSession(userId, session, if needKick then SESSION_ENDED_KICK_MESSAGE else nil)
+	end)
+
+	if shouldCancel() or not profileHandle:IsActive() then
+		finalizeSession(userId, session, nil)
+		if profileHandle:IsActive() then
+			closingHandlesByUserId[userId] = profileHandle
+			pcall(function()
+				profileHandle:EndSession()
+			end)
+		end
+		return false, "CancelledDuringLoad"
+	end
+
+	session.Status = "Ready"
+
+	if player ~= nil then
+		for _, cb in ipairs(readyCallbacks) do
+			local okCb, errCb = pcall(cb, player, migratedProfile)
+			if not okCb then
+				warn("[DataService] OnPlayerReady callback error: " .. tostring(errCb))
+			end
+		end
+
+		-- Check session remained Ready after admission checks (e.g., server-full plot rejection).
+		if sessions[userId] == session and session.Status == "Ready" and player.Parent == Players then
+			deliverInitialSnapshotToPlayer(player, session)
+		end
+	end
+
+	return true, "Ready"
+end
+
+function DataService.EndSession(userId: number, player: Player?): ()
+	pendingEarlySnapshots[userId] = nil
+	local session = sessions[userId]
+	if session == nil then
+		return
+	end
+	if player ~= nil and session.Player ~= nil and session.Player ~= player then
+		return
+	end
+
+	local handle = session.ProfileHandle
+	finalizeSession(userId, session, nil)
+
+	if handle ~= nil and handle:IsActive() then
+		closingHandlesByUserId[userId] = handle
+		local okEnd, errEnd = pcall(function()
+			handle:EndSession()
+		end)
+		if not okEnd then
+			warn("[DataService] Profile:EndSession error: " .. tostring(errEnd))
+		end
+	end
+end
+
+function DataService.FlushActiveProfileSessions(timeoutSeconds: number?): boolean
+	local timeout = if timeoutSeconds ~= nil then timeoutSeconds else Constants.SHUTDOWN_FLUSH_TIMEOUT_SECONDS
+	local activeUserIds: { number } = {}
+	local handlesToWait: { { UserId: number, Handle: ProfileHandleLike } } = {}
+
+	for userId, session in pairs(sessions) do
+		table.insert(activeUserIds, userId)
+		if session.ProfileHandle ~= nil then
+			table.insert(handlesToWait, {
+				UserId = userId,
+				Handle = session.ProfileHandle,
+			})
+		end
+	end
+
+	for _, userId in ipairs(activeUserIds) do
+		DataService.EndSession(userId, nil)
+	end
+
+	local deadline = os.clock() + math.max(0, timeout)
+	while os.clock() < deadline do
+		local anyActive = false
+		for _, entry in ipairs(handlesToWait) do
+			if entry.Handle:IsActive() then
+				anyActive = true
+				break
+			end
+		end
+		if not anyActive then
+			break
+		end
+		task.wait()
+	end
+
+	local allReleased = true
+	for _, entry in ipairs(handlesToWait) do
+		if entry.Handle:IsActive() then
+			allReleased = false
+		elseif closingHandlesByUserId[entry.UserId] == entry.Handle then
+			closingHandlesByUserId[entry.UserId] = nil
+		end
+	end
+	return allReleased
+end
+
+function DataService.BeginMockSession(userId: number, player: Player?): PlayerSession
+	local existing = sessions[userId]
+	if existing ~= nil then
+		finalizeSession(userId, existing, nil)
+	end
+
+	local hadEarlySnapshot = pendingEarlySnapshots[userId] == true
+	pendingEarlySnapshots[userId] = nil
+
+	local session: PlayerSession = {
+		UserId = userId,
+		Player = player,
+		Status = "Loading",
+		Profile = nil,
+		ProfileHandle = nil,
+		DataInitialized = false,
+		FinalSaveCompleted = false,
+		ClosingNotified = false,
+		PendingSnapshotRequest = hadEarlySnapshot,
+		OnSaveConn = nil,
+		OnLastSaveConn = nil,
+		OnSessionEndConn = nil,
+		KickCallback = nil,
 	}
 	sessions[userId] = session
 	return session
@@ -219,6 +845,7 @@ function DataService.CompleteMockSession(userId: number, nowEpoch: number?): boo
 
 	local profile = DataService.CreateDefaultProfile(nowEpoch)
 	session.Profile = profile
+	session.DataInitialized = true
 	session.Status = "Ready"
 
 	local player = session.Player
@@ -230,16 +857,8 @@ function DataService.CompleteMockSession(userId: number, nowEpoch: number?): boo
 			end
 		end
 
-		if session.PendingSnapshotRequest then
-			session.PendingSnapshotRequest = false
-			if DataService.SendOwnerStateSnapshot(player) then
-				for _, snapCb in ipairs(snapshotRequestedCallbacks) do
-					local ok, err = pcall(snapCb, player)
-					if not ok then
-						warn("[DataService] OnSnapshotDelivered error: " .. tostring(err))
-					end
-				end
-			end
+		if session.PendingSnapshotRequest and sessions[userId] == session and session.Status == "Ready" then
+			deliverInitialSnapshotToPlayer(player, session)
 		end
 	end
 
@@ -247,29 +866,7 @@ function DataService.CompleteMockSession(userId: number, nowEpoch: number?): boo
 end
 
 function DataService.EndMockSession(userId: number, player: Player?): ()
-	pendingEarlySnapshots[userId] = nil
-	local session = sessions[userId]
-	if session == nil then
-		return
-	end
-	if player ~= nil and session.Player ~= nil and session.Player ~= player then
-		return
-	end
-
-	session.Status = "Closing"
-	local ownerPlayer = session.Player
-	if ownerPlayer ~= nil then
-		for _, cb in ipairs(closingCallbacks) do
-			local ok, err = pcall(cb, ownerPlayer)
-			if not ok then
-				warn("[DataService] OnPlayerClosing callback error: " .. tostring(err))
-			end
-		end
-	end
-
-	session.Profile = nil
-	session.Player = nil
-	sessions[userId] = nil
+	DataService.EndSession(userId, player)
 end
 
 function DataService.HandleSnapshotRequestForUserId(userId: number, player: Player?): string
@@ -287,14 +884,7 @@ function DataService.HandleSnapshotRequestForUserId(userId: number, player: Play
 		return "QueuedLoading"
 	elseif session.Status == "Ready" then
 		if player ~= nil and session.Player == player then
-			if DataService.SendOwnerStateSnapshot(player) then
-				for _, snapCb in ipairs(snapshotRequestedCallbacks) do
-					local ok, err = pcall(snapCb, player)
-					if not ok then
-						warn("[DataService] OnSnapshotDelivered error: " .. tostring(err))
-					end
-				end
-			end
+			deliverInitialSnapshotToPlayer(player, session)
 			return "Delivered"
 		elseif player == nil then
 			return "DeliveredMock"
@@ -324,23 +914,50 @@ local function onPlayerAdded(player: Player): ()
 	if player.Parent ~= Players then
 		return
 	end
-	DataService.BeginMockSession(player.UserId, player)
-	DataService.CompleteMockSession(player.UserId)
+	task.spawn(function()
+		DataService.StartProfileSessionForUserId(player.UserId, player)
+	end)
 end
 
 local function onPlayerRemoving(player: Player): ()
-	DataService.EndMockSession(player.UserId, player)
+	DataService.EndSession(player.UserId, player)
 end
 
 function DataService.Init(self: typeof(DataService)): ()
-	local ok, reason = DataService.CanUseMockStoreInEnvironment(
+	local mode, storeName, reason = DataService.ResolvePersistenceBackend(
 		RunService:IsStudio(),
 		game.PlaceId,
 		Constants.USE_MOCK_STORE,
 		Constants.ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID
 	)
-	assert(ok, "[DataService] MockStore rejected by environment guard: " .. reason)
-	print(string.format("[DataService] Initialized in Stage 1 MockStore mode (%s).", reason))
+	resolvedBackendMode = mode
+	resolvedStoreName = storeName
+
+	local baseStore = ProfileStore.New(storeName, PROFILE_TEMPLATE)
+	activeStore = (if mode == "MockProfileStore" then baseStore.Mock else baseStore) :: ProfileStoreLike
+
+	if onErrorConn == nil then
+		onErrorConn = ProfileStore.OnError:Connect(function(message: string, errStoreName: string, profileKey: string)
+			warn(string.format("[DataService][ProfileStore] Error (%s / %s): %s", tostring(errStoreName), tostring(profileKey), tostring(message)))
+		end)
+	end
+
+	if not bindToCloseRegistered then
+		bindToCloseRegistered = true
+		game:BindToClose(function()
+			isShuttingDown = true
+			local flushTimeout = if RunService:IsStudio() then 0.5 else Constants.SHUTDOWN_FLUSH_TIMEOUT_SECONDS
+			DataService.FlushActiveProfileSessions(flushTimeout)
+		end)
+	end
+
+	print(string.format(
+		"[DataService] Initialized Stage 3 ProfileStore backend (Mode=%s, Store=%s, Reason=%s, DataStoreState=%s).",
+		mode,
+		storeName,
+		reason,
+		ProfileStore.DataStoreState
+	))
 end
 
 function DataService.Start(self: typeof(DataService)): ()
@@ -363,10 +980,17 @@ function DataService.Start(self: typeof(DataService)): ()
 	end
 end
 
+local function waitForHandleRelease(handle: ProfileHandleLike, timeoutSeconds: number): ()
+	local deadline = os.clock() + timeoutSeconds
+	while handle:IsActive() and os.clock() < deadline do
+		task.wait()
+	end
+end
+
 function DataService.RunSelfTest(): number
 	local passed = 0
 
-	-- 1. Environment guard checks (never run MockStore on unauthorized published servers)
+	-- 1. Environment guard & Stage 3 persistence backend resolution checks
 	local studioOk = DataService.CanUseMockStoreInEnvironment(true, 0, true, 0)
 	assert(studioOk, "MockStore allowed in Studio")
 	local pubBlocked = DataService.CanUseMockStoreInEnvironment(false, 999999, true, 0)
@@ -377,13 +1001,20 @@ function DataService.RunSelfTest(): number
 	assert(pubAllowed, "MockStore allowed only on designated prototype PlaceId")
 	local flagOff = DataService.CanUseMockStoreInEnvironment(true, 0, false, 0)
 	assert(not flagOff, "MockStore disabled when USE_MOCK_STORE=false")
+
+	local liveMode, liveStore, liveReason = DataService.ResolvePersistenceBackend(false, 999999, false, 0)
+	assert(liveMode == "LiveProfileStore" and liveStore == Constants.DATASTORE_NAME_LIVE and liveReason == "PublishedLiveDataStore", "Published server uses LiveProfileStore")
+	local localStudioMode, localStudioStore, localStudioReason = DataService.ResolvePersistenceBackend(true, 0, false, 0)
+	assert(localStudioMode == "MockProfileStore" and localStudioStore == Constants.DATASTORE_NAME_DEV and localStudioReason == "StudioUnpublishedLocalPlace", "Unpublished Studio uses MockProfileStore safely")
+	local pubStudioMode, pubStudioStore, pubStudioReason = DataService.ResolvePersistenceBackend(true, 777777, false, 0)
+	assert(pubStudioMode == "LiveProfileStore" and pubStudioStore == Constants.DATASTORE_NAME_DEV and pubStudioReason == "StudioPublishedDevStore", "Published Studio uses isolated StudioDev store")
 	passed += 1
 
 	local userA = -910001
 	local userB = -910002
 
-	DataService.EndMockSession(userA)
-	DataService.EndMockSession(userB)
+	DataService.EndSession(userA)
+	DataService.EndSession(userB)
 
 	-- 2. Enforce Loading -> Ready -> Closing readiness boundaries and independent profile state
 	DataService.BeginMockSession(userA, nil)
@@ -430,7 +1061,7 @@ function DataService.RunSelfTest(): number
 	assert(profileA.Coins == 250 and profileA.Upgrades["PenSlot_3"] == nil, "Mutating DTO copy must not affect server profile")
 	passed += 1
 
-	-- 4. Verify leave clears session/readiness and rejoin starts fresh mock state
+	-- 4. Verify leave clears session/readiness and mock helper rejoin starts clean
 	DataService.EndMockSession(userA)
 	assert(not DataService.IsUserIdReady(userA), "Readiness must clear on leave")
 	assert(DataService.GetProfileByUserId(userA) == nil, "Profile must clear on leave")
@@ -439,10 +1070,250 @@ function DataService.RunSelfTest(): number
 	DataService.BeginMockSession(userA, nil)
 	assert(DataService.CompleteMockSession(userA, 2000), "Rejoin session must initialize")
 	local rejoinedA = DataService.GetProfileByUserId(userA) :: Types.PlayerProfileData
-	assert(rejoinedA.Coins == 0 and next(rejoinedA.Items) == nil, "MockStore rejoin starts clean")
+	assert(rejoinedA.Coins == 0 and next(rejoinedA.Items) == nil, "Mock helper rejoin starts clean")
 
 	DataService.EndMockSession(userA)
 	DataService.EndMockSession(userB)
+	passed += 1
+
+	-- 5. ProfileStore.Mock Round-Trip: Join -> Mutate -> EndSession -> Rejoin preserves full state & MaturesAt
+	local isolatedStoreName = "SR_Test_" .. string.sub(HttpService:GenerateGUID(false), 1, 12)
+	local testBaseStore = ProfileStore.New(isolatedStoreName, PROFILE_TEMPLATE)
+	local testMockStore = testBaseStore.Mock
+	local userP = -910051
+	DataService.EndSession(userP)
+
+	local joinOk, joinReason = DataService.StartProfileSessionForUserId(userP, nil, {
+		Store = testMockStore,
+		NowClock = 1000,
+	})
+	assert(joinOk and joinReason == "Ready" and DataService.IsUserIdReady(userP), "ProfileStore.Mock initial join must succeed")
+
+	local pPersist = DataService.GetProfileByUserId(userP) :: Types.PlayerProfileData
+	pPersist.Coins = 420
+	pPersist.Revision = 5
+	pPersist.Upgrades["PenSlot_2"] = true
+	pPersist.Upgrades["FrostCracker"] = true
+	pPersist.DiscoveredSpecies["StarSlime"] = true
+	pPersist.DiscoveredSpecies["CinderPup"] = true
+	pPersist.Items["pod-bag"] = {
+		UID = "pod-bag",
+		SpeciesId = "StarSlime",
+		Variant = "Normal",
+		State = "PodInBag",
+		AssignedSlot = nil,
+		PlantedAt = nil,
+		MaturesAt = nil,
+		CreatedAt = 995,
+		FeedLevel = 0,
+	}
+	pPersist.Items["pod-inc"] = {
+		UID = "pod-inc",
+		SpeciesId = "FrostBeetle",
+		Variant = "Normal",
+		State = "Incubating",
+		AssignedSlot = "Incubator_1",
+		PlantedAt = 1000,
+		MaturesAt = 1045,
+		CreatedAt = 998,
+		FeedLevel = 0,
+	}
+	pPersist.Slots["Incubator_1"] = "pod-inc"
+	pPersist.Items["pen-critter"] = {
+		UID = "pen-critter",
+		SpeciesId = "CinderPup",
+		Variant = "Radiant",
+		State = "InPen",
+		AssignedSlot = "Pen_2",
+		PlantedAt = nil,
+		MaturesAt = nil,
+		CreatedAt = 990,
+		FeedLevel = 1,
+	}
+	pPersist.Slots["Pen_2"] = "pen-critter"
+
+	local firstSession = sessions[userP]
+	local firstHandle = if firstSession ~= nil then firstSession.ProfileHandle else nil
+	DataService.EndSession(userP)
+	assert(not DataService.IsUserIdReady(userP), "Session not ready after EndSession")
+	if firstHandle ~= nil then
+		waitForHandleRelease(firstHandle, 2)
+		assert(not firstHandle:IsActive(), "First handle must release after EndSession")
+	end
+
+	local rejoinOk = DataService.StartProfileSessionForUserId(userP, nil, {
+		Store = testMockStore,
+		NowClock = 1044,
+	})
+	assert(rejoinOk and DataService.IsUserIdReady(userP), "Rejoin after EndSession must succeed")
+	local reloaded = DataService.GetProfileByUserId(userP) :: Types.PlayerProfileData
+	assert(reloaded.Coins == 420 and reloaded.Revision == 5, "Coins & Revision must persist across rejoin")
+	assert(reloaded.LastAccrualTimestamp == 1044, "Stage 3 login resets LastAccrualTimestamp with zero offline coins")
+	assert(reloaded.Upgrades["PenSlot_2"] == true and reloaded.Upgrades["FrostCracker"] == true, "Upgrades persist")
+	assert(reloaded.DiscoveredSpecies["StarSlime"] == true and reloaded.DiscoveredSpecies["CinderPup"] == true, "DiscoveredSpecies persist")
+	assert(reloaded.Items["pod-inc"] ~= nil and reloaded.Items["pod-inc"].MaturesAt == 1045, "Offline MaturesAt must survive rejoin intact")
+	assert(reloaded.Items["pen-critter"] ~= nil and reloaded.Items["pen-critter"].FeedLevel == 1 and reloaded.Items["pen-critter"].Variant == "Radiant", "Pen critter variant & FeedLevel persist")
+	assert(reloaded.Slots["Incubator_1"] == "pod-inc" and reloaded.Slots["Pen_2"] == "pen-critter", "Slots persist across rejoin")
+
+	local secondHandle = if sessions[userP] ~= nil then sessions[userP].ProfileHandle else nil
+	DataService.EndSession(userP)
+	if secondHandle ~= nil then
+		waitForHandleRelease(secondHandle, 2)
+	end
+	passed += 1
+
+	-- 6. Forced load failure: clean kick & zero silent blank overwrite of existing save
+	local failKickCount = 0
+	local failKickReason = ""
+	local failingStore = {
+		Name = isolatedStoreName .. "_Fail",
+		StartSessionAsync = function(_self: any, _key: string, _params: any)
+			return nil
+		end,
+	}
+	local failOk, failReason = DataService.StartProfileSessionForUserId(userP, nil, {
+		Store = failingStore,
+		NowClock = 1500,
+		OnKick = function(msg: string)
+			failKickCount += 1
+			failKickReason = msg
+		end,
+	})
+	assert(not failOk and failReason == "LoadFailed", "Nil StartSessionAsync must fail closed with LoadFailed")
+	assert(failKickCount == 1 and failKickReason == LOAD_FAILED_KICK_MESSAGE, "Load failure must trigger clean player kick")
+	assert(not DataService.IsUserIdReady(userP) and DataService.GetProfileByUserId(userP) == nil, "Failed load must not mark session Ready or blank profile")
+
+	local failAfterThrowCount = 0
+	local throwingStore = {
+		Name = isolatedStoreName .. "_Throw",
+		StartSessionAsync = function(_self: any, _key: string, _params: any)
+			error("Simulated DataStore 503 outage")
+		end,
+	}
+	local throwOk, throwReason = DataService.StartProfileSessionForUserId(userP, nil, {
+		Store = throwingStore,
+		NowClock = 1500,
+		OnKick = function(_msg: string)
+			failAfterThrowCount += 1
+		end,
+	})
+	assert(not throwOk and throwReason == "LoadFailed" and failAfterThrowCount == 1, "Throwing StartSessionAsync must fail closed and kick cleanly")
+
+	local verifyAfterFailOk = DataService.StartProfileSessionForUserId(userP, nil, {
+		Store = testMockStore,
+		NowClock = 1500,
+	})
+	assert(verifyAfterFailOk, "Existing save must still load after earlier StartSessionAsync failure")
+	local preservedProfile = DataService.GetProfileByUserId(userP) :: Types.PlayerProfileData
+	assert(preservedProfile.Coins == 420 and preservedProfile.Items["pod-inc"] ~= nil, "Failed load must NEVER overwrite existing saved Coins or Items")
+	passed += 1
+
+	-- 7. Dual-server lock theft (OnSessionEnd fires while online -> clears readiness & kicks cleanly)
+	local theftKickCount = 0
+	local userTheft = -910052
+	DataService.EndSession(userTheft)
+	local theftJoinOk = DataService.StartProfileSessionForUserId(userTheft, nil, {
+		Store = testMockStore,
+		NowClock = 1600,
+		OnKick = function(_msg: string)
+			theftKickCount += 1
+		end,
+	})
+	assert(theftJoinOk and DataService.IsUserIdReady(userTheft), "Theft test session ready")
+	local stolenSession = sessions[userTheft]
+	local stolenHandle = if stolenSession ~= nil then stolenSession.ProfileHandle else nil
+	assert(stolenHandle ~= nil, "Theft test handle present")
+	-- Simulate another server claiming lock / ProfileStore terminating local session externally.
+	local activeStolenHandle = stolenHandle :: ProfileHandleLike
+	activeStolenHandle:EndSession()
+	waitForHandleRelease(activeStolenHandle, 2)
+	task.wait()
+	assert(not DataService.IsUserIdReady(userTheft) and DataService.GetProfileByUserId(userTheft) == nil, "Lock loss clears readiness immediately")
+	assert(theftKickCount == 1, "Lock loss (OnSessionEnd) triggers clean kick")
+	passed += 1
+
+	-- 8. BindToClose / FlushActiveProfileSessions saves multiple active profiles cleanly
+	local userFlush1 = userP
+	local userFlush2 = -910053
+	DataService.EndSession(userFlush2)
+	local pFlush1 = DataService.GetProfileByUserId(userFlush1) :: Types.PlayerProfileData
+	pFlush1.Coins = 777
+	assert(DataService.StartProfileSessionForUserId(userFlush2, nil, {
+		Store = testMockStore,
+		NowClock = 1700,
+	}), "Flush test user 2 starts")
+	local pFlush2 = DataService.GetProfileByUserId(userFlush2) :: Types.PlayerProfileData
+	pFlush2.Coins = 888
+
+	local flushedAll = DataService.FlushActiveProfileSessions(2)
+	assert(flushedAll, "FlushActiveProfileSessions completes cleanly within timeout")
+	assert(not DataService.IsUserIdReady(userFlush1) and not DataService.IsUserIdReady(userFlush2), "Flush clears all active session readiness")
+
+	assert(DataService.StartProfileSessionForUserId(userFlush1, nil, { Store = testMockStore, NowClock = 1710 }), "Reload flushed user 1")
+	assert(DataService.StartProfileSessionForUserId(userFlush2, nil, { Store = testMockStore, NowClock = 1710 }), "Reload flushed user 2")
+	assert((DataService.GetProfileByUserId(userFlush1) :: Types.PlayerProfileData).Coins == 777, "Shutdown flush preserved user 1 Coins=777")
+	assert((DataService.GetProfileByUserId(userFlush2) :: Types.PlayerProfileData).Coins == 888, "Shutdown flush preserved user 2 Coins=888")
+	DataService.FlushActiveProfileSessions(2)
+	passed += 1
+
+	-- 9. Legacy schema migration, corruption hardening & offline MaturesAt preservation (zero offline Coins)
+	local legacyRaw: { [string]: any } = {
+		SchemaVersion = 0,
+		Coins = 9_999_999_999,
+		PendingFraction = -0.5,
+		LastAccrualTimestamp = 100,
+		Revision = 0,
+		Slots = {
+			Pen_2 = "ghost-missing",
+			Incubator_1 = "legacy-inc",
+		},
+		Items = {
+			["legacy-inc"] = {
+				UID = "legacy-inc",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "Incubating",
+				AssignedSlot = "Incubator_1",
+				PlantedAt = 2000,
+				MaturesAt = 2045,
+				CreatedAt = 1990,
+				-- Intentionally omit FeedLevel to verify legacy migration backfill
+			},
+			["legacy-hatched"] = {
+				UID = "legacy-hatched",
+				SpeciesId = "CometOwl",
+				Variant = "Radiant",
+				State = "HatchedInBag",
+				CreatedAt = 1500,
+			},
+			["locked-pen"] = {
+				UID = "locked-pen",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_3", -- Locked since PenSlot_3 not owned; must demote cleanly
+				CreatedAt = 1400,
+			},
+			["bad-species"] = {
+				UID = "bad-species",
+				SpeciesId = "RemovedBogusCritter",
+				State = "PodInBag",
+				CreatedAt = 1200,
+			},
+		},
+	}
+
+	local migrated = DataService.ReconcileAndMigrateProfileData(legacyRaw, 2044)
+	assert(migrated.SchemaVersion == Constants.SCHEMA_VERSION, "Legacy SchemaVersion updated")
+	assert(migrated.Coins == Constants.MAX_COINS, "Out-of-range Coins clamped cleanly")
+	assert(migrated.PendingFraction == 0 and migrated.Revision == 1, "Invalid fraction/revision repaired")
+	assert(migrated.LastAccrualTimestamp == 2044, "Login resets LastAccrualTimestamp with zero offline payout")
+	assert(migrated.Slots["Pen_2"] == nil, "Dangling slot pointer stripped")
+	assert(migrated.Items["legacy-inc"] ~= nil and migrated.Items["legacy-inc"].MaturesAt == 2045, "Offline MaturesAt timestamp preserved during migration")
+	assert(migrated.Items["legacy-inc"].FeedLevel == 0, "Legacy omitted FeedLevel defaulted to 0")
+	assert(migrated.DiscoveredSpecies["CometOwl"] == true and migrated.DiscoveredSpecies["StarSlime"] == true, "DiscoveredSpecies backfilled from legacy critters")
+	assert(migrated.Items["locked-pen"] ~= nil and migrated.Items["locked-pen"].State == "HatchedInBag" and migrated.Items["locked-pen"].AssignedSlot == nil, "Locked pen item safely demoted to bag")
+	assert(migrated.Items["bad-species"] == nil, "Unknown species entry removed safely during migration")
 	passed += 1
 
 	return passed

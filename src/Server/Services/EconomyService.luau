@@ -68,6 +68,7 @@ local plotStateListeners: { (player: Player) -> () } = {}
 local stationAuthorizer: StationAuthorizer? = nil
 local lureSpawner: LureSpawner? = nil
 local accrualRunning = false
+local beforeSaveRegistered = false
 
 local function notifyPlotChanged(player: Player): ()
 	for _, cb in ipairs(plotStateListeners) do
@@ -771,6 +772,13 @@ function EconomyService.Start(self: typeof(EconomyService)): ()
 		return EconomyService.HandleBuyUpgrade(player, upgradeId)
 	end)
 
+	if not beforeSaveRegistered then
+		beforeSaveRegistered = true
+		DataService.OnBeforeSave(function(_player: Player?, profile: Types.PlayerProfileData)
+			EconomyService.SettleProfileCoins(profile, workspace:GetServerTimeNow())
+		end)
+	end
+
 	if not accrualRunning then
 		accrualRunning = true
 		task.spawn(function()
@@ -1043,6 +1051,54 @@ function EconomyService.RunSelfTest(): number
 	local mockDeniedOk, mockDeniedReason = EconomyService.CheckStationAuthorization(nil, "UpgradePad", "PenSlot_2")
 	assert(not mockDeniedOk and mockDeniedReason == "PlayerUnavailable", "Nil player denied")
 	EconomyService.SetStationAuthorizer(savedAuthorizer)
+	passed += 1
+
+	-- 7. Stage 3 offline MaturesAt boundary & zero-offline-coin settlement after login migration
+	local offlineRaw: { [string]: any } = {
+		SchemaVersion = 0,
+		Coins = 50,
+		PendingFraction = 0.25,
+		LastAccrualTimestamp = 1000, -- 12h older than login clock
+		Revision = 2,
+		Slots = {
+			Incubator_1 = "off-inc",
+			Pen_1 = "off-pen",
+		},
+		Items = {
+			["off-inc"] = {
+				UID = "off-inc",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "Incubating",
+				AssignedSlot = "Incubator_1",
+				PlantedAt = 1000,
+				MaturesAt = 1045,
+				CreatedAt = 990,
+			},
+			["off-pen"] = {
+				UID = "off-pen",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_1",
+				CreatedAt = 900,
+			},
+		},
+	}
+	local tBeforeMature = 1044
+	local migratedBefore = DataService.ReconcileAndMigrateProfileData(offlineRaw, tBeforeMature)
+	assert((EconomyService.ValidateProfileInvariants(migratedBefore)), "Migrated offline profile passes invariants")
+	assert(not EconomyService.SettleProfileCoins(migratedBefore, tBeforeMature), "Zero offline coins paid on login immediately after migration")
+	assert(migratedBefore.Coins == 50, "Offline duration pays 0 extra coins in Stage 3")
+
+	local earlyHatch = EconomyService.HatchFromSlotOnProfile(migratedBefore, "Incubator_1", 1044, rng)
+	assert(not earlyHatch.Ok and earlyHatch.Reason == "NotMature", "1s before MaturesAt stays NotMature")
+
+	local tTwelveHoursLater = 1045 + 12 * 3600
+	local lateHatch = EconomyService.HatchFromSlotOnProfile(migratedBefore, "Incubator_1", tTwelveHoursLater, rng)
+	assert(lateHatch.Ok and lateHatch.SpeciesId == "NebulaFox", "Pod incubated offline matures 12h later on first Hatch attempt")
+	assert(migratedBefore.DiscoveredSpecies["NebulaFox"] == true, "Late offline hatch marks species discovered")
+	assert((EconomyService.ValidateProfileInvariants(migratedBefore)), "Invariants valid after offline hatch")
 	passed += 1
 
 	return passed

@@ -604,7 +604,7 @@ function PlotService.HandlePlayerReadyAdmission(
 	local ok, reason, plotId = PlotService.AssignPlotForUserId(userId, displayName, profile, player)
 	if not ok then
 		-- Never leave an excess player Ready without a Ranch; close session and reject cleanly.
-		DataService.EndMockSession(userId, player)
+		DataService.EndSession(userId, player)
 		if player ~= nil and player.Parent ~= nil then
 			player:Kick("This prototype server is full (max 2 ranches). Please join another server.")
 		end

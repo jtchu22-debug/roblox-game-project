@@ -152,28 +152,27 @@ Share the filled Observation & Timing Sheet and Post-Session Debrief notes back 
 4. **Tactile Excitement / Toy-Factor Gap:** `FeedCritter` and `UseFrostLure` trigger from menu buttons or static `ProximityPrompt` taps rather than physical/playful world interactions (such as throwing food directly to critters in the pen or racing/carrying a contested rare Star-Egg drop before it expires).
 
 ### 6.5 Handoff Status
-- **Stage 3 Status:** Remains **ON HOLD** (`MockStore` preserved; Round 2 + ChatGPT **Review #013 (`d9036b4`)** + **Review #014 (`c604289`)** drove Stage 2C `v0.2.4-s2c-astral-fall`).
-- **ChatGPT Reviews #013–#014 (`d9036b4`, `c604289`):** Flagged missing spatial separation between the two Crater routes, Frost Lure `BagFull` pre-check / error feedback / landing visibility, always-on Astral availability/payout compression, and mobile text/prompt clutter — all addressed in **Section 7 / Stage 2C**.
+- **Stage 3 Fast-Track Note (November 21, 2026):** Following **Review #015 (`c095138`)**, the `75s` Astral Fall warning-to-warning cadence fix (`MeteorService.luau`) and Round 3 worksheet column restorations below were completed, and the Human Project Lead authorized accelerating straight into **Stage 3** (`ProfileStore` persistence & full roadmap completion) while pausing after each milestone commit for ChatGPT confirmation.
 
 ---
 
 ## 7. Stage 2C Round 3 Playtest Protocol (`v0.2.4-s2c-astral-fall`, 3–5 Fresh Testers)
 
 ### 7.1 What Changed for Round 3 (Round 2 Feedback + Reviews #013 & #014)
-1. **Astral Worth Chasing (`Astral Fall` Timed Event + Tuned Rarity/Payouts):** Removed automatic `Astral` refill (`0` on startup; wild spawns are Ember `72%` / Frost `28%` with `10s` node respawn). Every `75s` (first event `45s` after boot), a visible `3s` falling Astral meteor announces on North Frost Ridge and stays active for `55s`. `CometOwl` drop rate lowered to `10%` (`18/s | 400`); late-game payouts & upgrade costs tuned (`60 / 150 / 260 / 500 / 850 / 1,850`; `3,670` total upgrades) while preserving the `15s` starter `StarSlime` hatch.
+1. **Astral Worth Chasing (`Astral Fall` Timed Event + Tuned Rarity/Payouts):** Removed automatic `Astral` refill (`0` on startup; wild spawns are Ember `72%` / Frost `28%` with `10s` node respawn). Every `75s` fall-to-fall from warning start (first event `45s` after boot), a visible `3s` falling Astral meteor announces on North Frost Ridge and stays active for `55s`. `CometOwl` drop rate lowered to `10%` (`18/s | 400`); late-game payouts & upgrade costs tuned (`60 / 150 / 260 / 500 / 850 / 1,850`; `3,670` total upgrades) while preserving the `15s` starter `StarSlime` hatch.
 2. **Two Marked Crater Routes & Decluttered Map / Mobile UI:** Split Crater into **South Ember Basin** (`MeteorNode_1..3`) and ramp-accessed **North Frost Ridge** (`MeteorNode_4..6`) with route markers; compacted world labels (`130x28`, `24` studs) shown contextually only when actionable; shrank prompt range (`12 -> 7.5` studs) and spaced upgrade pads into 2 rows (`>= 8` studs apart); enabled single-row phone HUD (`>= 360px` wide) and auto-hid `BottomHintBar` once a starter critter is placed in Pen #1.
 3. **Frost Lure Completeness (`Review #013`):** Added server + client committed `BagFull` pre-check before spawning/charging (`75 Coins`), owner `LureFailed` error toasts for every failure mode, a visible cyan `LureBeacon` + `8s` guide beam showing where the Frost Lure landed strictly on North Frost Ridge. Keep the same `6` critters.
 
 ### 7.2 Round 3 Per-Tester Timing & Choice Log (`R3-01`..`R3-05`)
 Observe **3–5 fresh, consenting, uncoached testers** across **mobile** and **desktop**:
 
-| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Chased Astral Fall / Used Frost Lure? | Readability on Mobile / Crater Routes Clear? | Maxed Upgrades / Critters Under 5m? & Reason to Return (`GO` vs. `PIVOT`) |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| `R3-01` | | | | | | | |
-| `R3-02` | | | | | | | |
-| `R3-03` | | | | | | | |
-| `R3-04` | | | | | | | |
-| `R3-05` | | | | | | | |
+| Tester ID | Device / Input | Mode (`1P`/`2P`) | First Reward (`s`) | First Hatch & Pen (`s`) | Voluntary 2nd Rescue `<= 5m`? | Tool Unlock / 1st Eligible Fall (`s`) | Chased Astral Fall / Used Frost Lure? | Readability on Mobile / Crater Routes Clear? | Maxed Upgrades / Critters Under 5m? & Reason to Return (`GO` vs. `PIVOT`) |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `R3-01` | | | | | | | | | |
+| `R3-02` | | | | | | | | | |
+| `R3-03` | | | | | | | | | |
+| `R3-04` | | | | | | | | | |
+| `R3-05` | | | | | | | | | |
 
 ### 7.3 Round 3 Gate (`GO -> Stage 3` vs. `PIVOT`)
 - **Sample Count (`N / Denominator`):** `___ / 3–5`

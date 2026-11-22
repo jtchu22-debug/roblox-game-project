@@ -7,11 +7,15 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.2.4-s2c-astral-fall",
-	USE_MOCK_STORE = true,
-	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 137485500524067, -- Private Stage 2 test place (Bioniccat4000's Place: 11192026_1)
+	GAME_VERSION = "0.3.0-s3a-persistence",
+	USE_MOCK_STORE = false,
+	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
 	SCHEMA_VERSION = 1,
+	DATASTORE_NAME_DEV = "StarfallRanch_StudioDev_v1",
+	DATASTORE_NAME_LIVE = "StarfallRanch_Alpha_v1",
+	PROFILE_KEY_PREFIX = "Player_",
+	SHUTDOWN_FLUSH_TIMEOUT_SECONDS = 15,
 
 	-- Plot & Server Capacity Bounds
 	MAX_PLOTS_PROTOTYPE = 2,

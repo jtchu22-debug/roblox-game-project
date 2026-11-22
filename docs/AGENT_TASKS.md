@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
-> **Last Updated:** November 18, 2026  
-> **Current Active Milestone:** Stage 1 Complete (`S1-00`–`S1-09`) — Stage 2 Discovery Playtest Gate (`S2-01`) In Progress
+> **Last Updated:** November 21, 2026  
+> **Current Active Milestone:** Stage 3A (`S3-01` & `S3-02` + Review #015 Cadence Fix) Implemented — Awaiting ChatGPT Review Before `S3-03`
 
 ---
 
@@ -46,7 +46,7 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached Playtest (`v0.2.4-s2c-astral-fall`):** Round 2 (`N = 3`), **Review #013 (`d9036b4`)**, and **Review #014 (`c604289`)** drove Stage 2C: timed visible **Astral Fall** event (`45s` first fall, `75s` interval, `3s` comet arrival, `55s` window; `CometOwl` `10%`, zero auto Astral refill), two marked Crater routes (**South Ember Basin** & ramp-accessed **North Frost Ridge**), mobile/world declutter (`24`-stud `130x28` station badges, `7.5`-stud prompt range, spaced `2x3` upgrade pads, single-row `>= 360px` top HUD, onboarding-only `BottomHintBar`), and **Frost Lure** `BagFull` pre-check + failure toasts + landing guide beam/beacon (same 6 critters kept). Next: observe **3–5 fresh testers** using Section 7 of [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md) for the **GO -> Stage 3 vs. PIVOT** verdict in [AGENT_REVIEWS.md](./AGENT_REVIEWS.md). | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[~]` |
+| **S2-01** | **P0** | `S1-09` | Human + ChatGPT | **Uncoached Playtest & Stage 2C (`v0.2.4-s2c-astral-fall` -> Review #015 Fix):** Round 2 (`N = 3`), **Review #013 (`d9036b4`)**, **Review #014 (`c604289`)**, and **Review #015 (`c095138`)** drove timed **Astral Fall** (fixed in Stage 3A to exact `75s` warning-to-warning fall cadence in `MeteorService.luau`), marked Basin/Ridge routes, mobile declutter, and Frost Lure fixes. **Human Lead fast-tracked progression into Stage 3–6 on Nov 21, 2026** (skipping extended Round 3 wait while retaining ChatGPT commit-gate confirmation per step). | [S2_01_PLAYTEST_KIT.md](./S2_01_PLAYTEST_KIT.md), [AGENT_REVIEWS.md](./AGENT_REVIEWS.md) | `[x]` |
 
 ---
 
@@ -54,8 +54,8 @@
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S3-01** | **P1** | `S2-01` (Go) | Gemini | Vendor pinned `MadStudioRoblox/ProfileStore` (preserving MIT `LICENSE`) and document pinned commit/version. | `src/Server/Libs/ProfileStore/` | `[ ]` |
-| **S3-02** | **P1** | `S3-01` | Gemini | Upgrade `DataService` to `ProfileStore` (`StartSessionAsync`, `OnSessionEnd` kick, schema reconciliation, `BindToClose`, zero silent blank live fallback) + offline `MaturesAt` incubation check. | `src/Server/Services/DataService.luau` | `[ ]` |
+| **S3-01** | **P1** | `S2-01` (Fast-Track) | Gemini | Vendor pinned `MadStudioRoblox/ProfileStore` (`v1.0.3`, commit `45c9847cbcf1fc260369c50eb335aba7c35aecdd`, preserving upstream **Apache-2.0** `LICENSE` — correcting Stage 0 MIT note) and document commit/SHA-256 in `VERSION.md`. | `src/Server/Libs/ProfileStore/` | `[~]` |
+| **S3-02** | **P1** | `S3-01` | Gemini | Upgrade `DataService` to `ProfileStore` (`StartSessionAsync`, `OnSessionEnd` lock-loss kick, `ReconcileAndMigrateProfileData`, `OnBeforeSave` coin flush, `BindToClose` flush, zero silent blank live fallback) + offline `MaturesAt` incubation check + 9 `DataService` / 7 `EconomyService` self-test suites. | `src/Server/Services/DataService.luau`, `EconomyService.luau`, `PlotService.luau` | `[~]` |
 | **S3-03** | **P1** | `S3-02` | Gemini | Scale greybox map & `PlotService` from `2` $\rightarrow$ `6` plots (`MaxPlayers = 6`), add late-join `PublicPlotDTO` resync and plot reuse revision cleanup, add Stage 3 upgrades (`PenSlot_4`, `BagCap_20`, `PenSlot_5`). | `PlotService.luau`, `GenerateGreyboxMap.luau` | `[ ]` |
 | **S3-04** | **P1** | `S3-03` | ChatGPT + Gemini | Pass full persistence failure-injection suite (load fail clean kick, dual-server lock theft, shutdown flush, `MaturesAt` clock boundary tests) and 6-player full-server exploit review. | `docs/AGENT_REVIEWS.md` | `[ ]` |
 
