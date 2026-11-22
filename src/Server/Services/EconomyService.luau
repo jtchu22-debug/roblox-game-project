@@ -759,11 +759,23 @@ function EconomyService.OnPlotStateChanged(callback: (player: Player) -> ()): ()
 	table.insert(plotStateListeners, callback)
 end
 
+local function ensureBeforeSaveRegistered(): ()
+	if beforeSaveRegistered then
+		return
+	end
+	beforeSaveRegistered = true
+	DataService.OnBeforeSave(function(_player: Player?, profile: Types.PlayerProfileData)
+		EconomyService.SettleProfileCoins(profile, workspace:GetServerTimeNow())
+	end)
+end
+
 function EconomyService.Init(self: typeof(EconomyService)): ()
-	-- Handler wiring and online accrual start in Start().
+	ensureBeforeSaveRegistered()
 end
 
 function EconomyService.Start(self: typeof(EconomyService)): ()
+	ensureBeforeSaveRegistered()
+
 	NetworkService.BindPlotActionHandler(function(player: Player, action: Types.PlotAction, targetSlotOrUID: string, itemUID: string?)
 		EconomyService.HandlePlotAction(player, action, targetSlotOrUID, itemUID)
 	end)
@@ -771,13 +783,6 @@ function EconomyService.Start(self: typeof(EconomyService)): ()
 	NetworkService.BindBuyUpgradeHandler(function(player: Player, upgradeId: Types.UpgradeId)
 		return EconomyService.HandleBuyUpgrade(player, upgradeId)
 	end)
-
-	if not beforeSaveRegistered then
-		beforeSaveRegistered = true
-		DataService.OnBeforeSave(function(_player: Player?, profile: Types.PlayerProfileData)
-			EconomyService.SettleProfileCoins(profile, workspace:GetServerTimeNow())
-		end)
-	end
 
 	if not accrualRunning then
 		accrualRunning = true
@@ -1099,6 +1104,62 @@ function EconomyService.RunSelfTest(): number
 	assert(lateHatch.Ok and lateHatch.SpeciesId == "NebulaFox", "Pod incubated offline matures 12h later on first Hatch attempt")
 	assert(migratedBefore.DiscoveredSpecies["NebulaFox"] == true, "Late offline hatch marks species discovered")
 	assert((EconomyService.ValidateProfileInvariants(migratedBefore)), "Invariants valid after offline hatch")
+	passed += 1
+
+	-- 8. End-to-end ordinary leave AND shutdown flush with unaccrued pen earnings + confirmed reload
+	local econStore = DataService.CreateIsolatedMockStoreForTest("EconLeave")
+	local uEcon = -920088
+	DataService.EndSession(uEcon)
+
+	local joinNow = math.floor(workspace:GetServerTimeNow())
+	local econJoinOk = DataService.StartProfileSessionForUserId(uEcon, nil, {
+		Store = econStore,
+		NowClock = joinNow,
+	})
+	assert(econJoinOk and DataService.IsUserIdReady(uEcon), "Suite 8 initial session ready")
+
+	local pEcon1 = DataService.GetProfileByUserId(uEcon) :: Types.PlayerProfileData
+	pEcon1.Coins = 100
+	pEcon1.Items["econ-slime"] = {
+		UID = "econ-slime",
+		SpeciesId = "StarSlime", -- 2 Coins/s
+		Variant = "Normal",
+		State = "HatchedInBag",
+		AssignedSlot = nil,
+		PlantedAt = nil,
+		MaturesAt = nil,
+		CreatedAt = joinNow,
+		FeedLevel = 0,
+	}
+	assert(EconomyService.PlaceInPenOnProfile(pEcon1, "Pen_1", "econ-slime", joinNow).Ok, "Place StarSlime in Pen_1")
+	-- Simulate 10 seconds of unaccrued online pen time right before ordinary player leave.
+	pEcon1.LastAccrualTimestamp = workspace:GetServerTimeNow() - 10
+
+	DataService.EndSession(uEcon)
+	assert(not DataService.IsUserIdReady(uEcon), "Leave closes session before save")
+	assert(DataService.WaitForUserFinalSave(uEcon, 2), "Ordinary leave confirms OnAfterSave final write")
+
+	local rejoinNow = workspace:GetServerTimeNow()
+	assert(DataService.StartProfileSessionForUserId(uEcon, nil, {
+		Store = econStore,
+		NowClock = rejoinNow,
+	}), "Suite 8 reload after ordinary leave")
+	local pEcon2 = DataService.GetProfileByUserId(uEcon) :: Types.PlayerProfileData
+	assert(pEcon2.Coins >= 120 and pEcon2.Coins <= 126, string.format("Leave must settle & persist >=20 unaccrued Coins (got %d)", pEcon2.Coins))
+
+	-- Now verify Shutdown flush (FlushActiveProfileSessions) also settles final unaccrued Coins before writing.
+	pEcon2.Coins = 200
+	pEcon2.LastAccrualTimestamp = workspace:GetServerTimeNow() - 15
+	assert(DataService.FlushActiveProfileSessions(2), "Shutdown flush confirms OnAfterSave")
+
+	assert(DataService.StartProfileSessionForUserId(uEcon, nil, {
+		Store = econStore,
+		NowClock = workspace:GetServerTimeNow(),
+	}), "Suite 8 reload after shutdown flush")
+	local pEcon3 = DataService.GetProfileByUserId(uEcon) :: Types.PlayerProfileData
+	assert(pEcon3.Coins >= 230 and pEcon3.Coins <= 238, string.format("Shutdown flush must settle & persist >=30 unaccrued Coins (got %d)", pEcon3.Coins))
+
+	assert(DataService.FlushActiveProfileSessions(2), "Suite 8 cleanup flush")
 	passed += 1
 
 	return passed

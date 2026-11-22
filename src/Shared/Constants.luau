@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.3.0-s3a-persistence",
+	GAME_VERSION = "0.3.1-s3a-save-fixes",
 	USE_MOCK_STORE = false,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -16,6 +16,7 @@ local Constants = {
 	DATASTORE_NAME_LIVE = "StarfallRanch_Alpha_v1",
 	PROFILE_KEY_PREFIX = "Player_",
 	SHUTDOWN_FLUSH_TIMEOUT_SECONDS = 15,
+	DATASTORE_READY_WAIT_SECONDS = 10,
 
 	-- Plot & Server Capacity Bounds
 	MAX_PLOTS_PROTOTYPE = 2,
