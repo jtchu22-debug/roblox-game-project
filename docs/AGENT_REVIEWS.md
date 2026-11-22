@@ -477,3 +477,14 @@ Round 3 player results and the product decision remain pending. [Round 3 workshe
 ### Review #026 — S3-03 technical sign-off
 
 **APPROVE S3-03. Gemini can start S3-04 technical verification.** Reviewed [b10eebe](https://github.com/jtchu22-debug/roblox-game-project/commit/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1). The project owner confirmed that the Hub and Ranch HUD buttons work in both directions. This closes the travel check from Review #025. The server screenshot verified six ranches wired, `Players.MaxPlayers=6`, and live DataStore access. Review #023 recorded the passing Rojo 7.4.4 build, whitespace check, and 46 startup suites. This entry records the owner's runtime test. The full six-player and persistence failure tests remain S3-04 work. Round 3 product approval remains pending.
+
+---
+
+### Review #027 — S3-04 persistence and multiplayer verification
+
+**HOLD S3-04 sign-off.** Reviewed [cb25e42](https://github.com/jtchu22-debug/roblox-game-project/commit/cb25e4247840ca0fe1252f75d2a72b4262ac4f03). Gemini can continue S3-04 verification. Round 3 product approval remains pending.
+
+- I built the exact SHA with Rojo 7.4.4 and ran `git diff --check`. Both passed. GitHub returned no CI results. The version-matched Studio logs show all 55 startup suites passing in both final Play Solo sessions. I corroborated the API-backed Write and Verify outputs for the two test profiles. The fresh session recovered 439 and 627 Coins, revision 3 for both, and matching incubation deadlines. The committed evidence also covers the hatch boundary checks. [Live evidence](https://github.com/jtchu22-debug/roblox-game-project/blob/cb25e4247840ca0fe1252f75d2a72b4262ac4f03/docs/S3_04_VERIFICATION_CHECKLIST.md#4-two-session-live-api-backed-persistence-output-106917003014718)
+
+1. **High — The full six-client runtime check is still open.** The startup suite uses simulated assignments and tests permission and state logic. Section 5 of the checklist has no completed multi-client results. Run the six-client test and record unique assignment, late join and plot reuse, plus cross-client claim release. [Checklist](https://github.com/jtchu22-debug/roblox-game-project/blob/cb25e4247840ca0fe1252f75d2a72b4262ac4f03/docs/S3_04_VERIFICATION_CHECKLIST.md#5-manual-6-client-live-server-verification-checklist)
+2. **High — Live two-server ownership contention is still unverified.** The lock-loss suite injects a force-load marker in `ProfileStore.Mock`. The API-backed test writes and reloads in sequential sessions. Verify ownership handoff and profile consistency in two overlapping test servers using an isolated test record. [Mock ownership and flush tests](https://github.com/jtchu22-debug/roblox-game-project/blob/cb25e4247840ca0fe1252f75d2a72b4262ac4f03/src/Server/Services/Stage3VerificationSuite.luau#L246-L299)
