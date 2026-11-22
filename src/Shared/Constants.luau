@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.3.3-s3a-per-op-confirm",
+	GAME_VERSION = "0.3.4-s3-03-six-plot-hub",
 	USE_MOCK_STORE = false,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -25,7 +25,8 @@ local Constants = {
 	STARTER_INCUBATOR_SLOTS = 1,
 	MAX_STATION_INTERACT_DISTANCE = 18,
 	PROMPT_ACTIVATION_DISTANCE = 7.5,
-	MAX_ACTIVE_WILD_METEORS = 4,
+	WILD_METEOR_NODE_COUNT = 8,
+	MAX_ACTIVE_WILD_METEORS = 5,
 	WILD_METEOR_RESPAWN_SECONDS = 10,
 	ASTRAL_FALL_FIRST_DELAY_SECONDS = 45,
 	ASTRAL_FALL_INTERVAL_SECONDS = 75,
@@ -34,7 +35,7 @@ local Constants = {
 
 	-- Greybox Map Identifiers & CollectionService Tags
 	GREYBOX_ROOT_NAME = "StarfallGreyboxRoot",
-	GREYBOX_VERSION = "1.0.0-s1-02",
+	GREYBOX_VERSION = "2.0.0-s3-03-6plots",
 	TAG_GREYBOX_ROOT = "StarfallGreyboxRoot",
 	TAG_PLOT = "StarfallPlot",
 	TAG_INCUBATOR_SLOT = "StarfallIncubatorSlot",
@@ -42,11 +43,13 @@ local Constants = {
 	TAG_UPGRADE_PAD = "StarfallUpgradePad",
 	TAG_SELL_STAND = "StarfallSellStand",
 	TAG_LURE_STAND = "StarfallLureStand",
+	TAG_HUB_STATION = "StarfallHubStation",
 	TAG_METEOR_NODE = "StarfallMeteorNode",
 	TAG_ACTIVE_METEOR = "StarfallActiveMeteor",
 
 	-- Inventory & Economy Safety Caps
 	MAX_BAG_CAPACITY = 10,
+	MAX_BAG_CAPACITY_UPGRADED = 20,
 	MAX_COINS = 1_000_000_000,
 	RADIANT_HATCH_CHANCE = 0.10,
 	RADIANT_BONUS_COINS_PER_SEC = 0,
@@ -69,6 +72,7 @@ local Constants = {
 		RequestStartCrack = "RequestStartCrack",
 		RequestFinishCrack = "RequestFinishCrack",
 		RequestBuyUpgrade = "RequestBuyUpgrade",
+		RequestNavigate = "RequestNavigate",
 	}),
 	MAX_CRACK_START_DISTANCE = 18,
 	MAX_CRACK_FINISH_DISTANCE = 22,

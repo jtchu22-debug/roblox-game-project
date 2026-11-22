@@ -17,7 +17,9 @@ local SoundController = require(ControllersFolder:WaitForChild("SoundController"
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
-local CritterConfig = require(Shared:WaitForChild("Config"):WaitForChild("CritterConfig"))
+local ConfigFolder = Shared:WaitForChild("Config")
+local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
+local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 
 type PartOffset = {
 	Part: BasePart,
@@ -26,6 +28,8 @@ type PartOffset = {
 
 type VisualEntry = {
 	Key: string,
+	PlotId: number,
+	OwnerUserId: number,
 	Kind: "Critter" | "Pod",
 	Signature: string,
 	Model: Model,
@@ -52,12 +56,15 @@ local PlotVisualController = {
 
 local latestPlots: { [number]: Types.PublicPlotDTO } = {}
 local latestPlotsRevision = -1
+local lastOwnerByPlotId: { [number]: number } = {}
+local lastPlotRevisionByPlotId: { [number]: number } = {}
 local syncConn: RBXScriptConnection? = nil
 local heartbeatConn: RBXScriptConnection? = nil
 local visualsFolder: Folder? = nil
 local activeVisuals: { [string]: VisualEntry } = {}
 local publicPlotsListeners: { (plots: { [number]: Types.PublicPlotDTO }) -> () } = {}
 local wasReducedMotion = false
+local suppressSyncLog = false
 
 local function getGreyboxPlotModel(plotId: number): Model?
 	local root = workspace:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
@@ -88,12 +95,30 @@ local function resolveStationPartOnPlot(plotModel: Model, stationKind: string, t
 	elseif stationKind == "SellStand" then
 		local stand = plotModel:FindFirstChild("SellStand")
 		return if stand ~= nil and stand:IsA("BasePart") then stand else nil
-	elseif stationKind == "LureStand" then
-		local lure = plotModel:FindFirstChild("LureStand")
-		return if lure ~= nil and lure:IsA("BasePart") then lure else nil
 	elseif stationKind == "UpgradePad" then
 		local board = plotModel:FindFirstChild("UpgradeBoard")
 		local pad = if board ~= nil then board:FindFirstChild("UpgradePad_" .. targetId) else nil
+		return if pad ~= nil and pad:IsA("BasePart") then pad else nil
+	end
+	return nil
+end
+
+local function resolveHubStationPart(stationKind: string, targetId: string): BasePart?
+	local root = workspace:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
+	if root == nil then
+		return nil
+	end
+	local hub = root:FindFirstChild("CentralHub")
+	if hub == nil then
+		return nil
+	end
+	if stationKind == "LureStand" then
+		local kiosk = hub:FindFirstChild("FrostLureKiosk")
+		local lure = if kiosk ~= nil then kiosk:FindFirstChild("LureStand") else nil
+		return if lure ~= nil and lure:IsA("BasePart") then lure else nil
+	elseif stationKind == "UpgradePad" then
+		local workbench = hub:FindFirstChild("ToolWorkbench")
+		local pad = if workbench ~= nil then workbench:FindFirstChild("UpgradePad_" .. targetId) else nil
 		return if pad ~= nil and pad:IsA("BasePart") then pad else nil
 	end
 	return nil
@@ -167,6 +192,8 @@ end
 
 local function buildCritterVisual(
 	key: string,
+	plotId: number,
+	ownerUserId: number,
 	speciesId: Types.SpeciesId,
 	variant: Types.VariantId,
 	feedLevel: number,
@@ -419,6 +446,8 @@ local function buildCritterVisual(
 	local baseHop = if speciesId == "SolarGolem" then 0.45 else 0.75
 	return {
 		Key = key,
+		PlotId = plotId,
+		OwnerUserId = ownerUserId,
 		Kind = "Critter",
 		Signature = string.format("%s:%s:%d", speciesId, variant, feedLevel),
 		Model = model,
@@ -438,6 +467,8 @@ end
 
 local function buildPodVisual(
 	key: string,
+	plotId: number,
+	ownerUserId: number,
 	maturesAt: number,
 	pad: BasePart,
 	horizontalRotation: CFrame,
@@ -478,6 +509,8 @@ local function buildPodVisual(
 	model.Parent = folder
 	return {
 		Key = key,
+		PlotId = plotId,
+		OwnerUserId = ownerUserId,
 		Kind = "Pod",
 		Signature = tostring(maturesAt),
 		Model = model,
@@ -506,6 +539,18 @@ local function destroyVisualEntry(key: string): ()
 	end
 end
 
+local function destroyVisualsForPlot(plotId: number): ()
+	local toDestroy: { string } = {}
+	for key, entry in pairs(activeVisuals) do
+		if entry.PlotId == plotId then
+			table.insert(toDestroy, key)
+		end
+	end
+	for _, key in ipairs(toDestroy) do
+		destroyVisualEntry(key)
+	end
+end
+
 local function reconcilePlotVisuals(): ()
 	if visualsFolder == nil then
 		return
@@ -526,13 +571,15 @@ local function reconcilePlotVisuals(): ()
 					local feedLevel = penVisual.FeedLevel or 0
 					local signature = string.format("%s:%s:%d", penVisual.SpeciesId, penVisual.Variant, feedLevel)
 					local current = activeVisuals[key]
-					if current == nil or current.Signature ~= signature then
+					if current == nil or current.Signature ~= signature or current.OwnerUserId ~= dto.OwnerUserId then
 						destroyVisualEntry(key)
 						local pad = resolveStationPartOnPlot(plotModel, "Pen", slotId)
 						if pad ~= nil then
 							local phaseSeed = plotId * 1.7 + (#slotId * 0.9)
 							local created = buildCritterVisual(
 								key,
+								plotId,
+								dto.OwnerUserId,
 								penVisual.SpeciesId,
 								penVisual.Variant,
 								feedLevel,
@@ -552,13 +599,15 @@ local function reconcilePlotVisuals(): ()
 					desiredKeys[key] = true
 					local signature = tostring(incVisual.MaturesAt)
 					local current = activeVisuals[key]
-					if current == nil or current.Signature ~= signature then
+					if current == nil or current.Signature ~= signature or current.OwnerUserId ~= dto.OwnerUserId then
 						destroyVisualEntry(key)
 						local pad = resolveStationPartOnPlot(plotModel, "Incubator", slotId)
 						if pad ~= nil then
 							local phaseSeed = plotId * 1.3 + (#slotId * 0.6)
 							local created = buildPodVisual(
 								key,
+								plotId,
+								dto.OwnerUserId,
 								incVisual.MaturesAt,
 								pad,
 								horizontalRotation,
@@ -650,6 +699,64 @@ function PlotVisualController.Init(self: typeof(PlotVisualController)): ()
 	end
 	visualsFolder = folder
 	activeVisuals = {}
+	latestPlots = {}
+	latestPlotsRevision = -1
+	lastOwnerByPlotId = {}
+	lastPlotRevisionByPlotId = {}
+end
+
+function PlotVisualController.ApplyPublicPlotsSnapshot(plotsList: { Types.PublicPlotDTO }, revision: number): boolean
+	if typeof(plotsList) ~= "table" or typeof(revision) ~= "number" then
+		return false
+	end
+	if latestPlotsRevision ~= -1 and revision < latestPlotsRevision then
+		return false
+	end
+
+	latestPlotsRevision = revision
+	local nextMap: { [number]: Types.PublicPlotDTO } = {}
+	local occupiedCount = 0
+
+	for _, dto in ipairs(plotsList) do
+		if typeof(dto) == "table" and typeof(dto.PlotId) == "number" then
+			local plotId = dto.PlotId
+			local incomingPlotRev = if typeof(dto.PlotRevision) == "number" then dto.PlotRevision else 1
+			local prevPlotRev = lastPlotRevisionByPlotId[plotId] or 0
+
+			if incomingPlotRev < prevPlotRev and latestPlots[plotId] ~= nil then
+				local preserved = latestPlots[plotId]
+				nextMap[plotId] = preserved
+				if preserved.OwnerUserId ~= 0 then
+					occupiedCount += 1
+				end
+			else
+				local prevOwner = lastOwnerByPlotId[plotId]
+				if prevOwner ~= nil and prevOwner ~= dto.OwnerUserId then
+					destroyVisualsForPlot(plotId)
+				end
+				lastPlotRevisionByPlotId[plotId] = incomingPlotRev
+				lastOwnerByPlotId[plotId] = dto.OwnerUserId
+				nextMap[plotId] = dto
+				if dto.OwnerUserId ~= 0 then
+					occupiedCount += 1
+				end
+			end
+		end
+	end
+	latestPlots = nextMap
+
+	if not suppressSyncLog then
+		print(string.format(
+			"[PlotVisualController] Synced public plots (Revision %d, %d/%d occupied).",
+			revision,
+			occupiedCount,
+			#plotsList
+		))
+	end
+
+	reconcilePlotVisuals()
+	notifyPublicPlotsListeners()
+	return true
 end
 
 function PlotVisualController.Start(self: typeof(PlotVisualController)): ()
@@ -658,35 +765,7 @@ function PlotVisualController.Start(self: typeof(PlotVisualController)): ()
 
 	if syncConn == nil then
 		syncConn = syncPlotsEvent.OnClientEvent:Connect(function(plotsList: { Types.PublicPlotDTO }, revision: number)
-			if typeof(plotsList) ~= "table" or typeof(revision) ~= "number" then
-				return
-			end
-			if latestPlotsRevision ~= -1 and revision <= latestPlotsRevision then
-				return
-			end
-
-			latestPlotsRevision = revision
-			local nextMap: { [number]: Types.PublicPlotDTO } = {}
-			local occupiedCount = 0
-			for _, dto in ipairs(plotsList) do
-				if typeof(dto) == "table" and typeof(dto.PlotId) == "number" then
-					nextMap[dto.PlotId] = dto
-					if dto.OwnerUserId ~= 0 then
-						occupiedCount += 1
-					end
-				end
-			end
-			latestPlots = nextMap
-
-			print(string.format(
-				"[PlotVisualController] Synced public plots (Revision %d, %d/%d occupied).",
-				revision,
-				occupiedCount,
-				#plotsList
-			))
-
-			reconcilePlotVisuals()
-			notifyPublicPlotsListeners()
+			PlotVisualController.ApplyPublicPlotsSnapshot(plotsList, revision)
 		end)
 	end
 
@@ -717,6 +796,13 @@ function PlotVisualController.GetStationPartForUserId(userId: number, stationKin
 	if plotId == nil then
 		return nil
 	end
+	local upgradeDef = if stationKind == "UpgradePad"
+		then (UpgradeConfig.ById :: { [string]: Types.UpgradeDefinition })[targetId]
+		else nil
+	if stationKind == "LureStand" or (upgradeDef ~= nil and upgradeDef.StationZone == "Hub") then
+		return resolveHubStationPart(stationKind, targetId)
+	end
+
 	local plotModel = getGreyboxPlotModel(plotId)
 	if plotModel == nil then
 		return nil
@@ -732,6 +818,136 @@ function PlotVisualController.OnPublicPlotsChanged(callback: (plots: { [number]:
 			warn("[PlotVisualController] Initial PublicPlots callback error: " .. tostring(err))
 		end
 	end
+end
+
+function PlotVisualController.RunSelfTest(): number
+	local passed = 0
+	suppressSyncLog = true
+
+	local testOk, testErr = pcall(function()
+		local waitDeadline = os.clock() + 5
+		while os.clock() < waitDeadline do
+			local root = workspace:FindFirstChild(Constants.GREYBOX_ROOT_NAME)
+			local plots = if root then root:FindFirstChild("Plots") else nil
+			if plots and plots:FindFirstChild("Plot_6") then
+				break
+			end
+			RunService.RenderStepped:Wait()
+		end
+
+		local function makeEmptyPlot(plotId: number, plotRev: number): Types.PublicPlotDTO
+			return {
+				PlotId = plotId,
+				OwnerUserId = 0,
+				OwnerDisplayName = "",
+				PlotRevision = plotRev,
+				UnlockedUpgrades = {},
+				ActivePenVisuals = {},
+				IncubatorVisuals = {},
+			}
+		end
+
+		-- 1. Late-join 6-plot sync including Plot_6 Pen_5 visual + clean release destruction
+		local snap1: { Types.PublicPlotDTO } = {
+			{
+				PlotId = 1,
+				OwnerUserId = 101,
+				OwnerDisplayName = "Alpha",
+				PlotRevision = 2,
+				UnlockedUpgrades = { PenSlot_5 = true },
+				ActivePenVisuals = {
+					Pen_1 = { SpeciesId = "StarSlime", Variant = "Normal", FeedLevel = 0 },
+				},
+				IncubatorVisuals = {},
+			},
+			makeEmptyPlot(2, 1),
+			makeEmptyPlot(3, 1),
+			makeEmptyPlot(4, 1),
+			makeEmptyPlot(5, 1),
+			{
+				PlotId = 6,
+				OwnerUserId = 606,
+				OwnerDisplayName = "Sixth",
+				PlotRevision = 3,
+				UnlockedUpgrades = { PenSlot_5 = true },
+				ActivePenVisuals = {
+					Pen_5 = { SpeciesId = "NebulaFox", Variant = "Radiant", FeedLevel = 1 },
+				},
+				IncubatorVisuals = {},
+			},
+		}
+
+		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snap1, 1), "Apply 6-plot initial snapshot")
+		local p1Entry = activeVisuals["P1_Pen_1"]
+		local p6Entry = activeVisuals["P6_Pen_5"]
+		assert(p1Entry ~= nil and p6Entry ~= nil, "Both Plot_1 and Plot_6 Pen_5 client models built")
+		local p1OldModel = p1Entry.Model
+
+		-- Reject strictly stale global revision without mutating active visuals
+		assert(not PlotVisualController.ApplyPublicPlotsSnapshot({ makeEmptyPlot(1, 99) }, 0), "Strictly older global revision rejected")
+		assert(activeVisuals["P1_Pen_1"] == p1Entry, "Stale global packet preserves Plot_1 visual")
+		passed += 1
+
+		-- 2. Direct plot reuse with identical species at higher PlotRevision destroys old model & builds fresh one
+		local snapReuse: { Types.PublicPlotDTO } = {
+			{
+				PlotId = 1,
+				OwnerUserId = 202,
+				OwnerDisplayName = "Beta",
+				PlotRevision = 4,
+				UnlockedUpgrades = {},
+				ActivePenVisuals = {
+					Pen_1 = { SpeciesId = "StarSlime", Variant = "Normal", FeedLevel = 0 },
+				},
+				IncubatorVisuals = {},
+			},
+			makeEmptyPlot(2, 1),
+			makeEmptyPlot(3, 1),
+			makeEmptyPlot(4, 1),
+			makeEmptyPlot(5, 1),
+			makeEmptyPlot(6, 4),
+		}
+
+		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapReuse, 2), "Apply direct plot reuse snapshot")
+		local p1ReusedEntry = activeVisuals["P1_Pen_1"]
+		assert(p1ReusedEntry ~= nil and p1ReusedEntry.OwnerUserId == 202, "Reused Plot_1 assigned to new owner 202")
+		assert(p1ReusedEntry.Model ~= p1OldModel and p1OldModel.Parent == nil, "Old owner's critter model destroyed cleanly on direct plot reuse")
+		assert(activeVisuals["P6_Pen_5"] == nil, "Released Plot_6 visual removed cleanly")
+
+		-- Stale PlotRevision inside newer global envelope must not roll back Plot_1
+		local snapStalePlot: { Types.PublicPlotDTO } = {
+			{
+				PlotId = 1,
+				OwnerUserId = 101,
+				OwnerDisplayName = "AlphaStale",
+				PlotRevision = 2,
+				UnlockedUpgrades = {},
+				ActivePenVisuals = {},
+				IncubatorVisuals = {},
+			},
+		}
+		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapStalePlot, 3), "Envelope accepted while guarding per-plot revision")
+		assert(latestPlots[1].OwnerUserId == 202 and activeVisuals["P1_Pen_1"] ~= nil, "Lower PlotRevision must not roll back newer plot occupant")
+		passed += 1
+	end)
+
+	suppressSyncLog = false
+	for key in pairs(activeVisuals) do
+		destroyVisualEntry(key)
+	end
+	if visualsFolder ~= nil then
+		visualsFolder:ClearAllChildren()
+	end
+	latestPlots = {}
+	latestPlotsRevision = -1
+	lastOwnerByPlotId = {}
+	lastPlotRevisionByPlotId = {}
+
+	if not testOk then
+		error(testErr)
+	end
+
+	return passed
 end
 
 return PlotVisualController

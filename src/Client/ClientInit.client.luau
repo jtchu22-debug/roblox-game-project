@@ -29,11 +29,19 @@ end
 
 if Constants.RUN_SELF_TESTS and RunService:IsStudio() then
 	local UIController = require(ControllersFolder:WaitForChild("UIController"))
-	local okTest, passedOrErr = pcall(UIController.RunSelfTest)
-	if okTest then
-		print(string.format("[StarfallRanch][SelfTest] PASS: All %d UIController client test suites passed.", passedOrErr :: number))
+	local okUiTest, uiPassedOrErr = pcall(UIController.RunSelfTest)
+	if okUiTest then
+		print(string.format("[StarfallRanch][SelfTest] PASS: All %d UIController client test suites passed.", uiPassedOrErr :: number))
 	else
-		warn("[StarfallRanch][SelfTest] FAIL: UIController self-test error: " .. tostring(passedOrErr))
+		warn("[StarfallRanch][SelfTest] FAIL: UIController self-test error: " .. tostring(uiPassedOrErr))
+	end
+
+	local PlotVisualController = require(ControllersFolder:WaitForChild("PlotVisualController"))
+	local okVisTest, visPassedOrErr = pcall(PlotVisualController.RunSelfTest)
+	if okVisTest then
+		print(string.format("[StarfallRanch][SelfTest] PASS: All %d PlotVisualController client test suites passed.", visPassedOrErr :: number))
+	else
+		warn("[StarfallRanch][SelfTest] FAIL: PlotVisualController self-test error: " .. tostring(visPassedOrErr))
 	end
 end
 

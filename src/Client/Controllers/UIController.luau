@@ -52,8 +52,8 @@ type TimerBinding = {
 	WasMature: boolean,
 }
 
-local WIDE_TOP_HUD_MIN_WIDTH = 360
-local ACTION_TRAY_WIDTH = 138
+local WIDE_TOP_HUD_MIN_WIDTH = 520
+local ACTION_TRAY_WIDTH = 258
 
 local PALETTE = {
 	PanelDark = Color3.fromRGB(24, 22, 38),
@@ -80,6 +80,7 @@ local sizeChangedConn: RBXScriptConnection? = nil
 local layoutChangedConn: RBXScriptConnection? = nil
 local plotActionRemote: RemoteEvent? = nil
 local buyUpgradeRemote: RemoteFunction? = nil
+local navigateRemote: RemoteEvent? = nil
 
 local hudGui: ScreenGui? = nil
 local resourceBarFrame: Frame? = nil
@@ -87,6 +88,8 @@ local actionRowFrame: Frame? = nil
 local coinsLabel: TextLabel? = nil
 local rateLabel: TextLabel? = nil
 local bagLabel: TextLabel? = nil
+local hubButton: TextButton? = nil
+local ranchButton: TextButton? = nil
 local bagButton: TextButton? = nil
 local settingsButton: TextButton? = nil
 local toastLabel: TextLabel? = nil
@@ -121,6 +124,7 @@ local toastToken = 0
 local pendingSellConfirmUID: string? = nil
 local pendingSellConfirmExpiresAt = 0
 local pendingUpgradeBuy = false
+local lastNavRequestClock = 0
 local activeTimerBindings: { TimerBinding } = {}
 local timerLoopStarted = false
 
@@ -167,8 +171,8 @@ function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
 	local width = if typeof(safeWidth) == "number" and safeWidth == safeWidth and safeWidth > 0 then safeWidth else 320
 
 	if width >= WIDE_TOP_HUD_MIN_WIDTH then
-		local resWidth = math.clamp(width - 166, 174, 390)
 		local actWidth = ACTION_TRAY_WIDTH
+		local resWidth = math.clamp(width - 28 - actWidth, 180, 380)
 		local settingsWidth = 278
 		return {
 			Stacked = false,
@@ -320,6 +324,9 @@ local function findEmptyUnlockedPen(dto: Types.OwnerStateDTO): string?
 	if dto.Upgrades["PenSlot_4"] == true and dto.Slots["Pen_4"] == nil then
 		return "Pen_4"
 	end
+	if dto.Upgrades["PenSlot_5"] == true and dto.Slots["Pen_5"] == nil then
+		return "Pen_5"
+	end
 	return nil
 end
 
@@ -379,20 +386,13 @@ end
 
 local function updateActionButtonsText(): ()
 	local btn = bagButton
-	local isNarrow = hudGui ~= nil and hudGui.AbsoluteSize.X > 0 and hudGui.AbsoluteSize.X < 440
 	if btn ~= nil then
 		local count = 0
 		if latestOwnerState ~= nil then
 			local bCount = countBagAndIncome(latestOwnerState)
 			count = bCount
 		end
-		if currentInputMode == "Gamepad" and not isNarrow then
-			btn.Text = string.format("Bag (%d) [Y]", count)
-		elseif currentInputMode == "Keyboard" and not isNarrow then
-			btn.Text = string.format("Bag (%d) [B]", count)
-		else
-			btn.Text = string.format("Bag (%d)", count)
-		end
+		btn.Text = string.format("Bag (%d)", count)
 	end
 	if settingsButton ~= nil then
 		settingsButton.Text = "⚙"
@@ -1136,10 +1136,10 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			prereqDef = UpgradeConfig.ById[prereqId]
 		end
 
-		local unownedAccent = if upgradeId == "FrostCracker"
+		local unownedAccent = if upgradeId == "FrostCracker" or upgradeId == "BagCap_20"
 			then PALETTE.OrbitalCyan
 			elseif def.SlotCategory == "Tool" then PALETTE.AstralViolet
-			elseif upgradeId == "PenSlot_4" then PALETTE.StarlightGold
+			elseif upgradeId == "PenSlot_4" or upgradeId == "PenSlot_5" then PALETTE.StarlightGold
 			else PALETTE.MeadowMint
 		local row, title, subtitle = createRowCard(
 			scroll,
@@ -1195,7 +1195,11 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				local okRange = isWithinStationRange("UpgradePad", upgradeId)
 				if not okRange then
 					SoundController.Play("Error")
-					UIController.ShowToast("Walk closer to the " .. def.DisplayName .. " Upgrade Pad!", "Warn")
+					if def.StationZone == "Hub" then
+						UIController.ShowToast("Walk to the Hub Tool Workbench for " .. def.DisplayName .. "!", "Warn")
+					else
+						UIController.ShowToast("Walk closer to the " .. def.DisplayName .. " Upgrade Pad!", "Warn")
+					end
 					return
 				end
 				pendingUpgradeBuy = true
@@ -1281,7 +1285,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				local okRange = isWithinStationRange("LureStand", "LureStand")
 				if not okRange then
 					SoundController.Play("Error")
-					UIController.ShowToast("Walk closer to the Frost Lure Stand near your Ranch Gate!", "Warn")
+					UIController.ShowToast("Walk to the Frost Lure Kiosk in the Observatory Hub!", "Warn")
 					return
 				end
 				SoundController.Play("Click")
@@ -1463,11 +1467,15 @@ local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextD
 			local def = UpgradeConfig.ById[upgradeId]
 			SoundController.Play("Upgrade")
 			if upgradeId == "FrostCracker" then
-				UIController.ShowToast("Unlocked Frost Cracker! Crack Ridge Frost Meteors & use Frost Lures!", "Success")
+				UIController.ShowToast("Unlocked Frost Cracker! Crack Ridge Frost Meteors & use Hub Frost Lures!", "Success")
 			elseif upgradeId == "StarCracker" then
 				UIController.ShowToast("Unlocked Astral Cracker! Break Astral Pulse Meteors in the Crater!", "Success")
 			elseif upgradeId == "PenSlot_4" then
 				UIController.ShowToast("Unlocked Habitat Slot #4 & earned your Gold Ranch Arch!", "Success")
+			elseif upgradeId == "BagCap_20" then
+				UIController.ShowToast("Expanded Ranch Bag capacity from 10 to 20!", "Success")
+			elseif upgradeId == "PenSlot_5" then
+				UIController.ShowToast("Unlocked Habitat Slot #5! Place a 5th Critter in your Pen!", "Success")
 			else
 				UIController.ShowToast("Unlocked " .. def.DisplayName .. "!", "Success")
 			end
@@ -1564,10 +1572,48 @@ function UIController.Init(self: typeof(UIController)): ()
 	local actionLayout = Instance.new("UIListLayout")
 	actionLayout.FillDirection = Enum.FillDirection.Horizontal
 	actionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	actionLayout.Padding = UDim.new(0, 6)
 	actionLayout.Parent = actionRow
 
-	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag (0)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(88, 44), 13)
+	local function triggerNavigation(target: Types.NavigationTarget): ()
+		if latestOwnerState == nil then
+			SoundController.Play("Error")
+			UIController.ShowToast("Wait until your Ranch finishes loading!", "Warn")
+			return
+		end
+		local now = os.clock()
+		if (now - lastNavRequestClock) < 0.6 then
+			return
+		end
+		lastNavRequestClock = now
+		UIController.CloseDrawers()
+		SoundController.Play("Click")
+		if navigateRemote ~= nil then
+			navigateRemote:FireServer(target)
+		end
+		UIController.ShowToast(
+			if target == "Hub" then "Teleporting to Observatory Hub!" else "Returning to your Ranch!",
+			"Info"
+		)
+	end
+
+	local hubBtn = makeTextButton(actionRow, "HubButton", "Hub", PALETTE.AstralViolet, PALETTE.PanelDark, UDim2.fromOffset(52, 44), 13)
+	hubBtn.LayoutOrder = 1
+	hubBtn.Activated:Connect(function()
+		triggerNavigation("Hub")
+	end)
+	hubButton = hubBtn
+
+	local ranchBtn = makeTextButton(actionRow, "RanchButton", "Ranch", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(64, 44), 13)
+	ranchBtn.LayoutOrder = 2
+	ranchBtn.Activated:Connect(function()
+		triggerNavigation("Ranch")
+	end)
+	ranchButton = ranchBtn
+
+	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag (0)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(80, 44), 12)
+	bagBtn.LayoutOrder = 3
 	bagBtn.Activated:Connect(function()
 		SoundController.Play("Click")
 		UIController.ToggleBag()
@@ -1575,6 +1621,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	bagButton = bagBtn
 
 	local setBtn = makeTextButton(actionRow, "SettingsButton", "⚙", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(44, 44), 18)
+	setBtn.LayoutOrder = 4
 	addStroke(setBtn, PALETTE.BorderSoft, 1.5)
 	setBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -1800,6 +1847,7 @@ function UIController.Start(self: typeof(UIController)): ()
 	local syncEvent = remotes:WaitForChild(Constants.REMOTE_NAMES.SyncOwnerState) :: RemoteEvent
 	plotActionRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestPlotAction) :: RemoteEvent
 	buyUpgradeRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestBuyUpgrade) :: RemoteFunction
+	navigateRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestNavigate) :: RemoteEvent
 
 	if syncConn == nil then
 		syncConn = syncEvent.OnClientEvent:Connect(function(dto: Types.OwnerStateDTO)
@@ -1959,12 +2007,13 @@ function UIController.RunSelfTest(): number
 	local testOk, testErr = pcall(function()
 		RunService.RenderStepped:Wait()
 
-		-- 1. Narrow & wide safe-width top HUD geometry invariants (zero overlap, inside bounds)
-		for _, w in ipairs({ 320, 360, 375, 439, 440, 667, 1280 }) do
+		-- 1. Narrow (320px portrait), landscape mobile (667x375) & desktop safe-width top HUD geometry invariants
+		for _, w in ipairs({ 320, 360, 375, 440, 519, 520, 667, 1280 }) do
 			local layout = UIController.ComputeTopHudLayout(w)
-			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout only below 360px")
+			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout only below 520px")
 			assert(layout.ResourceX >= 0 and (layout.ResourceX + layout.ResourceWidth) <= w, "ResourceBar stays in bounds")
 			assert(layout.ActionsX >= 0 and (layout.ActionsX + layout.ActionsWidth) <= w, "ActionTray stays in bounds")
+			assert(layout.ActionsWidth >= ACTION_TRAY_WIDTH, "ActionTray fits Hub + Ranch + Bag + Settings")
 			assert(layout.SettingsX >= 0 and (layout.SettingsX + layout.SettingsWidth) <= w, "SettingsDrawer stays in bounds")
 
 			local xOverlap = layout.ResourceX < (layout.ActionsX + layout.ActionsWidth)
@@ -1973,6 +2022,9 @@ function UIController.RunSelfTest(): number
 				and (layout.ResourceY + layout.ResourceHeight) > layout.ActionsY
 			assert(not (xOverlap and yOverlap), "ResourceBar and ActionTray must never overlap at width " .. tostring(w))
 			assert(layout.ToastY >= math.max(layout.ResourceY + layout.ResourceHeight, layout.ActionsY + layout.ActionsHeight), "Toast sits cleanly below top HUD")
+		end
+		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, settingsButton }) do
+			assert(navBtn ~= nil and navBtn.AbsoluteSize.X >= 44 and navBtn.AbsoluteSize.Y >= 44, "All top HUD buttons maintain >= 44px touch target")
 		end
 		passed += 1
 
@@ -2126,6 +2178,23 @@ function UIController.RunSelfTest(): number
 		local resolvedSell = resolveBagSelectionTarget("Sell:h-2")
 		assert(resolvedSell ~= nil and resolvedSell ~= firstBagSelectable, "Confirm Sell button remains resolvable outside row 1")
 		assert((resolvedSell :: TextButton).Text == "Confirm Sell?", "Focused button updated cleanly to Confirm Sell?")
+
+		-- Verify BagCap_20 expands HUD & Bag header capacity label cleanly
+		local dtoBag20: Types.OwnerStateDTO = {
+			Revision = 3,
+			Coins = 1500,
+			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
+			ReservedBagSlots = 0,
+			Items = mockItems,
+			Slots = { Pen_1 = "pen-1" },
+			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
+		}
+		latestOwnerState = dtoBag20
+		refreshAllHUD(dtoBag20)
+		waitForBagSettled()
+		assert(bagCapacityLabel ~= nil and string.find(bagCapacityLabel.Text, "/20", 1, true) ~= nil, "Bag drawer shows /20 capacity after BagCap_20")
+		assert(bagLabel ~= nil and string.find(bagLabel.Text, "/20", 1, true) ~= nil, "Top HUD BagLabel shows /20 capacity")
 		passed += 1
 	end)
 
@@ -2138,6 +2207,7 @@ function UIController.RunSelfTest(): number
 	latestOwnerState = nil
 	pendingSellConfirmUID = nil
 	pendingSellConfirmExpiresAt = 0
+	lastNavRequestClock = 0
 	lastBagStructureSignature = nil
 	lastFocusedBagKey = nil
 	bagRebuildCount = 0
@@ -2147,6 +2217,9 @@ function UIController.RunSelfTest(): number
 	frostLureButton = nil
 	activeTimerBindings = {}
 	firstBagSelectable = nil
+	if bagCapacityLabel ~= nil then
+		bagCapacityLabel.Text = "Bag: 0/10 committed"
+	end
 	GuiService.SelectedObject = nil
 	for _, child in ipairs(scroll:GetChildren()) do
 		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then

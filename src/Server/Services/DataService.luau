@@ -132,6 +132,7 @@ local PEN_SLOT_UPGRADE_MAP: { [string]: string } = table.freeze({
 	Pen_2 = "PenSlot_2",
 	Pen_3 = "PenSlot_3",
 	Pen_4 = "PenSlot_4",
+	Pen_5 = "PenSlot_5",
 })
 
 local DataService = {
@@ -508,10 +509,14 @@ function DataService.BuildOwnerStateDTO(profile: Types.PlayerProfileData): Types
 		end
 	end
 
+	local bagCap = if profile.Upgrades["BagCap_20"] == true
+		then Constants.MAX_BAG_CAPACITY_UPGRADED
+		else Constants.MAX_BAG_CAPACITY
+
 	return {
 		Revision = profile.Revision,
 		Coins = profile.Coins,
-		BagCap = Constants.MAX_BAG_CAPACITY,
+		BagCap = bagCap,
 		ReservedBagSlots = reservedSlots,
 		Items = copiedItems,
 		Slots = cloneStringMap(profile.Slots),
@@ -1479,6 +1484,11 @@ function DataService.RunSelfTest(): number
 	dtoA.Coins = 999999
 	dtoA.Upgrades["PenSlot_3"] = true
 	assert(profileA.Coins == 250 and profileA.Upgrades["PenSlot_3"] == nil, "Mutating DTO copy must not affect server profile")
+
+	profileA.Upgrades["BagCap_20"] = true
+	local dtoAUpgraded = DataService.BuildOwnerStateDTO(profileA)
+	assert(dtoAUpgraded.BagCap == Constants.MAX_BAG_CAPACITY_UPGRADED, "BagCap_20 expands OwnerStateDTO BagCap to 20")
+	profileA.Upgrades["BagCap_20"] = nil
 	passed += 1
 
 	-- 4. Verify leave clears session/readiness and mock helper rejoin starts clean
@@ -1710,6 +1720,14 @@ function DataService.RunSelfTest(): number
 				AssignedSlot = "Pen_3",
 				CreatedAt = 1400,
 			},
+			["locked-pen5"] = {
+				UID = "locked-pen5",
+				SpeciesId = "FrostBeetle",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_5",
+				CreatedAt = 1450,
+			},
 			["bad-species"] = {
 				UID = "bad-species",
 				SpeciesId = "RemovedBogusCritter",
@@ -1729,7 +1747,27 @@ function DataService.RunSelfTest(): number
 	assert(migrated.Items["legacy-inc"].FeedLevel == 0, "Legacy omitted FeedLevel defaulted to 0")
 	assert(migrated.DiscoveredSpecies["CometOwl"] == true and migrated.DiscoveredSpecies["StarSlime"] == true, "DiscoveredSpecies backfilled from legacy critters")
 	assert(migrated.Items["locked-pen"] ~= nil and migrated.Items["locked-pen"].State == "HatchedInBag" and migrated.Items["locked-pen"].AssignedSlot == nil, "Locked pen item safely demoted to bag")
+	assert(migrated.Items["locked-pen5"] ~= nil and migrated.Items["locked-pen5"].State == "HatchedInBag" and migrated.Items["locked-pen5"].AssignedSlot == nil, "Locked Pen_5 item safely demoted to bag")
 	assert(migrated.Items["bad-species"] == nil, "Unknown species entry removed safely during migration")
+
+	local unlockedPen5Raw: { [string]: any } = {
+		SchemaVersion = 1,
+		Coins = 100,
+		Revision = 2,
+		Upgrades = { PenSlot_5 = true },
+		Items = {
+			["pen5-owner"] = {
+				UID = "pen5-owner",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_5",
+				CreatedAt = 1500,
+			},
+		},
+	}
+	local migratedPen5 = DataService.ReconcileAndMigrateProfileData(unlockedPen5Raw, 2044)
+	assert(migratedPen5.Items["pen5-owner"].State == "InPen" and migratedPen5.Slots["Pen_5"] == "pen5-owner", "Owned PenSlot_5 preserves Pen_5 placement on migration")
 	passed += 1
 
 	-- 10. Verify OnBeforeSave runs once after closing gameplay and BEFORE ProfileStore writes on BOTH EndSession and FlushActiveProfileSessions

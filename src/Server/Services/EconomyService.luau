@@ -54,6 +54,7 @@ local PEN_SLOTS: { [string]: boolean } = table.freeze({
 	Pen_2 = true,
 	Pen_3 = true,
 	Pen_4 = true,
+	Pen_5 = true,
 })
 
 local EconomyService = {
@@ -109,8 +110,17 @@ function EconomyService.IsUnlockedPenSlot(profile: Types.PlayerProfileData, slot
 		return profile.Upgrades["PenSlot_3"] == true
 	elseif slotId == "Pen_4" then
 		return profile.Upgrades["PenSlot_4"] == true
+	elseif slotId == "Pen_5" then
+		return profile.Upgrades["PenSlot_5"] == true
 	end
 	return false
+end
+
+function EconomyService.GetBagCapacity(profile: Types.PlayerProfileData): number
+	if profile.Upgrades["BagCap_20"] == true then
+		return Constants.MAX_BAG_CAPACITY_UPGRADED
+	end
+	return Constants.MAX_BAG_CAPACITY
 end
 
 function EconomyService.GetBagCount(profile: Types.PlayerProfileData): number
@@ -138,7 +148,7 @@ function EconomyService.GetCommittedBagCount(profile: Types.PlayerProfileData): 
 end
 
 function EconomyService.HasUnreservedBagSpace(profile: Types.PlayerProfileData): boolean
-	return EconomyService.GetCommittedBagCount(profile) < Constants.MAX_BAG_CAPACITY
+	return EconomyService.GetCommittedBagCount(profile) < EconomyService.GetBagCapacity(profile)
 end
 
 function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileData): (boolean, string)
@@ -203,11 +213,12 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 		end
 	end
 
-	if bagCount > Constants.MAX_BAG_CAPACITY then
-		return false, "BagCount exceeds MAX_BAG_CAPACITY"
+	local bagCap = EconomyService.GetBagCapacity(profile)
+	if bagCount > bagCap then
+		return false, "BagCount exceeds BagCapacity"
 	end
-	if (bagCount + incubatingCount) > Constants.MAX_BAG_CAPACITY then
-		return false, "Committed bag + incubating slots exceed MAX_BAG_CAPACITY"
+	if (bagCount + incubatingCount) > bagCap then
+		return false, "Committed bag + incubating slots exceed BagCapacity"
 	end
 
 	for slotId, itemUID in pairs(profile.Slots) do
@@ -367,7 +378,7 @@ function EconomyService.HatchFromSlotOnProfile(
 	if item.MaturesAt == nil or nowClock < item.MaturesAt then
 		return { Ok = false, Reason = "NotMature" }
 	end
-	if EconomyService.GetBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
+	if EconomyService.GetBagCount(profile) >= EconomyService.GetBagCapacity(profile) then
 		return { Ok = false, Reason = "BagFull" }
 	end
 
@@ -580,7 +591,7 @@ function EconomyService.UseFrostLureOnProfile(
 	if profile.Coins < Constants.FROST_LURE_COST then
 		return { Ok = false, Reason = "InsufficientCoins" }
 	end
-	if EconomyService.GetCommittedBagCount(profile) >= Constants.MAX_BAG_CAPACITY then
+	if EconomyService.GetCommittedBagCount(profile) >= EconomyService.GetBagCapacity(profile) then
 		return { Ok = false, Reason = "BagFull" }
 	end
 
@@ -1161,6 +1172,47 @@ function EconomyService.RunSelfTest(): number
 
 	assert(DataService.FlushActiveProfileSessions(2), "Suite 8 cleanup flush")
 	DataService.ClearTestTrackingForUserIds({ uEcon })
+	passed += 1
+
+	-- 9. Stage 3 upgrades: BagCap_20 (10 -> 20 capacity w/ reserved incubator hatch) & PenSlot_5 (Pen_5)
+	local pStage3 = DataService.CreateDefaultProfile(4000)
+	pStage3.Coins = 10000
+	-- BagCap_20 requires Incubator_2; PenSlot_5 requires PenSlot_4
+	local prereqBag = EconomyService.BuyUpgradeOnProfile(pStage3, "BagCap_20", 4000)
+	assert(not prereqBag.Ok and prereqBag.Reason == "PrerequisiteRequired", "BagCap_20 requires Incubator_2")
+	local prereqPen5 = EconomyService.BuyUpgradeOnProfile(pStage3, "PenSlot_5", 4000)
+	assert(not prereqPen5.Ok and prereqPen5.Reason == "PrerequisiteRequired", "PenSlot_5 requires PenSlot_4")
+
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "Incubator_2", 4000).Ok, "Buy Incubator_2")
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "BagCap_20", 4000).Ok, "Buy BagCap_20 (1,200 Coins)")
+	assert(EconomyService.GetBagCapacity(pStage3) == 20, "GetBagCapacity returns 20 after BagCap_20")
+
+	assert(EconomyService.GrantPodToProfile(pStage3, "StarSlime", 4000, "b20-inc-1").Ok, "Grant b20-inc-1")
+	assert(EconomyService.GrantPodToProfile(pStage3, "NebulaFox", 4000, "b20-inc-2").Ok, "Grant b20-inc-2")
+	assert(EconomyService.StartIncubateOnProfile(pStage3, "Incubator_1", "b20-inc-1", 4000).Ok, "Start Incubator_1")
+	assert(EconomyService.StartIncubateOnProfile(pStage3, "Incubator_2", "b20-inc-2", 4000).Ok, "Start Incubator_2")
+
+	for i = 1, 18 do
+		assert(EconomyService.GrantPodToProfile(pStage3, "StarSlime", 4000, "b20-bag-" .. tostring(i)).Ok, "Fill expanded bag slot " .. tostring(i))
+	end
+	assert(EconomyService.GetCommittedBagCount(pStage3) == 20, "18 bag + 2 incubating = 20 committed")
+	local bag20Overflow = EconomyService.GrantPodToProfile(pStage3, "StarSlime", 4000, "b20-overflow")
+	assert(not bag20Overflow.Ok and bag20Overflow.Reason == "BagFull", "21st committed slot rejected at BagCap 20")
+	assert((EconomyService.ValidateProfileInvariants(pStage3)), "Invariants valid at BagCap 20")
+
+	assert(EconomyService.HatchFromSlotOnProfile(pStage3, "Incubator_1", 4050, rng).Ok, "Incubator_1 hatches cleanly at full 20 cap")
+	assert(EconomyService.HatchFromSlotOnProfile(pStage3, "Incubator_2", 4050, rng).Ok, "Incubator_2 hatches cleanly at full 20 cap")
+	assert(EconomyService.GetBagCount(pStage3) == 20 and EconomyService.SellCritterOnProfile(pStage3, "b20-inc-1", 4050).Ok, "Sell 1 hatched critter from 20-cap bag")
+
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "PenSlot_2", 4050).Ok, "Buy PenSlot_2")
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "PenSlot_3", 4050).Ok, "Buy PenSlot_3")
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "PenSlot_4", 4050).Ok, "Buy PenSlot_4")
+	assert(EconomyService.BuyUpgradeOnProfile(pStage3, "PenSlot_5", 4050).Ok, "Buy PenSlot_5 (3,600 Coins)")
+	assert(EconomyService.IsUnlockedPenSlot(pStage3, "Pen_5"), "Pen_5 unlocked")
+	assert(EconomyService.PlaceInPenOnProfile(pStage3, "Pen_5", "b20-inc-2", 4050).Ok, "Place critter in Pen_5")
+	assert(EconomyMath.CalculateActivePenRate(pStage3.Items) == 7, "Pen_5 NebulaFox contributes +7 Coins/s")
+	assert(EconomyService.RemoveFromPenOnProfile(pStage3, "Pen_5", 4052).Ok, "Remove critter from Pen_5 settles coins & returns to bag")
+	assert((EconomyService.ValidateProfileInvariants(pStage3)), "Invariants valid after Pen_5 cycle")
 	passed += 1
 
 	return passed

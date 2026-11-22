@@ -63,12 +63,14 @@ local EMBER_BASIN_NODES: { [string]: boolean } = table.freeze({
 	MeteorNode_1 = true,
 	MeteorNode_2 = true,
 	MeteorNode_3 = true,
+	MeteorNode_7 = true,
 })
 
 local FROST_ASTRAL_RIDGE_NODES: { [string]: boolean } = table.freeze({
 	MeteorNode_4 = true,
 	MeteorNode_5 = true,
 	MeteorNode_6 = true,
+	MeteorNode_8 = true,
 })
 
 local MeteorService = {
@@ -1107,7 +1109,7 @@ function MeteorService.Init(self: typeof(MeteorService)): ()
 
 	wildNodes = {}
 	local meteorSpawnFolder = crater:FindFirstChild("MeteorSpawnNodes") :: Folder
-	for i = 1, 6 do
+	for i = 1, Constants.WILD_METEOR_NODE_COUNT do
 		local node = meteorSpawnFolder:FindFirstChild("MeteorNode_" .. tostring(i)) :: BasePart
 		assert(node ~= nil and CollectionService:HasTag(node, Constants.TAG_METEOR_NODE), "Invalid MeteorNode_" .. tostring(i))
 		table.insert(wildNodes, node)
@@ -1115,7 +1117,7 @@ function MeteorService.Init(self: typeof(MeteorService)): ()
 
 	starterNodesByPlotId = {}
 	local starterFolder = crater:FindFirstChild("StarterMeteorNodes") :: Folder
-	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+	for plotId = 1, Constants.MAX_PLOTS_ALPHA do
 		local sNode = starterFolder:FindFirstChild("StarterNode_Plot_" .. tostring(plotId)) :: BasePart
 		assert(sNode ~= nil and not CollectionService:HasTag(sNode, Constants.TAG_METEOR_NODE), "Invalid StarterNode_Plot_" .. tostring(plotId))
 		starterNodesByPlotId[plotId] = sNode
@@ -1132,7 +1134,7 @@ function MeteorService.Init(self: typeof(MeteorService)): ()
 		activeMeteorsFolder = folder
 	end
 
-	print(string.format("[MeteorService] Discovered %d wild nodes and %d starter nodes.", #wildNodes, Constants.MAX_PLOTS_PROTOTYPE))
+	print(string.format("[MeteorService] Discovered %d wild nodes and %d starter nodes.", #wildNodes, Constants.MAX_PLOTS_ALPHA))
 end
 
 function MeteorService.Start(self: typeof(MeteorService)): ()
@@ -1141,6 +1143,10 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 	EconomyService.SetLureSpawner(function(userId: number, displayName: string, trait: Types.MeteorTraitId, nowClock: number): (boolean, string)
 		local ok, reason = MeteorService.SpawnLuredMeteorForPlayer(userId, displayName, trait, nowClock)
 		return ok, reason
+	end)
+
+	PlotService.OnBeforeNavigate(function(userId: number)
+		MeteorService.ReleaseClaimForUserId(userId)
 	end)
 
 	PlotService.OnPlotAssigned(function(plotId: number, userId: number)
@@ -1310,6 +1316,11 @@ function MeteorService.RunSelfTest(): number
 		assert(countBagItems(p1) == p1BagBeforeStarter + 1, "Starter rescue grants exactly 1 pod")
 		assert(activeMeteors[starterObj.UID] == nil, "Starter meteor despawned after grant")
 		assert(countEvents("Despawn", starterObj.UID) == 1 and countEvents("ClaimReleased", starterObj.UID) == 0, "Starter completion emits single Despawn and zero ClaimReleased")
+
+		-- Verify Plot_6 starter node spawns cleanly as part of 6-plot expansion
+		local s6Ok, _, starter6 = MeteorService.SpawnStarterMeteorForPlot(6, uUnassigned, 5002)
+		assert(s6Ok and starter6 ~= nil and (starter6 :: ActiveMeteor).NodeName == "StarterNode_Plot_6", "Starter meteor spawns on Plot_6")
+		removeMeteorInternal((starter6 :: ActiveMeteor).UID)
 		passed += 1
 
 		-- 2. Wild UID validation, 2-player race, forged nonce, TooFast, 1-pod grant & replay rejection
@@ -1464,7 +1475,7 @@ function MeteorService.RunSelfTest(): number
 		-- Claim, fill bag before finish -> finish fails cleanly, releases claim, re-enables prompt
 		local c2 = MeteorService.StartCrackAtPosition(u2, wildObj2.Position, wildObj2.UID, 5012)
 		assert(c2.Ok and c2.AttemptNonce ~= nil, "u2 claims wild2 for BagFull check")
-		for i = 1, Constants.MAX_BAG_CAPACITY do
+		for i = 1, EconomyService.GetBagCapacity(p2) do
 			EconomyService.GrantPodToProfile(p2, "StarSlime", 5012, "fill-m-" .. tostring(i))
 		end
 		clearEvents()

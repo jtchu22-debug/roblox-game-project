@@ -39,6 +39,7 @@ local RATE_LIMIT_CONFIGS: { [string]: RateBucketConfig } = table.freeze({
 	[REMOTE_NAMES.RequestFinishCrack] = table.freeze({ Capacity = 4, RefillPerSecond = 4 }),
 	[REMOTE_NAMES.RequestPlotAction] = table.freeze({ Capacity = 8, RefillPerSecond = 8 }),
 	[REMOTE_NAMES.RequestBuyUpgrade] = table.freeze({ Capacity = 3, RefillPerSecond = 3 }),
+	[REMOTE_NAMES.RequestNavigate] = table.freeze({ Capacity = 2, RefillPerSecond = 0.5 }),
 })
 
 local ACTIONS_REQUIRING_ITEM_UID: { [string]: boolean } = table.freeze({
@@ -60,6 +61,7 @@ local plotActionHandler: ((player: Player, action: Types.PlotAction, targetSlotO
 local startCrackHandler: ((player: Player, meteorUID: string) -> RemoteResult)? = nil
 local finishCrackHandler: ((player: Player, meteorUID: string, attemptNonce: string) -> RemoteResult)? = nil
 local buyUpgradeHandler: ((player: Player, upgradeId: Types.UpgradeId) -> RemoteResult)? = nil
+local navigateHandler: ((player: Player, target: Types.NavigationTarget) -> ())? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
 
 local function ensureRemoteEvent(folder: Folder, name: string): RemoteEvent
@@ -181,6 +183,14 @@ function NetworkService.ValidateInboundPayload(remoteName: string, ...: unknown)
 			end
 		end
 		return true, "Ok"
+	elseif remoteName == REMOTE_NAMES.RequestNavigate then
+		if argc ~= 1 then
+			return false, "Expected 1 argument"
+		end
+		if not ValidationUtil.IsValidNavigationTarget(arg1) then
+			return false, "Invalid navigation target"
+		end
+		return true, "Ok"
 	end
 
 	return false, "Unknown remote"
@@ -242,6 +252,7 @@ function NetworkService.Init(self: typeof(NetworkService)): ()
 	for _, name in ipairs({
 		REMOTE_NAMES.RequestInitialSnapshot,
 		REMOTE_NAMES.RequestPlotAction,
+		REMOTE_NAMES.RequestNavigate,
 	}) do
 		remoteEvents[name] = ensureRemoteEvent(folder, name)
 	end
@@ -298,6 +309,21 @@ function NetworkService.Start(self: typeof(NetworkService)): ()
 		end
 	end)
 
+	remoteEvents[REMOTE_NAMES.RequestNavigate].OnServerEvent:Connect(function(player: Player, ...: any)
+		if not NetworkService.CheckAndConsumeRateLimit(player.UserId, REMOTE_NAMES.RequestNavigate) then
+			return
+		end
+		local valid = NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, ...)
+		if not valid or navigateHandler == nil then
+			return
+		end
+		local target = ...
+		local ok, err = pcall(navigateHandler, player, target :: Types.NavigationTarget)
+		if not ok then
+			warn("[NetworkService] RequestNavigate error: " .. tostring(err))
+		end
+	end)
+
 	remoteFunctions[REMOTE_NAMES.RequestStartCrack].OnServerInvoke = function(player: Player, ...: any): RemoteResult
 		return processInvokeRequest(player.UserId, REMOTE_NAMES.RequestStartCrack, startCrackHandler :: any, player, ...)
 	end
@@ -338,6 +364,11 @@ end
 function NetworkService.BindBuyUpgradeHandler(handler: (player: Player, upgradeId: Types.UpgradeId) -> RemoteResult): ()
 	assert(buyUpgradeHandler == nil, "BuyUpgrade handler already registered")
 	buyUpgradeHandler = handler
+end
+
+function NetworkService.BindNavigateHandler(handler: (player: Player, target: Types.NavigationTarget) -> ()): ()
+	assert(navigateHandler == nil, "Navigate handler already registered")
+	navigateHandler = handler
 end
 
 function NetworkService.SendOwnerState(player: Player, dto: Types.OwnerStateDTO): ()
@@ -391,6 +422,7 @@ function NetworkService.RunSelfTest(): number
 		REMOTE_NAMES.MeteorLifecycle,
 		REMOTE_NAMES.RequestInitialSnapshot,
 		REMOTE_NAMES.RequestPlotAction,
+		REMOTE_NAMES.RequestNavigate,
 	}) do
 		local inst = folder:FindFirstChild(evName)
 		assert(inst ~= nil and inst:IsA("RemoteEvent"), "Missing RemoteEvent: " .. evName)
@@ -420,7 +452,14 @@ function NetworkService.RunSelfTest(): number
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "FrostCracker"), "FrostCracker upgradeId accepted")
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "StarCracker"), "StarCracker upgradeId accepted")
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "PenSlot_4"), "PenSlot_4 upgradeId accepted")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "BagCap_20"), "BagCap_20 upgradeId accepted")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "PenSlot_5"), "PenSlot_5 upgradeId accepted")
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestBuyUpgrade, "Rebirth_1"), "Unknown upgradeId rejected")
+
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, "Hub"), "Hub navigate valid")
+	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, "Ranch"), "Ranch navigate valid")
+	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, "Moon"), "Unknown navigate target rejected")
+	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, "Hub", "extra"), "Extra navigate arg rejected")
 
 	assert(NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "StartIncubate", "Incubator_1", "item-uid-1"), "StartIncubate valid")
 	assert(not NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestPlotAction, "StartIncubate", "Incubator_1"), "StartIncubate missing itemUID rejected")

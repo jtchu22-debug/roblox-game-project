@@ -92,6 +92,9 @@ local function formatReasonMessage(reason: string, requiredUpgradeId: unknown?):
 	if reason == "ToolRequired" and typeof(requiredUpgradeId) == "string" then
 		local def = (UpgradeConfig.ById :: { [string]: Types.UpgradeDefinition })[requiredUpgradeId]
 		if def ~= nil then
+			if def.StationZone == "Hub" then
+				return string.format("Locked! Buy %s (%d Coins) at the Hub Tool Workbench!", def.DisplayName, def.Cost)
+			end
 			return string.format("Locked! Buy %s (%d Coins) on your Ranch Board!", def.DisplayName, def.Cost)
 		end
 	end

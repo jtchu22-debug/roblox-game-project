@@ -35,10 +35,32 @@ function SharedSelfTest.RunAll(): number
 	runTest("Configs_Integrity_And_Immutability", function()
 		assert(#CritterConfig.OrderedIds == 6, "Expected 6 Critter species (2 per family)")
 		assert(#MeteorConfig.OrderedIds == 3, "Expected 3 Meteor traits")
-		assert(#UpgradeConfig.OrderedIds == 6, "Expected 6 Ranch/Tool upgrades")
-		assert(UpgradeConfig.ById.FrostCracker.Cost == 150 and UpgradeConfig.ById.FrostCracker.SlotCategory == "Tool", "FrostCracker tool upgrade configured")
-		assert(UpgradeConfig.ById.StarCracker.Cost == 850 and UpgradeConfig.ById.StarCracker.RequiresUpgradeId == "FrostCracker", "Astral Cracker requires FrostCracker")
-		assert(UpgradeConfig.ById.PenSlot_4.RequiresUpgradeId == "PenSlot_3", "PenSlot_4 follow-up upgrade requires PenSlot_3")
+		assert(#UpgradeConfig.OrderedIds == 8, "Expected 8 Ranch/Hub upgrades")
+		assert(
+			UpgradeConfig.ById.FrostCracker.Cost == 150
+				and UpgradeConfig.ById.FrostCracker.SlotCategory == "Tool"
+				and UpgradeConfig.ById.FrostCracker.StationZone == "Hub",
+			"FrostCracker Hub tool upgrade configured"
+		)
+		assert(
+			UpgradeConfig.ById.StarCracker.Cost == 850
+				and UpgradeConfig.ById.StarCracker.RequiresUpgradeId == "FrostCracker"
+				and UpgradeConfig.ById.StarCracker.StationZone == "Hub",
+			"Astral Cracker Hub tool upgrade requires FrostCracker"
+		)
+		assert(UpgradeConfig.ById.PenSlot_4.RequiresUpgradeId == "PenSlot_3", "PenSlot_4 upgrade preserved with PenSlot_3 prereq")
+		assert(
+			UpgradeConfig.ById.BagCap_20.Cost == 1200
+				and UpgradeConfig.ById.BagCap_20.SlotCategory == "Bag"
+				and UpgradeConfig.ById.BagCap_20.RequiresUpgradeId == "Incubator_2",
+			"BagCap_20 upgrade configured"
+		)
+		assert(
+			UpgradeConfig.ById.PenSlot_5.Cost == 3600
+				and UpgradeConfig.ById.PenSlot_5.SlotCategory == "Pen"
+				and UpgradeConfig.ById.PenSlot_5.RequiresUpgradeId == "PenSlot_4",
+			"PenSlot_5 upgrade configured with PenSlot_4 prereq"
+		)
 		assert(MeteorConfig.ById.Frost.RequiredUpgradeId == "FrostCracker", "Frost requires FrostCracker")
 		assert(MeteorConfig.ById.Astral.RequiredUpgradeId == "StarCracker", "Astral requires StarCracker")
 		assert(MeteorConfig.ById.Astral.DropWeights.CometOwl == 10, "CometOwl Astral weight tuned to 10%")
@@ -199,7 +221,12 @@ function SharedSelfTest.RunAll(): number
 		assert(ValidationUtil.IsValidUpgradeId("FrostCracker"), "FrostCracker upgrade accepted")
 		assert(ValidationUtil.IsValidUpgradeId("StarCracker"), "StarCracker upgrade accepted")
 		assert(ValidationUtil.IsValidUpgradeId("PenSlot_4"), "PenSlot_4 upgrade accepted")
+		assert(ValidationUtil.IsValidUpgradeId("BagCap_20"), "BagCap_20 upgrade accepted")
+		assert(ValidationUtil.IsValidUpgradeId("PenSlot_5"), "PenSlot_5 upgrade accepted")
 		assert(not ValidationUtil.IsValidUpgradeId("Rebirth_1"), "Invalid upgrade rejected")
+		assert(ValidationUtil.IsValidNavigationTarget("Hub"), "Hub navigation target accepted")
+		assert(ValidationUtil.IsValidNavigationTarget("Ranch"), "Ranch navigation target accepted")
+		assert(not ValidationUtil.IsValidNavigationTarget("Moon"), "Invalid navigation target rejected")
 		assert(ValidationUtil.IsValidPlotAction("PlaceInPen"), "Valid action accepted")
 		assert(ValidationUtil.IsValidPlotAction("FeedCritter"), "FeedCritter action accepted")
 		assert(ValidationUtil.IsValidPlotAction("UseFrostLure"), "UseFrostLure action accepted")
@@ -236,49 +263,74 @@ function SharedSelfTest.RunAll(): number
 		local ensureOk, ensureStatus, ensureRoot = GreyboxBuilder.EnsureExists(testContainer)
 		assert(ensureOk and ensureStatus == "ReusedExisting" and ensureRoot == root, "EnsureExists must reuse valid owned root")
 
-		-- Removing LureStand, Pen_4, or FrostCracker/StarCracker pads from an existing owned greybox upgrades in place
+		-- Removing current-version Ranch Pen_5 or Hub/Ranch pads from an owned root upgrades in place
+		local existingHub = (root :: Folder):FindFirstChild("CentralHub") :: Model
+		local existingWorkbench = existingHub:FindFirstChild("ToolWorkbench") :: Model
+		local existingLureKiosk = existingHub:FindFirstChild("FrostLureKiosk") :: Model
 		local existingPlots = (root :: Folder):FindFirstChild("Plots") :: Folder
 		local existingPlot1 = existingPlots:FindFirstChild("Plot_1") :: Model
+		local existingPlot6 = existingPlots:FindFirstChild("Plot_6") :: Model
+		assert(existingPlot6 ~= nil, "6-plot world must create Plot_6")
 		local existingBoard1 = existingPlot1:FindFirstChild("UpgradeBoard") :: Folder
-		local existingLure = existingPlot1:FindFirstChild("LureStand") :: BasePart
+		local existingLure = existingLureKiosk:FindFirstChild("LureStand") :: BasePart
 		local existingPenSlots = (existingPlot1:FindFirstChild("HabitatPen") :: Model):FindFirstChild("PenSlots") :: Folder
-		local existingPen4 = existingPenSlots:FindFirstChild("Pen_4") :: BasePart
-		local missingFrost = existingBoard1:FindFirstChild("UpgradePad_FrostCracker") :: BasePart
-		local missingPen4Pad = existingBoard1:FindFirstChild("UpgradePad_PenSlot_4") :: BasePart
+		local existingPen5 = existingPenSlots:FindFirstChild("Pen_5") :: BasePart
+		local missingFrost = existingWorkbench:FindFirstChild("UpgradePad_FrostCracker") :: BasePart
+		local missingPen5Pad = existingBoard1:FindFirstChild("UpgradePad_PenSlot_5") :: BasePart
 		existingLure:Destroy()
-		existingPen4:Destroy()
+		existingPen5:Destroy()
 		missingFrost:Destroy()
-		missingPen4Pad:Destroy()
+		missingPen5Pad:Destroy()
 		local upgOk, upgStatus, upgRoot = GreyboxBuilder.EnsureExists(testContainer)
-		assert(upgOk and upgStatus == "ReusedExisting" and upgRoot == root, "EnsureExists upgrades missing Stage 2B nodes in place")
-		assert(existingPlot1:FindFirstChild("LureStand") ~= nil, "Missing LureStand restored")
-		assert(existingPenSlots:FindFirstChild("Pen_4") ~= nil, "Missing Pen_4 restored")
-		assert(existingBoard1:FindFirstChild("UpgradePad_FrostCracker") ~= nil, "Missing UpgradePad_FrostCracker restored")
-		assert(existingBoard1:FindFirstChild("UpgradePad_PenSlot_4") ~= nil, "Missing UpgradePad_PenSlot_4 restored")
+		assert(upgOk and upgStatus == "ReusedExisting" and upgRoot == root, "EnsureExists upgrades missing S3-03 nodes in place")
+		assert(existingLureKiosk:FindFirstChild("LureStand") ~= nil, "Missing Hub LureStand restored")
+		assert(existingPenSlots:FindFirstChild("Pen_5") ~= nil, "Missing Pen_5 restored")
+		assert(existingWorkbench:FindFirstChild("UpgradePad_FrostCracker") ~= nil, "Missing Hub UpgradePad_FrostCracker restored")
+		assert(existingBoard1:FindFirstChild("UpgradePad_PenSlot_5") ~= nil, "Missing UpgradePad_PenSlot_5 restored")
 
-		-- Verify Crater two-route separation & spacious UpgradePad layout
+		-- Verify Crater two-route separation, 6 starter nodes, Central Hub, and spacious Ranch/Hub layouts
 		local builtCrater = (root :: Folder):FindFirstChild("CentralCrater") :: Model
 		local builtLandmarks = builtCrater:FindFirstChild("RouteLandmarks")
 		assert(builtLandmarks ~= nil and builtLandmarks:FindFirstChild("EmberBasinPath") ~= nil and builtLandmarks:FindFirstChild("FrostRidgePlatform") ~= nil, "Crater route landmarks present")
+		assert(existingHub:FindFirstChild("Observatory") ~= nil and existingHub:FindFirstChild("ContractsBoard") ~= nil, "Central Hub Observatory & ContractsBoard present")
 		local spawnNodesFolder = builtCrater:FindFirstChild("MeteorSpawnNodes") :: Folder
-		for idx = 1, 3 do
+		for _, idx in ipairs({ 1, 2, 3, 7 }) do
 			local bNode = spawnNodesFolder:FindFirstChild("MeteorNode_" .. tostring(idx)) :: BasePart
-			assert(bNode:GetAttribute("Region") == "EmberBasin" and bNode.Position.Z > 0, "Nodes 1..3 in South EmberBasin")
+			assert(bNode:GetAttribute("Region") == "EmberBasin" and bNode.Position.Z > 0, "Ember Basin node in south sector")
 		end
-		for idx = 4, 6 do
+		for _, idx in ipairs({ 4, 5, 6, 8 }) do
 			local rNode = spawnNodesFolder:FindFirstChild("MeteorNode_" .. tostring(idx)) :: BasePart
-			assert(rNode:GetAttribute("Region") == "FrostRidge" and rNode.Position.Z < 0, "Nodes 4..6 on North FrostRidge")
+			assert(rNode:GetAttribute("Region") == "FrostRidge" and rNode.Position.Z < 0, "Frost Ridge node in north sector")
 		end
-		local padPositions: { Vector3 } = {}
+		local ranchPadPositions: { Vector3 } = {}
+		local hubPadPositions: { Vector3 } = {}
 		for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
-			local p = existingBoard1:FindFirstChild("UpgradePad_" .. upgradeId) :: BasePart
-			table.insert(padPositions, p.Position)
-		end
-		for a = 1, #padPositions do
-			for b = a + 1, #padPositions do
-				assert((padPositions[a] - padPositions[b]).Magnitude >= 7.5, "Upgrade pads must stay >= 7.5 studs apart")
+			local def = UpgradeConfig.ById[upgradeId]
+			if def.StationZone == "Hub" then
+				local hp = existingWorkbench:FindFirstChild("UpgradePad_" .. upgradeId) :: BasePart
+				table.insert(hubPadPositions, hp.Position)
+			else
+				local rp = existingBoard1:FindFirstChild("UpgradePad_" .. upgradeId) :: BasePart
+				table.insert(ranchPadPositions, rp.Position)
 			end
 		end
+		for a = 1, #ranchPadPositions do
+			for b = a + 1, #ranchPadPositions do
+				assert((ranchPadPositions[a] - ranchPadPositions[b]).Magnitude >= 7.5, "Ranch upgrade pads must stay >= 7.5 studs apart")
+			end
+		end
+		for a = 1, #hubPadPositions do
+			for b = a + 1, #hubPadPositions do
+				assert((hubPadPositions[a] - hubPadPositions[b]).Magnitude >= 7.5, "Hub upgrade pads must stay >= 7.5 studs apart")
+			end
+		end
+
+		local plot1Base = existingPlot1:FindFirstChild("PlotBase") :: BasePart
+		local plot1Aisle = existingPlot1:FindFirstChild("MainAisle") :: BasePart
+		assert(plot1Base.Size.X >= 76 and plot1Base.Size.Z >= 68, "Plot footprint scales to >= 76x68 studs")
+		assert(plot1Aisle.Size.X >= 14, "MainAisle provides >= 14 stud unobstructed path")
+		local plot6PenSlots = ((existingPlot6:FindFirstChild("HabitatPen") :: Model):FindFirstChild("PenSlots") :: Folder)
+		assert(plot6PenSlots:FindFirstChild("Pen_5") ~= nil, "Plot_6 includes Pen_5")
 
 		-- Explicit ConfirmReplace=true must rebuild root WITHOUT removing unrelated sibling objects
 		local replaced, replaceStatus, newRoot = GreyboxBuilder.Generate({

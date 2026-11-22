@@ -78,14 +78,18 @@ local function runRemoteFuzzAndRateMatrix(): ()
 	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestPlotAction, "SellCritter", "item-1", "extra"), "SellCritter rejects 3rd arg")
 	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestPlotAction, "RemoveFromPen", "Pen_1", "extra"), "RemoveFromPen rejects 3rd arg")
 	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestPlotAction, "FuseCritters", "Pen_1"), "Removed action rejected")
+	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestNavigate, nil), "Navigate rejects nil")
+	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestNavigate, "Moon"), "Navigate rejects invalid target")
+	assert(not NetworkService.ValidateInboundPayload(Constants.REMOTE_NAMES.RequestNavigate, "Hub", "extra"), "Navigate rejects extra arg")
 
-	-- Token bucket saturation and refill across all 5 inbound remotes
+	-- Token bucket saturation and refill across all 6 inbound remotes
 	local capacities: { { Remote: string, Cap: number } } = {
 		{ Remote = Constants.REMOTE_NAMES.RequestInitialSnapshot, Cap = 2 },
 		{ Remote = Constants.REMOTE_NAMES.RequestStartCrack, Cap = 4 },
 		{ Remote = Constants.REMOTE_NAMES.RequestFinishCrack, Cap = 4 },
 		{ Remote = Constants.REMOTE_NAMES.RequestPlotAction, Cap = 8 },
 		{ Remote = Constants.REMOTE_NAMES.RequestBuyUpgrade, Cap = 3 },
+		{ Remote = Constants.REMOTE_NAMES.RequestNavigate, Cap = 2 },
 	}
 	local t0 = 1000
 	for _, entry in ipairs(capacities) do
@@ -102,6 +106,7 @@ local function runRemoteFuzzAndRateMatrix(): ()
 	end
 	assert(NetworkService.CheckAndConsumeRateLimit(uFuzz, Constants.REMOTE_NAMES.RequestStartCrack, t0 + 1.0), "StartCrack bucket refills after 1s")
 	assert(NetworkService.CheckAndConsumeRateLimit(uFuzz, Constants.REMOTE_NAMES.RequestInitialSnapshot, t0 + 3.0), "Snapshot bucket refills after 3s")
+	assert(NetworkService.CheckAndConsumeRateLimit(uFuzz, Constants.REMOTE_NAMES.RequestNavigate, t0 + 2.0), "Navigate bucket refills after 2s")
 
 	NetworkService.ClearPlayerBuckets(uFuzz)
 end
@@ -182,18 +187,33 @@ local function runCrossPlotAndInventoryGuards(u1: number, u2: number, rng: Rando
 	local p1 = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
 	assertInvariants(p1, "before cross-plot checks")
 
-	-- Cross-plot station isolation: u2 is on Plot 2 and cannot authorize against Plot 1 stations
+	-- Cross-plot Ranch isolation + Hub station proximity checks
 	for _, spec in ipairs({
 		{ Kind = "Incubator", Target = "Incubator_1" },
 		{ Kind = "Pen", Target = "Pen_1" },
+		{ Kind = "Pen", Target = "Pen_5" },
 		{ Kind = "SellStand", Target = "SellStand" },
-		{ Kind = "LureStand", Target = "LureStand" },
 		{ Kind = "UpgradePad", Target = "PenSlot_2" },
+		{ Kind = "UpgradePad", Target = "BagCap_20" },
+		{ Kind = "UpgradePad", Target = "PenSlot_5" },
 	}) do
 		local p1Anchor = PlotService.ResolveStationAnchor(1, spec.Kind, spec.Target)
 		assert(p1Anchor ~= nil, "Plot 1 anchor exists: " .. spec.Kind)
 		local crossOk, crossReason = PlotService.AuthorizeStationAtPosition(u2, (p1Anchor :: BasePart).Position, spec.Kind, spec.Target)
 		assert(not crossOk and crossReason == "OutOfRange", "u2 blocked from Plot 1 station: " .. spec.Kind)
+	end
+
+	local plot2Anchor = PlotService.ResolveStationAnchor(2, "Incubator", "Incubator_1") :: BasePart
+	for _, hubSpec in ipairs({
+		{ Kind = "LureStand", Target = "LureStand" },
+		{ Kind = "UpgradePad", Target = "FrostCracker" },
+		{ Kind = "UpgradePad", Target = "StarCracker" },
+	}) do
+		local hubAnchor = PlotService.ResolveHubStationAnchor(hubSpec.Kind, hubSpec.Target)
+		assert(hubAnchor ~= nil, "Hub station anchor exists: " .. hubSpec.Target)
+		local farHubOk, farHubReason = PlotService.AuthorizeStationAtPosition(u2, plot2Anchor.Position, hubSpec.Kind, hubSpec.Target)
+		assert(not farHubOk and farHubReason == "OutOfRange", "Ranch distance blocked from Hub station: " .. hubSpec.Target)
+		assert((PlotService.AuthorizeStationAtPosition(u2, (hubAnchor :: BasePart).Position, hubSpec.Kind, hubSpec.Target)), "Assigned plot owner authorized at Hub station: " .. hubSpec.Target)
 	end
 
 	-- Rapid upgrade spam dedupes cleanly with single debit
@@ -303,7 +323,7 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 	local fedPen1Once = false
 	local usedFrostLureOnce = false
 
-	for round = 1, 45 do
+	for round = 1, 80 do
 		local wObj: MeteorService.ActiveMeteor
 		if not usedFrostLureOnce and profile.Upgrades["FrostCracker"] == true and profile.Coins >= Constants.FROST_LURE_COST then
 			local spawnedLure: MeteorService.ActiveMeteor? = nil
@@ -325,7 +345,7 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 			local trait: Types.MeteorTraitId
 			local nodeName: string
 			nodeCycle += 1
-			if profile.Upgrades["StarCracker"] == true and (round % 3 == 0 or profile.Slots["Pen_4"] == nil) then
+			if profile.Upgrades["StarCracker"] == true and (round % 3 == 0 or profile.Slots["Pen_5"] == nil) then
 				trait = "Astral"
 				nodeName = "MeteorNode_" .. tostring(4 + ((nodeCycle - 1) % 3))
 			elseif profile.Upgrades["FrostCracker"] == true then
@@ -356,7 +376,7 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 
 		-- Place into open unlocked Pen slot if available; otherwise sell at Ranch Gate
 		local placed = false
-		for _, penSlotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
+		for _, penSlotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4", "Pen_5" }) do
 			if EconomyService.IsUnlockedPenSlot(profile, penSlotId) and profile.Slots[penSlotId] == nil then
 				assert((EconomyService.PlaceInPenOnProfile(profile, penSlotId, podUID, nowClock).Ok), "Sim places critter in " .. penSlotId)
 				placed = true
@@ -398,16 +418,19 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 			and profile.Upgrades["PenSlot_3"] == true
 			and profile.Upgrades["StarCracker"] == true
 			and profile.Upgrades["PenSlot_4"] == true
+			and profile.Upgrades["BagCap_20"] == true
+			and profile.Upgrades["PenSlot_5"] == true
 		local allPensFilled = profile.Slots["Pen_1"] ~= nil
 			and profile.Slots["Pen_2"] ~= nil
 			and profile.Slots["Pen_3"] ~= nil
 			and profile.Slots["Pen_4"] ~= nil
+			and profile.Slots["Pen_5"] ~= nil
 		if allBought and allPensFilled and fedPen1Once and usedFrostLureOnce then
 			break
 		end
 	end
 
-	-- Verify Stage 2C tuned 8–20+ minute progression milestones & exact fed 4-slot Pen rate
+	-- Verify Stage 2C + Stage 3B progression milestones & exact fed 5-slot Pen rate
 	assert(boughtTimes["PenSlot_2"] ~= nil and boughtTimes["PenSlot_2"] <= 90, "PenSlot_2 (60 Coins) unlocked within 90s pacing target")
 	assert(boughtTimes["FrostCracker"] ~= nil and boughtTimes["FrostCracker"] <= 300, "FrostCracker (150 Coins) unlocked cleanly")
 	assert(boughtTimes["Incubator_2"] ~= nil and boughtTimes["Incubator_2"] <= 540, "Incubator_2 (260 Coins) unlocked cleanly")
@@ -417,17 +440,26 @@ local function runFiveMinuteEconomyPacingCheck(rng: Random): ()
 		boughtTimes["PenSlot_4"] ~= nil and boughtTimes["PenSlot_4"] >= 480 and boughtTimes["PenSlot_4"] <= 1500,
 		string.format("PenSlot_4 (1,850 Coins) pacing must exceed 480s and complete <= 1500s (got %s)", tostring(boughtTimes["PenSlot_4"]))
 	)
+	assert(boughtTimes["BagCap_20"] ~= nil and EconomyService.GetBagCapacity(profile) == 20, "BagCap_20 expands BagCap to 20")
+	assert(boughtTimes["PenSlot_5"] ~= nil and boughtTimes["PenSlot_5"] <= 2400, "PenSlot_5 (3,600 Coins) unlocked cleanly")
 	assert(usedFrostLureOnce, "Sim used Coin-funded Frost Lure")
 	assert(fedPen1Once and profile.Items[profile.Slots["Pen_1"]].FeedLevel == 1, "Pen_1 critter fed to level 1")
-	assert(profile.Slots["Pen_1"] ~= nil and profile.Slots["Pen_2"] ~= nil and profile.Slots["Pen_3"] ~= nil and profile.Slots["Pen_4"] ~= nil, "All 4 habitat pen slots filled")
+	assert(
+		profile.Slots["Pen_1"] ~= nil
+			and profile.Slots["Pen_2"] ~= nil
+			and profile.Slots["Pen_3"] ~= nil
+			and profile.Slots["Pen_4"] ~= nil
+			and profile.Slots["Pen_5"] ~= nil,
+		"All 5 habitat pen slots filled"
+	)
 
 	local expectedRate = 0
-	for _, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
+	for _, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4", "Pen_5" }) do
 		local uid = profile.Slots[slotId]
 		local item = profile.Items[uid]
 		expectedRate += EconomyMath.GetCritterCoinsPerSecond(item.SpeciesId, item.Variant, item.FeedLevel)
 	end
-	assert(EconomyMath.CalculateActivePenRate(profile.Items) == expectedRate and expectedRate >= 17, "4-slot active pen rate matches exact integer sum including feed bonus")
+	assert(EconomyMath.CalculateActivePenRate(profile.Items) == expectedRate and expectedRate >= 21, "5-slot active pen rate matches exact integer sum including feed bonus")
 	assert(findAnyItemInState(profile, "Incubating") == nil, "No dangling incubator left at sim end")
 
 	MeteorService.HandlePlotReleased(1, uSim)

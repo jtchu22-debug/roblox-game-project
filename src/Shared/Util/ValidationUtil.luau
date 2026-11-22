@@ -22,6 +22,11 @@ local VALID_PLOT_ACTIONS: { [string]: boolean } = table.freeze({
 	UseFrostLure = true,
 })
 
+local VALID_NAVIGATION_TARGETS: { [string]: boolean } = table.freeze({
+	Hub = true,
+	Ranch = true,
+})
+
 local ValidationUtil = {}
 
 function ValidationUtil.IsFiniteNumber(value: unknown): boolean
@@ -79,6 +84,13 @@ function ValidationUtil.IsValidPlotAction(value: unknown): boolean
 		return false
 	end
 	return VALID_PLOT_ACTIONS[value :: string] == true
+end
+
+function ValidationUtil.IsValidNavigationTarget(value: unknown): boolean
+	if typeof(value) ~= "string" then
+		return false
+	end
+	return VALID_NAVIGATION_TARGETS[value :: string] == true
 end
 
 return ValidationUtil

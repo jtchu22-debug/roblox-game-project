@@ -176,7 +176,11 @@ local function handleRanchPromptFeedback(prompt: ProximityPrompt): ()
 		if typeof(upgradeAttr) == "string" then
 			local upgradeDef = (UpgradeConfig.ById :: { [string]: Types.UpgradeDefinition })[upgradeAttr]
 			if upgradeDef ~= nil then
-				if upgradeDef.RequiresUpgradeId ~= nil and dto.Upgrades[upgradeDef.RequiresUpgradeId] ~= true then
+				if dto.Upgrades[upgradeDef.Id] == true then
+					SoundController.Play("Click")
+					UIController.ShowToast("You already own " .. upgradeDef.DisplayName .. "!", "Info")
+					return
+				elseif upgradeDef.RequiresUpgradeId ~= nil and dto.Upgrades[upgradeDef.RequiresUpgradeId] ~= true then
 					local prereq = UpgradeConfig.ById[upgradeDef.RequiresUpgradeId]
 					SoundController.Play("Error")
 					UIController.ShowToast(string.format("Requires %s first!", prereq.DisplayName), "Warn")

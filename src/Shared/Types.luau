@@ -11,7 +11,15 @@ export type RarityId = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary"
 export type VariantId = "Normal" | "Radiant"
 export type MeteorTraitId = "Ember" | "Frost" | "Astral"
 export type ItemState = "PodInBag" | "Incubating" | "HatchedInBag" | "InPen"
-export type UpgradeId = "PenSlot_2" | "FrostCracker" | "Incubator_2" | "PenSlot_3" | "StarCracker" | "PenSlot_4"
+export type UpgradeId =
+	"PenSlot_2"
+	| "FrostCracker"
+	| "Incubator_2"
+	| "PenSlot_3"
+	| "StarCracker"
+	| "PenSlot_4"
+	| "BagCap_20"
+	| "PenSlot_5"
 export type PlotAction =
 	"StartIncubate"
 	| "Hatch"
@@ -21,7 +29,9 @@ export type PlotAction =
 	| "FeedCritter"
 	| "UseFrostLure"
 export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
-export type SlotCategory = "Pen" | "Incubator" | "Tool"
+export type SlotCategory = "Pen" | "Incubator" | "Tool" | "Bag"
+export type StationZone = "Ranch" | "Hub"
+export type NavigationTarget = "Hub" | "Ranch"
 
 export type CritterItemRecord = {
 	UID: string,
@@ -111,6 +121,7 @@ export type UpgradeDefinition = {
 	Cost: number,
 	UnlocksSlotId: string,
 	SlotCategory: SlotCategory,
+	StationZone: StationZone,
 	PadOffsetX: number,
 	PadOffsetZ: number,
 	RequiresUpgradeId: UpgradeId?,

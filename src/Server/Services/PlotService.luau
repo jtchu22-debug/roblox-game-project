@@ -40,7 +40,6 @@ type PlotPromptSet = {
 	Incubators: { [string]: ProximityPrompt },
 	Pens: { [string]: ProximityPrompt },
 	SellStand: ProximityPrompt?,
-	LureStand: ProximityPrompt?,
 	Upgrades: { [string]: ProximityPrompt },
 }
 
@@ -59,12 +58,17 @@ local PlotService = {
 local greyboxRoot: Folder? = nil
 local plotModelsById: { [number]: Model } = {}
 local plotPromptsById: { [number]: PlotPromptSet } = {}
+local hubPrompts: { LureStand: ProximityPrompt?, Upgrades: { [string]: ProximityPrompt } } = {
+	LureStand = nil,
+	Upgrades = {},
+}
 local assignmentsByPlotId: { [number]: PlotAssignment } = {}
 local plotIdByUserId: { [number]: number } = {}
 local plotRevisionByPlotId: { [number]: number } = {}
 local incubatorMatureNotified: { [number]: { [string]: boolean } } = {}
 local plotAssignedCallbacks: { (plotId: number, userId: number) -> () } = {}
 local plotReleasedCallbacks: { (plotId: number, userId: number) -> () } = {}
+local beforeNavigateCallbacks: { (userId: number) -> () } = {}
 local globalPlotsRevision = 0
 local incubatorWatcherRunning = false
 
@@ -161,10 +165,40 @@ local function selectDeterministicHatchedCritter(profile: Types.PlayerProfileDat
 	return candidates[1].UID
 end
 
+function PlotService.ResolveHubStationAnchor(stationKind: string, targetId: string): BasePart?
+	local root = greyboxRoot
+	if root == nil then
+		return nil
+	end
+	local hub = root:FindFirstChild("CentralHub")
+	if hub == nil then
+		return nil
+	end
+
+	if stationKind == "LureStand" then
+		local kiosk = hub:FindFirstChild("FrostLureKiosk")
+		local lure = if kiosk then kiosk:FindFirstChild("LureStand") else nil
+		return if lure and lure:IsA("BasePart") then lure else nil
+	elseif stationKind == "UpgradePad" then
+		local workbench = hub:FindFirstChild("ToolWorkbench")
+		local pad = if workbench then workbench:FindFirstChild("UpgradePad_" .. targetId) else nil
+		return if pad and pad:IsA("BasePart") then pad else nil
+	end
+
+	return nil
+end
+
 function PlotService.ResolveStationAnchor(plotId: number, stationKind: string, targetId: string): BasePart?
 	local plotModel = getPlotModel(plotId)
 	if plotModel == nil then
 		return nil
+	end
+
+	local upgradeDef = if stationKind == "UpgradePad"
+		then (UpgradeConfig.ById :: { [string]: Types.UpgradeDefinition })[targetId]
+		else nil
+	if stationKind == "LureStand" or (upgradeDef ~= nil and upgradeDef.StationZone == "Hub") then
+		return PlotService.ResolveHubStationAnchor(stationKind, targetId)
 	end
 
 	if stationKind == "Incubator" then
@@ -179,10 +213,10 @@ function PlotService.ResolveStationAnchor(plotId: number, stationKind: string, t
 	elseif stationKind == "SellStand" then
 		local stand = plotModel:FindFirstChild("SellStand")
 		return if stand and stand:IsA("BasePart") then stand else nil
-	elseif stationKind == "LureStand" then
-		local lure = plotModel:FindFirstChild("LureStand")
-		return if lure and lure:IsA("BasePart") then lure else nil
 	elseif stationKind == "UpgradePad" then
+		if upgradeDef == nil or upgradeDef.StationZone ~= "Ranch" then
+			return nil
+		end
 		local board = plotModel:FindFirstChild("UpgradeBoard")
 		local pad = if board then board:FindFirstChild("UpgradePad_" .. targetId) else nil
 		return if pad and pad:IsA("BasePart") then pad else nil
@@ -283,7 +317,7 @@ end
 
 function PlotService.BuildAllPublicPlotDTOs(): { Types.PublicPlotDTO }
 	local list: { Types.PublicPlotDTO } = {}
-	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+	for plotId = 1, Constants.MAX_PLOTS_ALPHA do
 		table.insert(list, PlotService.BuildPublicPlotDTO(plotId))
 	end
 	return list
@@ -314,7 +348,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		if trim and trim:IsA("BasePart") then
 			if assignment == nil then
 				trim.Color = PALETTE.LockedSlate
-			elseif assignment.Profile.Upgrades["PenSlot_4"] == true then
+			elseif assignment.Profile.Upgrades["PenSlot_5"] == true or assignment.Profile.Upgrades["PenSlot_4"] == true then
 				trim.Color = PALETTE.StarlightGold
 			elseif assignment.Profile.Upgrades["PenSlot_3"] == true then
 				trim.Color = PALETTE.AstralViolet
@@ -326,9 +360,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 
 	local hasPodInBag = false
 	local hasHatchedInBag = false
-	local hasFrostCracker = false
 	if assignment ~= nil then
-		hasFrostCracker = assignment.Profile.Upgrades["FrostCracker"] == true
 		for _, item in pairs(assignment.Profile.Items) do
 			if item.State == "PodInBag" then
 				hasPodInBag = true
@@ -347,22 +379,6 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 	end
 	if sellAnchor ~= nil then
 		setPartLabelState(sellAnchor, "SellLabel", "Sell", hasHatchedInBag)
-	end
-
-	-- Update LureStand Prompt & Label (visible only once FrostCracker is owned)
-	local lureAnchor = PlotService.ResolveStationAnchor(plotId, "LureStand", "LureStand")
-	if prompts.LureStand ~= nil and lureAnchor ~= nil then
-		if hasFrostCracker then
-			prompts.LureStand.Enabled = true
-			prompts.LureStand.ActionText = string.format("Lure %d", Constants.FROST_LURE_COST)
-			prompts.LureStand.ObjectText = "Frost"
-			lureAnchor.Color = Color3.fromRGB(45, 42, 62)
-			setPartLabelState(lureAnchor, "LureLabel", string.format("Frost Lure • %d", Constants.FROST_LURE_COST), true)
-		else
-			prompts.LureStand.Enabled = false
-			lureAnchor.Color = if assignment == nil then Color3.fromRGB(45, 42, 62) else PALETTE.LockedSlate
-			setPartLabelState(lureAnchor, "LureLabel", "Frost Lure", false)
-		end
 	end
 
 	-- Update Incubators
@@ -424,7 +440,7 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 	end
 
 	-- Update Pen Slots
-	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
+	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4", "Pen_5" }) do
 		local anchor = PlotService.ResolveStationAnchor(plotId, "Pen", slotId)
 		local prompt = prompts.Pens[slotId]
 		if anchor and prompt then
@@ -468,48 +484,49 @@ function PlotService.RefreshPlotWorldState(plotId: number): ()
 		end
 	end
 
-	-- Update Upgrade Pads (only show labels/prompts for currently buyable next-step upgrades)
+	-- Update Ranch Upgrade Pads (only show labels/prompts for currently buyable next-step upgrades)
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 		local def = UpgradeConfig.ById[upgradeId]
-		local anchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
-		local prompt = prompts.Upgrades[upgradeId]
-		if anchor and prompt then
-			local unownedColor = if def.Id == "FrostCracker"
-				then PALETTE.OrbitalCyan
-				elseif def.Id == "StarCracker" then PALETTE.AstralViolet
-				elseif def.Id == "PenSlot_4" then PALETTE.StarlightGold
-				else PALETTE.MeadowMint
-			local ownedColor = if def.SlotCategory == "Tool" then PALETTE.StarlightGold else PALETTE.OrbitalCyan
-			local prereqId = def.RequiresUpgradeId
-			local prereqMet = prereqId == nil
-				or (assignment ~= nil and assignment.Profile.Upgrades[prereqId] == true)
-			if assignment == nil then
-				prompt.Enabled = false
-				anchor.Color = unownedColor
-				anchor.Transparency = 0
-				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
-			elseif assignment.Profile.Upgrades[upgradeId] == true then
-				prompt.Enabled = false
-				anchor.Color = ownedColor
-				anchor.Transparency = 0.35
-				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
-			elseif not prereqMet and prereqId ~= nil then
-				prompt.Enabled = false
-				anchor.Color = PALETTE.LockedSlate
-				anchor.Transparency = 0.35
-				setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
-			else
-				prompt.Enabled = true
-				prompt.ActionText = string.format("Buy %s", FormatUtil.FormatCoins(def.Cost))
-				prompt.ObjectText = def.DisplayName
-				anchor.Color = unownedColor
-				anchor.Transparency = 0
-				setPartLabelState(
-					anchor,
-					"UpgradeLabel",
-					string.format("%s • %s", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
-					true
-				)
+		if def.StationZone == "Ranch" then
+			local anchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
+			local prompt = prompts.Upgrades[upgradeId]
+			if anchor and prompt then
+				local unownedColor = if def.Id == "PenSlot_4" or def.Id == "PenSlot_5"
+					then PALETTE.StarlightGold
+					elseif def.Id == "BagCap_20" then PALETTE.OrbitalCyan
+					else PALETTE.MeadowMint
+				local ownedColor = PALETTE.OrbitalCyan
+				local prereqId = def.RequiresUpgradeId
+				local prereqMet = prereqId == nil
+					or (assignment ~= nil and assignment.Profile.Upgrades[prereqId] == true)
+				if assignment == nil then
+					prompt.Enabled = false
+					anchor.Color = unownedColor
+					anchor.Transparency = 0
+					setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
+				elseif assignment.Profile.Upgrades[upgradeId] == true then
+					prompt.Enabled = false
+					anchor.Color = ownedColor
+					anchor.Transparency = 0.35
+					setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
+				elseif not prereqMet and prereqId ~= nil then
+					prompt.Enabled = false
+					anchor.Color = PALETTE.LockedSlate
+					anchor.Transparency = 0.35
+					setPartLabelState(anchor, "UpgradeLabel", def.DisplayName, false)
+				else
+					prompt.Enabled = true
+					prompt.ActionText = string.format("Buy %s", FormatUtil.FormatCoins(def.Cost))
+					prompt.ObjectText = def.DisplayName
+					anchor.Color = unownedColor
+					anchor.Transparency = 0
+					setPartLabelState(
+						anchor,
+						"UpgradeLabel",
+						string.format("%s • %s", def.DisplayName, FormatUtil.FormatCoins(def.Cost)),
+						true
+					)
+				end
 			end
 		end
 	end
@@ -540,7 +557,7 @@ function PlotService.AssignPlotForUserId(
 	end
 
 	local chosenPlotId: number? = nil
-	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+	for plotId = 1, Constants.MAX_PLOTS_ALPHA do
 		if assignmentsByPlotId[plotId] == nil then
 			chosenPlotId = plotId
 			break
@@ -606,7 +623,7 @@ function PlotService.HandlePlayerReadyAdmission(
 		-- Never leave an excess player Ready without a Ranch; close session and reject cleanly.
 		DataService.EndSession(userId, player)
 		if player ~= nil and player.Parent ~= nil then
-			player:Kick("This prototype server is full (max 2 ranches). Please join another server.")
+			player:Kick(string.format("This Starfall Ranch server is full (max %d ranches). Please join another server.", Constants.MAX_PLOTS_ALPHA))
 		end
 		return false, reason, nil
 	end
@@ -664,8 +681,65 @@ function PlotService.OnPlotReleased(callback: (plotId: number, userId: number) -
 	table.insert(plotReleasedCallbacks, callback)
 end
 
+function PlotService.OnBeforeNavigate(callback: (userId: number) -> ()): ()
+	table.insert(beforeNavigateCallbacks, callback)
+end
+
 function PlotService.GetAssignedPlotId(userId: number): number?
 	return plotIdByUserId[userId]
+end
+
+function PlotService.ResolveNavigationCFrame(userId: number, target: Types.NavigationTarget): (boolean, string, CFrame?)
+	local plotId = plotIdByUserId[userId]
+	if plotId == nil then
+		return false, "NoAssignedPlot", nil
+	end
+
+	if target == "Hub" then
+		local root = greyboxRoot
+		local hub = if root then root:FindFirstChild("CentralHub") else nil
+		local arrivalPad = if hub then hub:FindFirstChild("HubArrivalPad") else nil
+		if arrivalPad ~= nil and arrivalPad:IsA("BasePart") then
+			return true, "Ok", arrivalPad.CFrame + Vector3.new(0, 3, 0)
+		end
+		return false, "MissingHubAnchor", nil
+	elseif target == "Ranch" then
+		local plotModel = getPlotModel(plotId)
+		local spawnLoc = if plotModel then plotModel:FindFirstChild("SpawnPoint") else nil
+		if spawnLoc ~= nil and spawnLoc:IsA("SpawnLocation") then
+			return true, "Ok", spawnLoc.CFrame + Vector3.new(0, 3, 0)
+		end
+		return false, "MissingRanchSpawn", nil
+	end
+
+	return false, "InvalidNavigationTarget", nil
+end
+
+function PlotService.HandleNavigateRequest(player: Player, target: Types.NavigationTarget): (boolean, string)
+	if not DataService.IsReady(player) then
+		return false, "ProfileNotReady"
+	end
+	local character = player.Character
+	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
+	local rootPart = if character then character:FindFirstChild("HumanoidRootPart") else nil
+	if character == nil or humanoid == nil or humanoid.Health <= 0 or rootPart == nil or not rootPart:IsA("BasePart") then
+		return false, "CharacterUnavailable"
+	end
+
+	local ok, reason, destCFrame = PlotService.ResolveNavigationCFrame(player.UserId, target)
+	if not ok or destCFrame == nil then
+		return false, reason
+	end
+
+	for _, cb in ipairs(beforeNavigateCallbacks) do
+		local cbOk, cbErr = pcall(cb, player.UserId)
+		if not cbOk then
+			warn("[PlotService] OnBeforeNavigate callback error: " .. tostring(cbErr))
+		end
+	end
+
+	character:PivotTo(destCFrame)
+	return true, "Ok"
 end
 
 local function wirePlotPrompts(plotId: number): ()
@@ -673,7 +747,6 @@ local function wirePlotPrompts(plotId: number): ()
 		Incubators = {},
 		Pens = {},
 		SellStand = nil,
-		LureStand = nil,
 		Upgrades = {},
 	}
 
@@ -704,7 +777,7 @@ local function wirePlotPrompts(plotId: number): ()
 	end
 
 	-- Pen Prompts
-	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4" }) do
+	for idx, slotId in ipairs({ "Pen_1", "Pen_2", "Pen_3", "Pen_4", "Pen_5" }) do
 		local anchor = PlotService.ResolveStationAnchor(plotId, "Pen", slotId)
 		assert(anchor ~= nil, "Missing Pen anchor: " .. slotId)
 		local prompt = createPromptOnPart(anchor, "PenPrompt", string.format("Pen Slot #%d", idx), "Place Critter")
@@ -749,46 +822,72 @@ local function wirePlotPrompts(plotId: number): ()
 	end)
 	prompts.SellStand = sellPrompt
 
-	-- LureStand Prompt
-	local lureAnchor = PlotService.ResolveStationAnchor(plotId, "LureStand", "LureStand")
-	assert(lureAnchor ~= nil, "Missing LureStand anchor")
+	-- Ranch Upgrade Pad Prompts
+	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
+		local def = UpgradeConfig.ById[upgradeId]
+		if def.StationZone == "Ranch" then
+			local padAnchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
+			assert(padAnchor ~= nil, "Missing Ranch UpgradePad anchor: " .. upgradeId)
+			local upgPrompt = createPromptOnPart(
+				padAnchor,
+				"UpgradePrompt",
+				def.DisplayName,
+				string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
+			)
+			upgPrompt.Triggered:Connect(function(triggeringPlayer: Player)
+				local owner = assignmentsByPlotId[plotId]
+				if owner == nil or owner.UserId ~= triggeringPlayer.UserId then
+					return
+				end
+				EconomyService.HandleBuyUpgrade(triggeringPlayer, upgradeId)
+			end)
+			prompts.Upgrades[upgradeId] = upgPrompt
+		end
+	end
+
+	plotPromptsById[plotId] = prompts
+end
+
+local function wireHubStations(): ()
+	local lureAnchor = PlotService.ResolveHubStationAnchor("LureStand", "LureStand")
+	assert(lureAnchor ~= nil, "Missing CentralHub FrostLureKiosk LureStand anchor")
 	local lurePrompt = createPromptOnPart(
 		lureAnchor,
 		"LurePrompt",
-		"Frost Lure Beacon",
+		"Hub Frost Lure Kiosk",
 		string.format("Summon Frost (%d Coins)", Constants.FROST_LURE_COST)
 	)
+	lurePrompt.Enabled = true
 	lurePrompt.Triggered:Connect(function(triggeringPlayer: Player)
-		local owner = assignmentsByPlotId[plotId]
-		if owner == nil or owner.UserId ~= triggeringPlayer.UserId then
+		if plotIdByUserId[triggeringPlayer.UserId] == nil then
 			return
 		end
 		EconomyService.HandlePlotAction(triggeringPlayer, "UseFrostLure", "LureStand", nil)
 	end)
-	prompts.LureStand = lurePrompt
+	hubPrompts.LureStand = lurePrompt
 
-	-- Upgrade Pad Prompts
+	hubPrompts.Upgrades = {}
 	for _, upgradeId in ipairs(UpgradeConfig.OrderedIds) do
 		local def = UpgradeConfig.ById[upgradeId]
-		local padAnchor = PlotService.ResolveStationAnchor(plotId, "UpgradePad", upgradeId)
-		assert(padAnchor ~= nil, "Missing UpgradePad anchor: " .. upgradeId)
-		local upgPrompt = createPromptOnPart(
-			padAnchor,
-			"UpgradePrompt",
-			def.DisplayName,
-			string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
-		)
-		upgPrompt.Triggered:Connect(function(triggeringPlayer: Player)
-			local owner = assignmentsByPlotId[plotId]
-			if owner == nil or owner.UserId ~= triggeringPlayer.UserId then
-				return
-			end
-			EconomyService.HandleBuyUpgrade(triggeringPlayer, upgradeId)
-		end)
-		prompts.Upgrades[upgradeId] = upgPrompt
+		if def.StationZone == "Hub" then
+			local padAnchor = PlotService.ResolveHubStationAnchor("UpgradePad", upgradeId)
+			assert(padAnchor ~= nil, "Missing CentralHub ToolWorkbench pad: " .. upgradeId)
+			local upgPrompt = createPromptOnPart(
+				padAnchor,
+				"UpgradePrompt",
+				def.DisplayName,
+				string.format("Buy (%s Coins)", FormatUtil.FormatCoins(def.Cost))
+			)
+			upgPrompt.Enabled = true
+			upgPrompt.Triggered:Connect(function(triggeringPlayer: Player)
+				if plotIdByUserId[triggeringPlayer.UserId] == nil then
+					return
+				end
+				EconomyService.HandleBuyUpgrade(triggeringPlayer, upgradeId)
+			end)
+			hubPrompts.Upgrades[upgradeId] = upgPrompt
+		end
 	end
-
-	plotPromptsById[plotId] = prompts
 end
 
 function PlotService.Init(self: typeof(PlotService)): ()
@@ -799,19 +898,21 @@ function PlotService.Init(self: typeof(PlotService)): ()
 
 	greyboxRoot = root
 	local plotsFolder = root:FindFirstChild("Plots") :: Folder
-	for plotId = 1, Constants.MAX_PLOTS_PROTOTYPE do
+	for plotId = 1, Constants.MAX_PLOTS_ALPHA do
 		local plotModel = plotsFolder:FindFirstChild("Plot_" .. tostring(plotId)) :: Model
 		plotModelsById[plotId] = plotModel
 		plotRevisionByPlotId[plotId] = 1
 		wirePlotPrompts(plotId)
 		PlotService.RefreshPlotWorldState(plotId)
 	end
+	wireHubStations()
 
-	print(string.format("[PlotService] Greybox map ready (%s: %s, %d plots wired).", status, root.Name, Constants.MAX_PLOTS_PROTOTYPE))
+	print(string.format("[PlotService] Greybox map ready (%s: %s, %d plots + CentralHub wired).", status, root.Name, Constants.MAX_PLOTS_ALPHA))
 end
 
 function PlotService.Start(self: typeof(PlotService)): ()
 	EconomyService.SetStationAuthorizer(PlotService.AuthorizePlayerStation)
+	NetworkService.BindNavigateHandler(PlotService.HandleNavigateRequest)
 
 	EconomyService.OnPlotStateChanged(function(player: Player)
 		local plotId = plotIdByUserId[player.UserId]
@@ -838,6 +939,7 @@ function PlotService.Start(self: typeof(PlotService)): ()
 	end)
 
 	DataService.OnSnapshotDelivered(function(player: Player)
+		globalPlotsRevision = math.max(1, globalPlotsRevision)
 		NetworkService.SendPublicPlotsToPlayer(player, PlotService.BuildAllPublicPlotDTOs(), globalPlotsRevision)
 	end)
 
@@ -876,99 +978,126 @@ end
 
 function PlotService.RunSelfTest(): number
 	local passed = 0
-	local u1 = -920001
-	local u2 = -920002
-	local u3 = -920003
+	local testUsers = { -920001, -920002, -920003, -920004, -920005, -920006, -920007 }
+	for _, uid in ipairs(testUsers) do
+		PlotService.ReleasePlotForUserId(uid)
+		DataService.EndSession(uid)
+	end
 
-	PlotService.ReleasePlotForUserId(u1)
-	PlotService.ReleasePlotForUserId(u2)
-	PlotService.ReleasePlotForUserId(u3)
+	local profiles: { Types.PlayerProfileData } = {}
+	for i = 1, 7 do
+		profiles[i] = DataService.CreateDefaultProfile(1000)
+	end
 
-	local p1 = DataService.CreateDefaultProfile(1000)
-	local p2 = DataService.CreateDefaultProfile(1000)
-	local p3 = DataService.CreateDefaultProfile(1000)
+	-- 1. Unique Plot_1..Plot_6 assignment for 6 players & graceful NoFreePlot for 7th
+	for i = 1, Constants.MAX_PLOTS_ALPHA do
+		local okAssign, _, plotId = PlotService.AssignPlotForUserId(testUsers[i], "Tester_" .. tostring(i), profiles[i], nil)
+		assert(okAssign and plotId == i, string.format("Player %d must receive Plot_%d", i, i))
+	end
 
-	-- 1. Unique plot assignment for 2 players & graceful NoFreePlot for 3rd
-	local ok1, _, plot1Id = PlotService.AssignPlotForUserId(u1, "TesterOne", p1, nil)
-	local ok2, _, plot2Id = PlotService.AssignPlotForUserId(u2, "TesterTwo", p2, nil)
-	assert(ok1 and ok2 and plot1Id == 1 and plot2Id == 2, "First two players receive Plot_1 and Plot_2")
+	local ok7, reason7, plot7Id = PlotService.AssignPlotForUserId(testUsers[7], "Tester_7", profiles[7], nil)
+	assert(not ok7 and reason7 == "NoFreePlot" and plot7Id == nil, "7th player rejected cleanly when all 6 plots occupied")
 
-	local ok3, reason3, plot3Id = PlotService.AssignPlotForUserId(u3, "TesterThree", p3, nil)
-	assert(not ok3 and reason3 == "NoFreePlot" and plot3Id == nil, "3rd player rejected cleanly when prototype plots full")
+	-- Explicit NoFreePlot admission cleanup terminates excess 7th Ready session
+	DataService.BeginMockSession(testUsers[7], nil)
+	assert(DataService.CompleteMockSession(testUsers[7], 1000) and DataService.IsUserIdReady(testUsers[7]), "7th user ready before admission check")
+	local admOk, admReason = PlotService.HandlePlayerReadyAdmission(testUsers[7], "Tester_7", profiles[7], nil)
+	assert(not admOk and admReason == "NoFreePlot", "Admission rejects 7th user with NoFreePlot")
+	assert(not DataService.IsUserIdReady(testUsers[7]), "Rejected 7th user session must be ended cleanly")
 	passed += 1
 
-	-- 2. Server-side station proximity & ownership authorization
+	-- 2. Server-side Ranch + Hub station proximity & ownership authorization
+	local u1 = testUsers[1]
+	local u6 = testUsers[6]
+	local uExcess = testUsers[7]
 	local inc1Anchor = PlotService.ResolveStationAnchor(1, "Incubator", "Incubator_1") :: BasePart
-	local inc2OtherAnchor = PlotService.ResolveStationAnchor(2, "Incubator", "Incubator_1") :: BasePart
+	local inc6Anchor = PlotService.ResolveStationAnchor(6, "Incubator", "Incubator_1") :: BasePart
 	local sell1Anchor = PlotService.ResolveStationAnchor(1, "SellStand", "SellStand") :: BasePart
-	local lure1Anchor = PlotService.ResolveStationAnchor(1, "LureStand", "LureStand") :: BasePart
-	local pen4Anchor = PlotService.ResolveStationAnchor(1, "Pen", "Pen_4") :: BasePart
-	local upg1Anchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "PenSlot_2") :: BasePart
+	local pen5Anchor = PlotService.ResolveStationAnchor(1, "Pen", "Pen_5") :: BasePart
+	local upgBagAnchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "BagCap_20") :: BasePart
+	local upgPen5Anchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "PenSlot_5") :: BasePart
+	local hubLureAnchor = PlotService.ResolveStationAnchor(1, "LureStand", "LureStand") :: BasePart
+	local hubFrostAnchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "FrostCracker") :: BasePart
+	local hubAstralAnchor = PlotService.ResolveStationAnchor(1, "UpgradePad", "StarCracker") :: BasePart
 
-	-- Owner standing next to their own Plot_1 anchors succeeds
 	assert((PlotService.AuthorizeStationAtPosition(u1, inc1Anchor.Position, "Incubator", "Incubator_1")), "Owner near own Incubator_1 authorized")
 	assert((PlotService.AuthorizeStationAtPosition(u1, sell1Anchor.Position, "SellStand", "SellStand")), "Owner near own SellStand authorized")
-	assert((PlotService.AuthorizeStationAtPosition(u1, lure1Anchor.Position, "LureStand", "LureStand")), "Owner near own LureStand authorized")
-	assert((PlotService.AuthorizeStationAtPosition(u1, pen4Anchor.Position, "Pen", "Pen_4")), "Owner near own Pen_4 authorized")
-	assert((PlotService.AuthorizeStationAtPosition(u1, upg1Anchor.Position, "UpgradePad", "PenSlot_2")), "Owner near own UpgradePad authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u1, pen5Anchor.Position, "Pen", "Pen_5")), "Owner near own Pen_5 authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u1, upgBagAnchor.Position, "UpgradePad", "BagCap_20")), "Owner near own BagCap_20 pad authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u1, upgPen5Anchor.Position, "UpgradePad", "PenSlot_5")), "Owner near own PenSlot_5 pad authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u6, inc6Anchor.Position, "Incubator", "Incubator_1")), "Plot_6 owner near own Incubator_1 authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u6, hubLureAnchor.Position, "LureStand", "LureStand")), "Plot_6 owner near Hub LureStand authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u6, hubFrostAnchor.Position, "UpgradePad", "FrostCracker")), "Plot_6 owner near Hub FrostCracker pad authorized")
+	assert((PlotService.AuthorizeStationAtPosition(u6, hubAstralAnchor.Position, "UpgradePad", "StarCracker")), "Plot_6 owner near Hub StarCracker pad authorized")
 
-	-- Owner standing on Plot_2 trying to access Plot_1's Incubator_1 rejected
-	local crossOk, crossReason = PlotService.AuthorizeStationAtPosition(u1, inc2OtherAnchor.Position, "Incubator", "Incubator_1")
-	assert(not crossOk and crossReason == "OutOfRange", "Standing at neighbor plot rejected as OutOfRange")
+	local crossOk, crossReason = PlotService.AuthorizeStationAtPosition(u1, inc6Anchor.Position, "Incubator", "Incubator_1")
+	assert(not crossOk and crossReason == "OutOfRange", "Standing at neighbor Plot_6 rejected as OutOfRange")
+	local farRanchOk, farRanchReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(0, 2, 0), "SellStand", "SellStand")
+	assert(not farRanchOk and farRanchReason == "OutOfRange", "Hub Observatory center rejected for home SellStand")
+	local farHubOk, farHubReason = PlotService.AuthorizeStationAtPosition(u1, inc1Anchor.Position, "UpgradePad", "FrostCracker")
+	assert(not farHubOk and farHubReason == "OutOfRange", "Home Ranch distance rejected for Hub Tool Workbench")
 
-	-- Standing in center of Crater (> 18 studs away) rejected
-	local farOk, farReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(0, 2, 0), "SellStand", "SellStand")
-	assert(not farOk and farReason == "OutOfRange", "Crater distance rejected for ranch station")
-
-	-- Unassigned player & non-finite coordinates rejected (Review #007)
-	local unOk, unReason = PlotService.AuthorizeStationAtPosition(u3, inc1Anchor.Position, "Incubator", "Incubator_1")
-	assert(not unOk and unReason == "NoAssignedPlot", "Unassigned player rejected")
+	local unOk, unReason = PlotService.AuthorizeStationAtPosition(uExcess, inc1Anchor.Position, "Incubator", "Incubator_1")
+	assert(not unOk and unReason == "NoAssignedPlot", "Unassigned player rejected on Ranch")
+	local unHubOk, unHubReason = PlotService.AuthorizeStationAtPosition(uExcess, hubLureAnchor.Position, "LureStand", "LureStand")
+	assert(not unHubOk and unHubReason == "NoAssignedPlot", "Unassigned player rejected on Hub kiosk")
 	local nanOk, nanReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(0 / 0, 0, 0), "Incubator", "Incubator_1")
 	assert(not nanOk and nanReason == "OutOfRange", "NaN coordinate must be rejected")
 	local infOk, infReason = PlotService.AuthorizeStationAtPosition(u1, Vector3.new(math.huge, 0, 0), "Incubator", "Incubator_1")
 	assert(not infOk and infReason == "OutOfRange", "Infinite coordinate must be rejected")
-
-	-- Explicit NoFreePlot admission cleanup terminates excess Ready session
-	DataService.BeginMockSession(u3, nil)
-	assert(DataService.CompleteMockSession(u3, 1000) and DataService.IsUserIdReady(u3), "u3 ready before admission check")
-	local admOk, admReason = PlotService.HandlePlayerReadyAdmission(u3, "TesterThree", p3, nil)
-	assert(not admOk and admReason == "NoFreePlot", "Admission rejects 3rd user with NoFreePlot")
-	assert(not DataService.IsUserIdReady(u3), "Rejected 3rd user session must be ended cleanly")
 	passed += 1
 
-	-- 3. PublicPlotDTO projection & release revision increments
-	p1.Upgrades["PenSlot_2"] = true
+	-- 3. Late-join 6-plot PublicPlotDTO completeness, release reset & reuse revision cleanup
+	local p1 = profiles[1]
+	p1.Upgrades["PenSlot_5"] = true
 	p1.Items["vis-critter"] = {
 		UID = "vis-critter",
 		SpeciesId = "NebulaFox",
 		Variant = "Radiant",
 		State = "InPen",
-		AssignedSlot = "Pen_1",
+		AssignedSlot = "Pen_5",
 		PlantedAt = nil,
 		MaturesAt = nil,
 		CreatedAt = 1000,
 	}
-	p1.Slots["Pen_1"] = "vis-critter"
+	p1.Slots["Pen_5"] = "vis-critter"
 
+	local allDtos = PlotService.BuildAllPublicPlotDTOs()
+	assert(#allDtos == Constants.MAX_PLOTS_ALPHA, "Late-join PublicPlotDTO snapshot includes all 6 plots")
 	local revBeforeRelease = plotRevisionByPlotId[1]
 	local dto1 = PlotService.BuildPublicPlotDTO(1)
-	assert(dto1.OwnerUserId == u1 and dto1.OwnerDisplayName == "TesterOne", "Public DTO includes owner info")
-	assert(dto1.ActivePenVisuals["Pen_1"] ~= nil and dto1.ActivePenVisuals["Pen_1"].SpeciesId == "NebulaFox", "Public DTO exposes active pen visual")
+	assert(dto1.OwnerUserId == u1 and dto1.OwnerDisplayName == "Tester_1", "Public DTO includes owner info")
+	assert(dto1.ActivePenVisuals["Pen_5"] ~= nil and dto1.ActivePenVisuals["Pen_5"].SpeciesId == "NebulaFox", "Public DTO exposes Pen_5 visual")
 	assert((dto1 :: any).Coins == nil and (dto1 :: any).Items == nil, "Public DTO strips private Coins and Items")
 
 	local releasedPlot = PlotService.ReleasePlotForUserId(u1)
 	assert(releasedPlot == 1 and PlotService.GetAssignedPlotId(u1) == nil, "Leave releases Plot_1")
-	assert(plotRevisionByPlotId[1] > revBeforeRelease, "PlotRevision increments on release")
+	local revAtRelease = plotRevisionByPlotId[1]
+	assert(revAtRelease > revBeforeRelease, "PlotRevision increments on release")
 	local dtoReleased = PlotService.BuildPublicPlotDTO(1)
 	assert(dtoReleased.OwnerUserId == 0 and next(dtoReleased.ActivePenVisuals) == nil, "Released plot DTO resets cleanly")
 
-	-- Plot_1 can now be assigned to u3
-	local okReassign, _, reassignedId = PlotService.AssignPlotForUserId(u3, "TesterThree", p3, nil)
+	-- Released Plot_1 can now be assigned to uExcess with strictly higher PlotRevision and clean DTO
+	local okReassign, _, reassignedId = PlotService.AssignPlotForUserId(uExcess, "Tester_7", profiles[7], nil)
 	assert(okReassign and reassignedId == 1, "Released Plot_1 reused cleanly")
-
-	PlotService.ReleasePlotForUserId(u2)
-	PlotService.ReleasePlotForUserId(u3)
+	local dtoReused = PlotService.BuildPublicPlotDTO(1)
+	assert(dtoReused.OwnerUserId == uExcess and dtoReused.PlotRevision > revAtRelease and next(dtoReused.ActivePenVisuals) == nil, "Reused Plot_1 increments PlotRevision & clears stale visuals")
 	passed += 1
+
+	-- 4. Hub & Ranch navigation target resolution
+	local hubNavOk, _, hubCFrame = PlotService.ResolveNavigationCFrame(u6, "Hub")
+	assert(hubNavOk and hubCFrame ~= nil and math.abs((hubCFrame :: CFrame).Position.X) < 10, "Hub navigation resolves inside CentralHub Plaza")
+	local ranchNavOk, _, ranchCFrame = PlotService.ResolveNavigationCFrame(u6, "Ranch")
+	local plot6Spawn = ((plotModelsById[6]):FindFirstChild("SpawnPoint") :: SpawnLocation)
+	assert(ranchNavOk and ranchCFrame ~= nil and ((ranchCFrame :: CFrame).Position - plot6Spawn.Position).Magnitude < 5, "Ranch navigation resolves to assigned Plot_6 SpawnPoint")
+	local badNavOk, badNavReason = PlotService.ResolveNavigationCFrame(u1, "Hub")
+	assert(not badNavOk and badNavReason == "NoAssignedPlot", "Released player without plot rejected from navigation")
+	passed += 1
+
+	for _, uid in ipairs(testUsers) do
+		PlotService.ReleasePlotForUserId(uid)
+		DataService.ClearTestTrackingForUserIds({ uid })
+	end
 
 	return passed
 end
