@@ -1160,6 +1160,7 @@ function EconomyService.RunSelfTest(): number
 	assert(pEcon3.Coins >= 230 and pEcon3.Coins <= 238, string.format("Shutdown flush must settle & persist >=30 unaccrued Coins (got %d)", pEcon3.Coins))
 
 	assert(DataService.FlushActiveProfileSessions(2), "Suite 8 cleanup flush")
+	DataService.ClearTestTrackingForUserIds({ uEcon })
 	passed += 1
 
 	return passed

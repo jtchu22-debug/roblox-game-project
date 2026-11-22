@@ -31,6 +31,7 @@ local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 
 export type SessionStatus = "Loading" | "Ready" | "Closing"
 export type PersistenceBackendMode = "LiveProfileStore" | "MockProfileStore"
+export type SmokeTestPhase = "RoundTrip" | "Write" | "Verify"
 
 type SignalConnectionLike = {
 	Disconnect: (self: any) -> (),
@@ -68,6 +69,8 @@ export type StartSessionOptions = {
 
 type PlayerSession = {
 	UserId: number,
+	StoreName: string,
+	ProfileKey: string,
 	Player: Player?,
 	Status: SessionStatus,
 	Profile: Types.PlayerProfileData?,
@@ -75,7 +78,11 @@ type PlayerSession = {
 	DataInitialized: boolean,
 	FinalSettled: boolean,
 	FinalSaveStarted: boolean,
+	FinalReleaseQueued: boolean,
+	FinalSaveTargetRevision: number,
+	InFlightOrdinarySaves: number,
 	FinalWriteConfirmed: boolean,
+	FinalWriteAttemptFinished: boolean,
 	InitiatedByLocalEnd: boolean,
 	ClosingNotified: boolean,
 	SessionEndedHandled: boolean,
@@ -526,6 +533,20 @@ function DataService.CreateIsolatedMockStoreForTest(label: string): any
 	return ProfileStore.New(storeName, PROFILE_TEMPLATE).Mock
 end
 
+function DataService.ClearTestTrackingForUserIds(userIds: { number }): ()
+	for _, userId in ipairs(userIds) do
+		sessions[userId] = nil
+		closingHandlesByUserId[userId] = nil
+		lastClosingSessionsByUserId[userId] = nil
+		pendingEarlySnapshots[userId] = nil
+	end
+end
+
+function DataService.IsUserFinalSaveConfirmed(userId: number): boolean
+	local closingSession = lastClosingSessionsByUserId[userId]
+	return closingSession ~= nil and closingSession.FinalWriteConfirmed == true
+end
+
 function DataService.WaitForUserFinalSave(userId: number, timeoutSeconds: number?): boolean
 	local closingSession = lastClosingSessionsByUserId[userId]
 	if closingSession == nil then
@@ -536,8 +557,8 @@ function DataService.WaitForUserFinalSave(userId: number, timeoutSeconds: number
 	local pendingHandle = closingHandlesByUserId[userId]
 	while os.clock() < deadline do
 		local handleReleased = pendingHandle == nil or not pendingHandle:IsActive()
-		if closingSession.FinalWriteConfirmed and handleReleased then
-			return true
+		if handleReleased and (closingSession.FinalWriteConfirmed or closingSession.FinalWriteAttemptFinished) then
+			return closingSession.FinalWriteConfirmed
 		end
 		task.wait()
 	end
@@ -648,8 +669,11 @@ function DataService.StartProfileSessionForUserId(
 	local hadEarlySnapshot = pendingEarlySnapshots[userId] == true
 	pendingEarlySnapshots[userId] = nil
 
+	local profileKey = Constants.PROFILE_KEY_PREFIX .. tostring(userId)
 	local session: PlayerSession = {
 		UserId = userId,
+		StoreName = targetStore.Name,
+		ProfileKey = profileKey,
 		Player = player,
 		Status = "Loading",
 		Profile = nil,
@@ -657,7 +681,11 @@ function DataService.StartProfileSessionForUserId(
 		DataInitialized = false,
 		FinalSettled = false,
 		FinalSaveStarted = false,
+		FinalReleaseQueued = false,
+		FinalSaveTargetRevision = 0,
+		InFlightOrdinarySaves = 0,
 		FinalWriteConfirmed = false,
+		FinalWriteAttemptFinished = false,
 		InitiatedByLocalEnd = false,
 		ClosingNotified = false,
 		SessionEndedHandled = false,
@@ -752,9 +780,19 @@ function DataService.StartProfileSessionForUserId(
 	session.DataInitialized = true
 
 	-- Connect OnAfterSave BEFORE OnSave/OnLastSave/OnSessionEnd so confirmed final writes are never missed.
-	session.OnAfterSaveConn = profileHandle.OnAfterSave:Connect(function(_savedData: any)
-		if session.FinalSaveStarted then
-			session.FinalWriteConfirmed = true
+	session.OnAfterSaveConn = profileHandle.OnAfterSave:Connect(function(savedData: any)
+		-- Consume any earlier ordinary autosave completion before treating an OnAfterSave as the final write.
+		if session.InFlightOrdinarySaves > 0 then
+			session.InFlightOrdinarySaves -= 1
+			return
+		end
+		if session.FinalReleaseQueued then
+			local savedRev = if typeof(savedData) == "table" then tonumber(savedData.Revision) else nil
+			local targetRev = session.FinalSaveTargetRevision
+			if savedRev ~= nil and targetRev > 0 and (savedRev :: number) >= targetRev then
+				session.FinalWriteConfirmed = true
+			end
+			session.FinalWriteAttemptFinished = true
 			if closingHandlesByUserId[userId] == profileHandle then
 				closingHandlesByUserId[userId] = nil
 			end
@@ -764,25 +802,38 @@ function DataService.StartProfileSessionForUserId(
 	end)
 
 	session.OnSaveConn = profileHandle.OnSave:Connect(function()
+		session.InFlightOrdinarySaves += 1
 		if session.Status == "Ready" and session.Profile ~= nil and not session.FinalSettled then
 			runBeforeSaveHooks(session, session.Profile, false)
 		end
 	end)
 
-	-- Fires on external release or ProfileStore shutdown right before UpdateAsync writes latest Data.
+	-- Fires right after OnSave for BOTH local EndSession and external/shutdown releases before UpdateAsync writes.
 	session.OnLastSaveConn = profileHandle.OnLastSave:Connect(function(_reason: string)
+		-- Subtract the final release save's own OnSave increment so only earlier in-flight autosaves remain counted.
+		session.InFlightOrdinarySaves = math.max(0, session.InFlightOrdinarySaves - 1)
 		session.Status = "Closing"
 		if sessions[userId] == session then
 			sessions[userId] = nil
 		end
 		session.FinalSaveStarted = true
+		session.FinalReleaseQueued = true
 		closingHandlesByUserId[userId] = profileHandle
 		lastClosingSessionsByUserId[userId] = session
 
 		local authProfile = session.Profile
 		if authProfile ~= nil then
 			runBeforeSaveHooks(session, authProfile, true)
+			if session.FinalSaveTargetRevision == 0 then
+				authProfile.Revision += 1
+				session.FinalSaveTargetRevision = authProfile.Revision
+			end
 		end
+
+		disconnectSignalSafe(session.OnSaveConn)
+		session.OnSaveConn = nil
+		disconnectSignalSafe(session.OnLastSaveConn)
+		session.OnLastSaveConn = nil
 	end)
 
 	-- Fires on external lock theft / shutdown / passive expiry.
@@ -881,10 +932,16 @@ function DataService.EndSession(userId: number, player: Player?): ()
 	-- 2. Settle final Coins ONCE from the authoritative profile BEFORE tearing down handle state or releasing lock.
 	if profileData ~= nil and session.DataInitialized then
 		runBeforeSaveHooks(session, profileData, true)
+		if handle ~= nil and session.FinalSaveTargetRevision == 0 then
+			profileData.Revision += 1
+			session.FinalSaveTargetRevision = profileData.Revision
+		end
 	end
 
-	-- 3. Disconnect save/end hooks while keeping OnAfterSave connected so actual write completion is observed.
-	disconnectNonAfterSaveSignals(session)
+	-- 3. Keep OnSave/OnLastSave/OnAfterSave connected so handle:EndSession() transitions cleanly through final release tracking;
+	--    disconnect only OnSessionEnd because InitiatedByLocalEnd handles teardown here.
+	disconnectSignalSafe(session.OnSessionEndConn)
+	session.OnSessionEndConn = nil
 
 	session.Profile = nil
 	session.ProfileHandle = nil
@@ -900,13 +957,21 @@ function DataService.EndSession(userId: number, player: Player?): ()
 		end)
 		if not okEnd then
 			warn("[DataService] Profile:EndSession error: " .. tostring(errEnd))
-			disconnectSignalSafe(session.OnAfterSaveConn)
-			session.OnAfterSaveConn = nil
+			disconnectAllHandleSignals(session)
+			session.FinalWriteConfirmed = false
+			session.FinalWriteAttemptFinished = true
+		elseif not session.FinalReleaseQueued then
+			disconnectAllHandleSignals(session)
+			session.FinalWriteConfirmed = false
+			session.FinalWriteAttemptFinished = true
 		end
 	else
-		disconnectSignalSafe(session.OnAfterSaveConn)
-		session.OnAfterSaveConn = nil
-		session.FinalWriteConfirmed = true
+		-- Never assume an inactive handle was safely saved unless a prior OnLastSave+OnAfterSave already confirmed it.
+		if not session.FinalReleaseQueued then
+			disconnectAllHandleSignals(session)
+			session.FinalWriteConfirmed = false
+			session.FinalWriteAttemptFinished = true
+		end
 	end
 end
 
@@ -930,9 +995,9 @@ function DataService.FlushActiveProfileSessions(timeoutSeconds: number?): boolea
 		DataService.EndSession(userId, nil)
 	end
 
-	-- Also wait for any concurrent OnLastSave-triggered closing sessions (e.g. ProfileStore shutdown).
+	-- Wait for any in-progress OnLastSave release writes without re-including previously finished failed/stale sessions.
 	for userId, closingSession in pairs(lastClosingSessionsByUserId) do
-		if closingSession.FinalSaveStarted and not closingSession.FinalWriteConfirmed then
+		if closingSession.FinalSaveStarted and not closingSession.FinalWriteAttemptFinished then
 			local alreadyTracked = false
 			for _, entry in ipairs(trackedEntries) do
 				if entry.Session == closingSession then
@@ -956,7 +1021,7 @@ function DataService.FlushActiveProfileSessions(timeoutSeconds: number?): boolea
 		for _, entry in ipairs(trackedEntries) do
 			local handle = entry.Handle
 			local handleReleased = handle == nil or not handle:IsActive()
-			if not entry.Session.FinalWriteConfirmed or not handleReleased then
+			if not handleReleased or (not entry.Session.FinalWriteConfirmed and not entry.Session.FinalWriteAttemptFinished) then
 				allDone = false
 				break
 			end
@@ -991,6 +1056,8 @@ function DataService.BeginMockSession(userId: number, player: Player?): PlayerSe
 
 	local session: PlayerSession = {
 		UserId = userId,
+		StoreName = "MockHelper",
+		ProfileKey = Constants.PROFILE_KEY_PREFIX .. tostring(userId),
 		Player = player,
 		Status = "Loading",
 		Profile = nil,
@@ -998,7 +1065,11 @@ function DataService.BeginMockSession(userId: number, player: Player?): PlayerSe
 		DataInitialized = false,
 		FinalSettled = false,
 		FinalSaveStarted = false,
+		FinalReleaseQueued = false,
+		FinalSaveTargetRevision = 0,
+		InFlightOrdinarySaves = 0,
 		FinalWriteConfirmed = false,
+		FinalWriteAttemptFinished = false,
 		InitiatedByLocalEnd = false,
 		ClosingNotified = false,
 		SessionEndedHandled = false,
@@ -1090,67 +1161,85 @@ function DataService.OnPlayerClosing(callback: (player: Player) -> ()): ()
 	table.insert(closingCallbacks, callback)
 end
 
-function DataService.RunLiveDevDataStoreSmokeTest(testUserId: number?): (boolean, string)
+function DataService.RunLiveDevDataStoreSmokeTest(phase: SmokeTestPhase?, testUserId: number?): (boolean, string)
+	local runPhase: SmokeTestPhase = if phase ~= nil then phase else "RoundTrip"
 	local uid = if testUserId ~= nil then testUserId else -919999
 	local waitDeadline = os.clock() + Constants.DATASTORE_READY_WAIT_SECONDS
 	while ProfileStore.DataStoreState == "NotReady" and os.clock() < waitDeadline do
 		task.wait(0.05)
 	end
 	if ProfileStore.DataStoreState ~= "Access" then
-		return false, string.format("Live DataStore unavailable (DataStoreState=%s)", ProfileStore.DataStoreState)
+		return false, string.format("Live DataStore unavailable (DataStoreState=%s, PlaceId=%d, GameId=%d)", ProfileStore.DataStoreState, game.PlaceId, game.GameId)
 	end
 
 	local smokeStoreName = Constants.DATASTORE_NAME_DEV .. "_Smoke"
 	local smokeStore = (ProfileStore.New(smokeStoreName, PROFILE_TEMPLATE) :: any) :: ProfileStoreLike
 	local key = Constants.PROFILE_KEY_PREFIX .. tostring(uid)
-	if smokeStore.RemoveAsync ~= nil then
-		pcall(function()
-			(smokeStore.RemoveAsync :: any)(smokeStore, key)
-		end)
-	end
-
 	local t0 = math.floor(workspace:GetServerTimeNow())
-	local joinOk, joinReason = DataService.StartProfileSessionForUserId(uid, nil, {
-		Store = smokeStore,
-		NowClock = t0,
-	})
-	if not joinOk then
-		return false, "Smoke test initial load failed: " .. joinReason
-	end
 
-	local prof = DataService.GetProfileByUserId(uid) :: Types.PlayerProfileData
-	prof.Coins = 321
-	prof.Upgrades["Incubator_1"] = true
-	prof.DiscoveredSpecies["CinderPup"] = true
-	prof.Items["smoke-pen"] = {
-		UID = "smoke-pen",
-		SpeciesId = "CinderPup",
-		Variant = "Normal",
-		State = "InPen",
-		AssignedSlot = "Pen_1",
-		PlantedAt = nil,
-		MaturesAt = nil,
-		CreatedAt = t0,
-		FeedLevel = 1,
-	}
-	prof.Slots["Pen_1"] = "smoke-pen"
-	prof.Items["smoke-pod"] = {
-		UID = "smoke-pod",
-		SpeciesId = "FrostBeetle",
-		Variant = "Normal",
-		State = "Incubating",
-		AssignedSlot = "Incubator_1",
-		PlantedAt = t0,
-		MaturesAt = t0 + 45,
-		CreatedAt = t0,
-		FeedLevel = 0,
-	}
-	prof.Slots["Incubator_1"] = "smoke-pod"
+	if runPhase == "RoundTrip" or runPhase == "Write" then
+		if smokeStore.RemoveAsync ~= nil then
+			pcall(function()
+				(smokeStore.RemoveAsync :: any)(smokeStore, key)
+			end)
+		end
 
-	DataService.EndSession(uid)
-	local savedOk = DataService.WaitForUserFinalSave(uid, 10)
-	if not savedOk then
-		return false, "Live DataStore final write was not confirmed via OnAfterSave within 10s"
+		local joinOk, joinReason = DataService.StartProfileSessionForUserId(uid, nil, {
+			Store = smokeStore,
+			NowClock = t0,
+		})
+		if not joinOk then
+			return false, "Smoke test Write initial load failed: " .. joinReason
+		end
+
+		local prof = DataService.GetProfileByUserId(uid) :: Types.PlayerProfileData
+		prof.Coins = 300
+		prof.LastAccrualTimestamp = t0 - 10 -- Verify OnEnd final settlement adds >=10s pen earnings.
+		prof.Upgrades["Incubator_1"] = true
+		prof.DiscoveredSpecies["CinderPup"] = true
+		prof.Items["smoke-pen"] = {
+			UID = "smoke-pen",
+			SpeciesId = "CinderPup",
+			Variant = "Normal",
+			State = "InPen",
+			AssignedSlot = "Pen_1",
+			PlantedAt = nil,
+			MaturesAt = nil,
+			CreatedAt = t0,
+			FeedLevel = 1,
+		}
+		prof.Slots["Pen_1"] = "smoke-pen"
+		prof.Items["smoke-pod"] = {
+			UID = "smoke-pod",
+			SpeciesId = "FrostBeetle",
+			Variant = "Normal",
+			State = "Incubating",
+			AssignedSlot = "Incubator_1",
+			PlantedAt = t0,
+			MaturesAt = t0 + 45,
+			CreatedAt = t0,
+			FeedLevel = 0,
+		}
+		prof.Slots["Incubator_1"] = "smoke-pod"
+
+		DataService.EndSession(uid)
+		local savedOk = DataService.WaitForUserFinalSave(uid, 10)
+		if not savedOk then
+			return false, "Live DataStore final write was not confirmed after release"
+		end
+
+		if runPhase == "Write" then
+			return true, string.format(
+				"Write phase confirmed (%s, Version=%s, PlaceId=%d, GameId=%d, Key=%s, PlantedAt=%d, MaturesAt=%d). Restart Play/Server and run Verify phase.",
+				smokeStoreName,
+				Constants.GAME_VERSION,
+				game.PlaceId,
+				game.GameId,
+				key,
+				t0,
+				t0 + 45
+			)
+		end
 	end
 
 	local reopenOk, reopenReason = DataService.StartProfileSessionForUserId(uid, nil, {
@@ -1158,13 +1247,21 @@ function DataService.RunLiveDevDataStoreSmokeTest(testUserId: number?): (boolean
 		NowClock = t0 + 10,
 	})
 	if not reopenOk then
-		return false, "Smoke test reopen failed: " .. reopenReason
+		return false, "Smoke test Verify load failed: " .. reopenReason
 	end
 
 	local reloaded = DataService.GetProfileByUserId(uid) :: Types.PlayerProfileData
-	local coinsOk = reloaded.Coins >= 321
-	local critterOk = reloaded.Items["smoke-pen"] ~= nil and reloaded.Items["smoke-pen"].SpeciesId == "CinderPup" and reloaded.Items["smoke-pen"].FeedLevel == 1
-	local podOk = reloaded.Items["smoke-pod"] ~= nil and reloaded.Items["smoke-pod"].State == "Incubating" and reloaded.Items["smoke-pod"].MaturesAt == (t0 + 45)
+	local savedCoins = reloaded.Coins
+	local critter = reloaded.Items["smoke-pen"]
+	local pod = reloaded.Items["smoke-pod"]
+	local coinsOk = savedCoins > 300
+	local critterOk = critter ~= nil and critter.SpeciesId == "CinderPup" and critter.FeedLevel == 1 and reloaded.Slots["Pen_1"] == "smoke-pen"
+	local podOk = pod ~= nil
+		and pod.State == "Incubating"
+		and pod.PlantedAt ~= nil
+		and pod.MaturesAt == ((pod.PlantedAt :: number) + 45)
+		and reloaded.Slots["Incubator_1"] == "smoke-pod"
+	local podMaturesAt = if pod ~= nil and pod.MaturesAt ~= nil then pod.MaturesAt else -1
 
 	DataService.EndSession(uid)
 	DataService.WaitForUserFinalSave(uid, 10)
@@ -1175,9 +1272,18 @@ function DataService.RunLiveDevDataStoreSmokeTest(testUserId: number?): (boolean
 	end
 
 	if not (coinsOk and critterOk and podOk) then
-		return false, string.format("Smoke reload mismatch (coinsOk=%s critterOk=%s podOk=%s)", tostring(coinsOk), tostring(critterOk), tostring(podOk))
+		return false, string.format("Smoke verify mismatch (coinsOk=%s Coins=%d critterOk=%s podOk=%s)", tostring(coinsOk), savedCoins, tostring(critterOk), tostring(podOk))
 	end
-	return true, string.format("Live Dev DataStore smoke test passed (%s, Coins=%d, Critter+Pod preserved)", smokeStoreName, reloaded.Coins)
+	return true, string.format(
+		"Live Dev DataStore %s verified (%s, Version=%s, PlaceId=%d, GameId=%d, SettledCoins=%d, Critter=CinderPup, MaturesAt=%d)",
+		runPhase,
+		smokeStoreName,
+		Constants.GAME_VERSION,
+		game.PlaceId,
+		game.GameId,
+		savedCoins,
+		podMaturesAt
+	)
 end
 
 local function onPlayerAdded(player: Player): ()
@@ -1222,6 +1328,16 @@ function DataService.Init(self: typeof(DataService)): ()
 
 	if onErrorConn == nil then
 		onErrorConn = ProfileStore.OnError:Connect(function(message: string, errStoreName: string, profileKey: string)
+			for _, s in pairs(sessions) do
+				if s.StoreName == errStoreName and s.ProfileKey == profileKey and s.InFlightOrdinarySaves > 0 then
+					s.InFlightOrdinarySaves -= 1
+				end
+			end
+			for _, s in pairs(lastClosingSessionsByUserId) do
+				if s.StoreName == errStoreName and s.ProfileKey == profileKey and s.InFlightOrdinarySaves > 0 then
+					s.InFlightOrdinarySaves -= 1
+				end
+			end
 			warn(string.format("[DataService][ProfileStore] Error (%s / %s): %s", tostring(errStoreName), tostring(profileKey), tostring(message)))
 		end)
 	end
@@ -1435,7 +1551,7 @@ function DataService.RunSelfTest(): number
 	})
 	assert(rejoinOk and DataService.IsUserIdReady(userP), "Rejoin after EndSession must succeed")
 	local reloaded = DataService.GetProfileByUserId(userP) :: Types.PlayerProfileData
-	assert(reloaded.Coins == 420 and reloaded.Revision == 5, "Coins & Revision must persist across rejoin")
+	assert(reloaded.Coins == 420 and reloaded.Revision == 6, "Coins & Revision (+1 on EndSession) must persist across rejoin")
 	assert(reloaded.LastAccrualTimestamp == rejoinClock, "Stage 3 login resets LastAccrualTimestamp with zero offline coins")
 	assert(reloaded.Upgrades["PenSlot_2"] == true and reloaded.Upgrades["FrostCracker"] == true, "Upgrades persist")
 	assert(reloaded.DiscoveredSpecies["StarSlime"] == true and reloaded.DiscoveredSpecies["CinderPup"] == true, "DiscoveredSpecies persist")
@@ -1608,7 +1724,7 @@ function DataService.RunSelfTest(): number
 	local hookCalls = 0
 	local readinessAtHook = true
 	local hookConn = DataService.OnBeforeSave(function(_p: Player?, prof: Types.PlayerProfileData)
-		if prof.Revision == 9001 then
+		if prof.Revision >= 9001 then
 			hookCalls += 1
 			readinessAtHook = DataService.IsUserIdReady(userHook)
 			prof.Coins += 55
@@ -1639,6 +1755,138 @@ function DataService.RunSelfTest(): number
 
 	hookConn:Disconnect()
 	DataService.FlushActiveProfileSessions(2)
+	passed += 1
+
+	-- 11. Review #017 #1 Regression: Earlier in-flight autosave, inactive handle, and stale revision CANNOT confirm final write early
+	local function createFakeAsyncStore(storeLabel: string)
+		local makeSignal = function()
+			local listeners: { (...any) -> () } = {}
+			return {
+				Connect = function(_self: any, fn: (...any) -> ())
+					table.insert(listeners, fn)
+					return {
+						Disconnect = function()
+							local idx = table.find(listeners, fn)
+							if idx ~= nil then
+								table.remove(listeners, idx)
+							end
+						end,
+					}
+				end,
+				Fire = function(_self: any, ...: any)
+					local copy = table.clone(listeners)
+					for _, fn in ipairs(copy) do
+						fn(...)
+					end
+				end,
+			}
+		end
+
+		local controller = {
+			CurrentHandle = nil :: any,
+			IsActiveFlag = true,
+			SaveSig = makeSignal(),
+			LastSaveSig = makeSignal(),
+			AfterSaveSig = makeSignal(),
+			EndSig = makeSignal(),
+		}
+
+		local fakeStore = {
+			Name = storeLabel,
+			StartSessionAsync = function(_self: any, _key: string, _params: any)
+				controller.IsActiveFlag = true
+				local handle = {
+					Data = DataService.CreateDefaultProfile(workspace:GetServerTimeNow()),
+					UserIds = {},
+					OnSave = controller.SaveSig,
+					OnLastSave = controller.LastSaveSig,
+					OnAfterSave = controller.AfterSaveSig,
+					OnSessionEnd = controller.EndSig,
+					IsActive = function()
+						return controller.IsActiveFlag
+					end,
+					Reconcile = function() end,
+					AddUserId = function(selfHandle: any, id: number)
+						table.insert(selfHandle.UserIds, id)
+					end,
+					Save = function()
+						controller.SaveSig:Fire()
+					end,
+					EndSession = function()
+						controller.SaveSig:Fire()
+						controller.LastSaveSig:Fire("Manual")
+						controller.IsActiveFlag = false
+						controller.EndSig:Fire()
+						-- Deliberately do NOT fire OnAfterSave immediately so test controls autosave vs final write arrival order!
+					end,
+				}
+				controller.CurrentHandle = handle
+				return handle
+			end,
+		}
+		return fakeStore, controller
+	end
+
+	-- 11a: In-flight autosave completing AFTER EndSession must NOT confirm final write early (even if mutating Revision table)
+	local fakeStore11, ctrl11 = createFakeAsyncStore("SR_Fake_11a")
+	local uRace = -910055
+	assert(DataService.StartProfileSessionForUserId(uRace, nil, { Store = fakeStore11 }), "Suite 11a join")
+	local pRace = DataService.GetProfileByUserId(uRace) :: Types.PlayerProfileData
+	pRace.Revision = 10
+
+	-- Start an ordinary autosave (in-flight: OnSave fired, OnAfterSave NOT yet returned)
+	ctrl11.CurrentHandle:Save()
+	-- Close session while autosave is still pending; ProfileStore sets IsActive=false before writing final release
+	DataService.EndSession(uRace)
+	assert(not DataService.IsUserFinalSaveConfirmed(uRace), "Final write must NOT be confirmed immediately on EndSession")
+
+	-- Autosave completes now (carrying live reference or earlier snapshot); must be consumed as autosave ONLY
+	ctrl11.AfterSaveSig:Fire(ctrl11.CurrentHandle.Data)
+	assert(not DataService.IsUserFinalSaveConfirmed(uRace), "Earlier autosave OnAfterSave MUST NOT confirm pending final release write")
+	assert(not DataService.WaitForUserFinalSave(uRace, 0.05), "WaitForUserFinalSave must reject early autosave confirmation")
+
+	-- Now actual final release write completes with target revision (11)
+	ctrl11.AfterSaveSig:Fire(ctrl11.CurrentHandle.Data)
+	assert(DataService.IsUserFinalSaveConfirmed(uRace), "Actual final release OnAfterSave confirms final write")
+	assert(DataService.WaitForUserFinalSave(uRace, 0.2), "WaitForUserFinalSave succeeds after final release OnAfterSave")
+
+	-- 11b: Inactive handle at EndSession (no OnLastSave/OnAfterSave release path) must NOT falsely confirm saved
+	local fakeStore11b, ctrl11b = createFakeAsyncStore("SR_Fake_11b")
+	local uInactive = -910056
+	assert(DataService.StartProfileSessionForUserId(uInactive, nil, { Store = fakeStore11b }), "Suite 11b join")
+	ctrl11b.IsActiveFlag = false
+	DataService.EndSession(uInactive)
+	assert(not DataService.IsUserFinalSaveConfirmed(uInactive), "Inactive handle without OnLastSave/OnAfterSave MUST NOT report confirmed")
+	assert(not DataService.WaitForUserFinalSave(uInactive, 0.05), "WaitForUserFinalSave must return false when handle became inactive unsaved")
+
+	-- 11c: Final OnAfterSave returning stale Revision (lost ownership on final UpdateAsync) must NOT confirm
+	local fakeStore11c, ctrl11c = createFakeAsyncStore("SR_Fake_11c")
+	local uStale = -910057
+	assert(DataService.StartProfileSessionForUserId(uStale, nil, { Store = fakeStore11c }), "Suite 11c join")
+	local pStale = DataService.GetProfileByUserId(uStale) :: Types.PlayerProfileData
+	pStale.Revision = 20
+	DataService.EndSession(uStale) -- Targets Revision 21
+	ctrl11c.AfterSaveSig:Fire({ Revision = 19 })
+	assert(not DataService.IsUserFinalSaveConfirmed(uStale), "Stale Revision OnAfterSave must NOT confirm final write")
+	assert(not DataService.WaitForUserFinalSave(uStale, 0.05), "WaitForUserFinalSave returns false cleanly after stale write finishes")
+
+	-- Verify an earlier unconfirmed/stale write NEVER poisons subsequent healthy shutdown flushes
+	local uHealthyAfter = -910058
+	assert(DataService.StartProfileSessionForUserId(uHealthyAfter, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Healthy flush session after stale loss starts")
+	assert(DataService.FlushActiveProfileSessions(2), "Healthy shutdown flush must still succeed after earlier lost-lock session")
+
+	DataService.ClearTestTrackingForUserIds({
+		userA,
+		userB,
+		userP,
+		userTheft,
+		userFlush2,
+		userHook,
+		uRace,
+		uInactive,
+		uStale,
+		uHealthyAfter,
+	})
 	passed += 1
 
 	return passed
