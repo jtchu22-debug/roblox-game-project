@@ -553,6 +553,50 @@ function DataService.IsUserFinalSaveConfirmed(userId: number): boolean
 	return closingSession ~= nil and closingSession.FinalWriteConfirmed == true
 end
 
+function DataService.GetLastClosingFinalSaveInfo(userId: number): (boolean, number, number?)
+	local closingSession = lastClosingSessionsByUserId[userId]
+	if closingSession == nil then
+		return false, -1, nil
+	end
+	return closingSession.FinalWriteConfirmed == true, closingSession.FinalSaveTargetRevision, closingSession.FinalSaveExpectedCoins
+end
+
+function DataService.GetLiveDevSmokeStore(): (boolean, any, string)
+	local waitDeadline = os.clock() + Constants.DATASTORE_READY_WAIT_SECONDS
+	while ProfileStore.DataStoreState == "NotReady" and os.clock() < waitDeadline do
+		task.wait(0.05)
+	end
+	if ProfileStore.DataStoreState ~= "Access" then
+		return false, string.format("Live DataStore unavailable (DataStoreState=%s, PlaceId=%d, GameId=%d)", ProfileStore.DataStoreState, game.PlaceId, game.GameId), ""
+	end
+	local smokeStoreName = Constants.DATASTORE_NAME_DEV .. "_Smoke"
+	return true, ProfileStore.New(smokeStoreName, PROFILE_TEMPLATE), smokeStoreName
+end
+
+function DataService.CreateIsolatedMockStoreWithMapForTest(label: string): (any, string)
+	local sanitized = string.gsub(label, "[^%w_]", "")
+	if #sanitized == 0 then
+		sanitized = "Mock"
+	end
+	local prefix = "SR_" .. string.sub(sanitized, 1, 12) .. "_"
+	local storeName = prefix .. string.sub(HttpService:GenerateGUID(false), 1, 12)
+	local baseStore = ProfileStore.New(storeName, PROFILE_TEMPLATE)
+	return baseStore.Mock, storeName
+end
+
+function DataService.GetUserMockStoreMapForTest(storeName: string): { [string]: any }
+	return (ProfileStore :: any).Test().UserMockStore[storeName]
+end
+
+function DataService.TriggerTestProfileSave(userId: number): boolean
+	local session = sessions[userId]
+	if session == nil or session.Status ~= "Ready" or session.ProfileHandle == nil then
+		return false
+	end
+	session.ProfileHandle:Save()
+	return true
+end
+
 function DataService.WaitForUserFinalSave(userId: number, timeoutSeconds: number?): boolean
 	local closingSession = lastClosingSessionsByUserId[userId]
 	if closingSession == nil then
@@ -717,11 +761,18 @@ function DataService.StartProfileSessionForUserId(
 	-- Wait briefly if a previous ProfileHandle on this server is still releasing or confirming its final write.
 	local prevHandle = closingHandlesByUserId[userId]
 	local prevClosingSession = lastClosingSessionsByUserId[userId]
-	if prevHandle ~= nil or (prevClosingSession ~= nil and prevClosingSession.FinalSaveStarted and not prevClosingSession.FinalWriteConfirmed) then
+	local prevWritePending = prevClosingSession ~= nil
+		and prevClosingSession.FinalSaveStarted
+		and not prevClosingSession.FinalWriteConfirmed
+		and not prevClosingSession.FinalWriteAttemptFinished
+	if prevHandle ~= nil or prevWritePending then
 		local waitDeadline = os.clock() + 5
 		while os.clock() < waitDeadline and not shouldCancel() do
 			local handleDone = prevHandle == nil or not prevHandle:IsActive()
-			local writeDone = prevClosingSession == nil or not prevClosingSession.FinalSaveStarted or prevClosingSession.FinalWriteConfirmed
+			local writeDone = prevClosingSession == nil
+				or not prevClosingSession.FinalSaveStarted
+				or prevClosingSession.FinalWriteConfirmed
+				or prevClosingSession.FinalWriteAttemptFinished
 			if handleDone and writeDone then
 				break
 			end
@@ -1984,6 +2035,110 @@ function DataService.RunSelfTest(): number
 	local uHealthyAfter = -910058
 	assert(DataService.StartProfileSessionForUserId(uHealthyAfter, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Healthy flush session after lost-lock tests starts")
 	assert(DataService.FlushActiveProfileSessions(2), "Healthy shutdown flush must succeed after earlier unconfirmed sessions")
+	passed += 1
+
+	-- 12. Stage 3 S3-04 Regression: Early-leave cancellation during yielding load & fast rejoin after unconfirmed ownership loss
+	-- 12a: Player leaves while StartSessionAsync is still yielding and late-arriving handle is immediately released
+	local uCancel = -910061
+	DataService.EndSession(uCancel)
+	assert(DataService.StartProfileSessionForUserId(uCancel, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Suite 12a initial save join")
+	local pCancelPre = DataService.GetProfileByUserId(uCancel) :: Types.PlayerProfileData
+	pCancelPre.Coins = 333
+	DataService.EndSession(uCancel)
+	assert(DataService.WaitForUserFinalSave(uCancel, 2), "Suite 12a initial save confirmed")
+
+	local cancelReturnedTrue = false
+	local endedAfterCancel = false
+	local cancelKickCount = 0
+	local slowStore = {
+		Name = isolatedStoreName .. "_SlowCancel",
+		StartSessionAsync = function(_self: any, _key: string, params: { Cancel: (() -> boolean)? }?)
+			local cancelPred = if params ~= nil then params.Cancel else nil
+			task.wait(0.15)
+			if cancelPred ~= nil and cancelPred() then
+				cancelReturnedTrue = true
+			end
+			local dummySig = {
+				Connect = function()
+					return { Disconnect = function() end }
+				end,
+			}
+			return {
+				Data = DataService.CreateDefaultProfile(tFutureGuard),
+				UserIds = {},
+				OnSave = dummySig,
+				OnLastSave = dummySig,
+				OnAfterSave = dummySig,
+				OnFinalSaveResult = dummySig,
+				OnSessionEnd = dummySig,
+				IsActive = function()
+					return not endedAfterCancel
+				end,
+				Reconcile = function() end,
+				AddUserId = function() end,
+				Save = function() end,
+				EndSession = function()
+					endedAfterCancel = true
+				end,
+			}
+		end,
+	}
+
+	local loadDone = false
+	local loadOk = true
+	local loadReason = ""
+	task.spawn(function()
+		loadOk, loadReason = DataService.StartProfileSessionForUserId(uCancel, nil, {
+			Store = slowStore,
+			NowClock = tFutureGuard,
+			OnKick = function(_msg: string)
+				cancelKickCount += 1
+			end,
+		})
+		loadDone = true
+	end)
+	task.wait(0.03)
+	assert(sessions[uCancel] ~= nil and sessions[uCancel].Status == "Loading", "Suite 12a session must be Loading before early leave")
+	DataService.EndSession(uCancel)
+
+	local cancelDeadline = os.clock() + 2
+	while not loadDone and os.clock() < cancelDeadline do
+		task.wait()
+	end
+	assert(loadDone and not loadOk and loadReason == "CancelledDuringLoad", "Yielding StartSessionAsync cancels cleanly as CancelledDuringLoad")
+	assert(cancelReturnedTrue, "Cancel predicate returns true after early EndSession")
+	assert(endedAfterCancel, "Late-arriving handle from cancelled load is immediately released")
+	assert(cancelKickCount == 0, "Early-leave cancellation must not kick")
+	assert(not DataService.IsUserIdReady(uCancel) and DataService.GetProfileByUserId(uCancel) == nil, "Cancelled load never marks session Ready")
+
+	assert(DataService.StartProfileSessionForUserId(uCancel, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Reopen cancelled user succeeds")
+	assert((DataService.GetProfileByUserId(uCancel) :: Types.PlayerProfileData).Coins == 333, "Early-leave cancellation preserves prior saved Coins=333")
+	DataService.EndSession(uCancel)
+	assert(DataService.WaitForUserFinalSave(uCancel, 2), "Suite 12a cleanup save confirmed")
+
+	-- 12b: Fast rejoin (<1s) after unconfirmed ownership loss (FinalWriteAttemptFinished without 5s stall)
+	local uFastRejoin = -910062
+	DataService.EndSession(uFastRejoin)
+	assert(DataService.StartProfileSessionForUserId(uFastRejoin, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Suite 12b join")
+	local pFast = DataService.GetProfileByUserId(uFastRejoin) :: Types.PlayerProfileData
+	pFast.Coins = 222
+	pFast.Revision = 30
+	local mockEntryFast = userMockStoreMap[Constants.PROFILE_KEY_PREFIX .. tostring(uFastRejoin)]
+	mockEntryFast.Data.MetaData.ActiveSession = { 999999, "OtherJob", "other-uid-fast" }
+	mockEntryFast.Data.MetaData.SessionLoadCount += 1
+	mockEntryFast.Data.Data.Revision = 31
+	mockEntryFast.Data.Data.Coins = 222
+	DataService.EndSession(uFastRejoin)
+	assert(not DataService.WaitForUserFinalSave(uFastRejoin, 2), "Unconfirmed ownership loss returns false immediately after handle release")
+
+	mockEntryFast.Data.MetaData.ActiveSession = nil
+	local tRejoinStart = os.clock()
+	assert(DataService.StartProfileSessionForUserId(uFastRejoin, nil, { Store = testMockStore, NowClock = tFutureGuard }), "Rejoin after unconfirmed ownership loss succeeds")
+	local elapsedRejoin = os.clock() - tRejoinStart
+	assert(elapsedRejoin < 1.0, string.format("Fast rejoin must not stall 5s after finished unconfirmed close (took %.3fs)", elapsedRejoin))
+	assert((DataService.GetProfileByUserId(uFastRejoin) :: Types.PlayerProfileData).Coins == 222, "Rejoined session loads preserved Coins=222")
+	DataService.EndSession(uFastRejoin)
+	assert(DataService.WaitForUserFinalSave(uFastRejoin, 2), "Suite 12b cleanup save confirmed")
 
 	DataService.ClearTestTrackingForUserIds({
 		userA,
@@ -1998,6 +2153,8 @@ function DataService.RunSelfTest(): number
 		uLostHigher,
 		uForceLoad,
 		uHealthyAfter,
+		uCancel,
+		uFastRejoin,
 	})
 	passed += 1
 

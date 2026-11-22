@@ -96,6 +96,7 @@ local nextAstralFallAt = 0
 local characterConnsByUserId: { [number]: { RBXScriptConnection } } = {}
 local activeHumanoidConnsByUserId: { [number]: { RBXScriptConnection } } = {}
 local lifecycleObserver: ((payload: { [string]: any }) -> ())? = nil
+local beforeNavigateRegistered = false
 local watcherRunning = false
 
 local function publishMeteorLifecycle(payload: { [string]: any }): ()
@@ -842,7 +843,7 @@ end
 local function despawnLuredMeteorForUserId(userId: number): ()
 	local luredUid = luredMeteorByUserId[userId]
 	if luredUid ~= nil then
-		MeteorService.ReleaseClaimForUserId(userId)
+		-- removeMeteorInternal clears any active claim on luredUid so leaving emits only a single Despawn.
 		removeMeteorInternal(luredUid)
 		luredMeteorByUserId[userId] = nil
 		publishMeteorLifecycle({
@@ -1103,6 +1104,23 @@ local function populateWildMeteorsUpToCap(nowClock: number): ()
 	end
 end
 
+local function ensureBeforeNavigateRegistered(): ()
+	if beforeNavigateRegistered then
+		return
+	end
+	beforeNavigateRegistered = true
+	PlotService.OnBeforeNavigate(function(userId: number)
+		MeteorService.ReleaseClaimForUserId(userId)
+	end)
+end
+
+function MeteorService.ResetTestAstralAndCooldownState(): ()
+	wildNodeCooldownUntil = {}
+	pendingAstralFall = nil
+	activeAstralUID = nil
+	nextAstralFallAt = 0
+end
+
 function MeteorService.Init(self: typeof(MeteorService)): ()
 	local root = PlotService.GetGreyboxRoot()
 	local crater = root:FindFirstChild("CentralCrater") :: Model
@@ -1134,6 +1152,7 @@ function MeteorService.Init(self: typeof(MeteorService)): ()
 		activeMeteorsFolder = folder
 	end
 
+	ensureBeforeNavigateRegistered()
 	print(string.format("[MeteorService] Discovered %d wild nodes and %d starter nodes.", #wildNodes, Constants.MAX_PLOTS_ALPHA))
 end
 
@@ -1145,9 +1164,7 @@ function MeteorService.Start(self: typeof(MeteorService)): ()
 		return ok, reason
 	end)
 
-	PlotService.OnBeforeNavigate(function(userId: number)
-		MeteorService.ReleaseClaimForUserId(userId)
-	end)
+	ensureBeforeNavigateRegistered()
 
 	PlotService.OnPlotAssigned(function(plotId: number, userId: number)
 		local player = Players:GetPlayerByUserId(userId)
@@ -1587,6 +1604,101 @@ function MeteorService.RunSelfTest(): number
 		)
 		assert(activeClaimsByUserId[u2] == nil, "Leaving claim entry cleared")
 		passed += 1
+
+		-- 5. S3-04 Regression: Lured Frost disconnect single-Despawn, wild claim preservation, and Ridge Astral saturation
+		wildNodeCooldownUntil = {}
+		pendingAstralFall = nil
+		activeAstralUID = nil
+		nextAstralFallAt = 0
+		removeMeteorInternal(wildObj2.UID)
+
+		DataService.BeginMockSession(u1, nil)
+		DataService.CompleteMockSession(u1, 5100)
+		DataService.BeginMockSession(u2, nil)
+		DataService.CompleteMockSession(u2, 5100)
+		local p1Lure = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
+		local p2Lure = DataService.GetProfileByUserId(u2) :: Types.PlayerProfileData
+		p1Lure.Upgrades["FrostCracker"] = true
+		p2Lure.Upgrades["FrostCracker"] = true
+		assert((PlotService.AssignPlotForUserId(u1, "MeteorTester1", p1Lure, nil)), "Suite 5 assign u1 Plot 1")
+		assert((PlotService.AssignPlotForUserId(u2, "MeteorTester2", p2Lure, nil)), "Suite 5 assign u2 Plot 2")
+		lastLureClockByUserId[u1] = nil
+		lastLureClockByUserId[u2] = nil
+
+		-- 5a: Leaving while claiming own personal Lured Frost meteor emits single Despawn and zero ClaimReleased
+		local l1Ok, _, l1Raw = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5105)
+		assert(l1Ok and l1Raw ~= nil, "Suite 5a spawns lured Frost L1")
+		local l1Obj = l1Raw :: ActiveMeteor
+		table.insert(createdMeteorUIDs, l1Obj.UID)
+		local l1Claim = MeteorService.StartCrackAtPosition(u1, l1Obj.Position, l1Obj.UID, 5106)
+		assert(l1Claim.Ok, "u1 claims own L1")
+
+		clearEvents()
+		MeteorService.HandlePlotReleased(1, u1)
+		MeteorService.HandlePlayerClosing(u1)
+		assert(activeMeteors[l1Obj.UID] == nil, "Suite 5a L1 despawned on disconnect")
+		assert(countEvents("Despawn", l1Obj.UID) == 1 and countEvents("ClaimReleased", l1Obj.UID) == 0, "Own lured disconnect emits single Despawn and zero ClaimReleased")
+		assert(activeClaimsByUserId[u1] == nil and wildNodeOccupied[l1Obj.NodeName] == nil, "Suite 5a cleared claim & node occupancy")
+
+		-- 5b: Leaving while holding unclaimed L2 + claimed wild meteor W3 despawns L2 AND unlocks W3 for u2
+		PlotService.ReleasePlotForUserId(u1)
+		DataService.EndMockSession(u1)
+		DataService.BeginMockSession(u1, nil)
+		DataService.CompleteMockSession(u1, 5120)
+		local p1LureB = DataService.GetProfileByUserId(u1) :: Types.PlayerProfileData
+		p1LureB.Upgrades["FrostCracker"] = true
+		assert((PlotService.AssignPlotForUserId(u1, "MeteorTester1", p1LureB, nil)), "Suite 5b reassign u1 Plot 1")
+		lastLureClockByUserId[u1] = nil
+		wildNodeCooldownUntil = {}
+
+		local l2Ok, _, l2Raw = MeteorService.SpawnLuredMeteorForPlayer(u1, "MeteorTester1", "Frost", 5120)
+		assert(l2Ok and l2Raw ~= nil, "Suite 5b spawns unclaimed L2")
+		local l2Obj = l2Raw :: ActiveMeteor
+		table.insert(createdMeteorUIDs, l2Obj.UID)
+
+		local w3Ok, _, w3Raw = MeteorService.SpawnWildMeteorAtNode("MeteorNode_1", "Ember", 5120)
+		assert(w3Ok and w3Raw ~= nil, "Suite 5b spawns wild W3")
+		local w3Obj = w3Raw :: ActiveMeteor
+		table.insert(createdMeteorUIDs, w3Obj.UID)
+
+		local w3Claim = MeteorService.StartCrackAtPosition(u1, w3Obj.Position, w3Obj.UID, 5121)
+		assert(w3Claim.Ok, "u1 claims wild W3 while L2 sits unclaimed")
+		clearEvents()
+		MeteorService.HandlePlotReleased(1, u1)
+		MeteorService.HandlePlayerClosing(u1)
+
+		assert(activeMeteors[l2Obj.UID] == nil and countEvents("Despawn", l2Obj.UID) == 1, "Unclaimed L2 despawns cleanly on disconnect")
+		assert(activeMeteors[w3Obj.UID] ~= nil and w3Obj.ClaimedByUserId == nil and isPromptEnabled(w3Obj), "Claimed wild W3 stays alive & unlocked on disconnect")
+		assert(countEvents("ClaimReleased", w3Obj.UID) == 1, "Claimed wild W3 emits ClaimReleased on disconnect")
+		assert(MeteorService.StartCrackAtPosition(u2, w3Obj.Position, w3Obj.UID, 5122).Ok, "u2 immediately reclaims unlocked wild W3")
+		removeMeteorInternal(w3Obj.UID)
+
+		-- 5c: Full North Ridge saturated by 4 paid Frost Lures rejects TriggerAstralFallNow without evicting lures, then recovers when 1 frees
+		wildNodeCooldownUntil = {}
+		local ridgeUsers = { -930011, -930012, -930013, -930014 }
+		local ridgeLures: { ActiveMeteor } = {}
+		for i, rUid in ipairs(ridgeUsers) do
+			MeteorService.HandlePlayerClosing(rUid)
+			local rOk, _, rRaw = MeteorService.SpawnLuredMeteorForPlayer(rUid, "Ridge_" .. tostring(i), "Frost", 5150)
+			assert(rOk and rRaw ~= nil, "Suite 5c lure " .. tostring(i) .. " spawns on North Ridge")
+			local rObj = rRaw :: ActiveMeteor
+			table.insert(createdMeteorUIDs, rObj.UID)
+			table.insert(ridgeLures, rObj)
+		end
+
+		local fullAfOk, fullAfReason = MeteorService.TriggerAstralFallNow(5200)
+		assert(not fullAfOk and fullAfReason == "NoRidgeNodeAvailable", "Full Ridge lured meteors must NOT be evicted by Astral Fall")
+		for i, rObj in ipairs(ridgeLures) do
+			assert(activeMeteors[rObj.UID] ~= nil, "Paid lured meteor #" .. tostring(i) .. " preserved intact")
+		end
+
+		MeteorService.HandlePlayerClosing(ridgeUsers[1])
+		local recoveredAfOk, recoveredAfReason = MeteorService.TriggerAstralFallNow(5206)
+		assert(recoveredAfOk and recoveredAfReason == "Incoming", "Astral Fall recovers immediately once one Ridge node frees")
+		for idx = 2, #ridgeUsers do
+			MeteorService.HandlePlayerClosing(ridgeUsers[idx])
+		end
+		passed += 1
 	end)
 
 	lifecycleObserver = nil
@@ -1597,6 +1709,11 @@ function MeteorService.RunSelfTest(): number
 		removeMeteorInternal(uid)
 	end
 	wildNodeCooldownUntil = {}
+	for _, rUid in ipairs({ -930011, -930012, -930013, -930014 }) do
+		activeClaimsByUserId[rUid] = nil
+		luredMeteorByUserId[rUid] = nil
+		lastLureClockByUserId[rUid] = nil
+	end
 	activeClaimsByUserId[u1] = nil
 	activeClaimsByUserId[u2] = nil
 	activeClaimsByUserId[uUnassigned] = nil

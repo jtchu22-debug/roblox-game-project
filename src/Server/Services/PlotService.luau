@@ -716,6 +716,31 @@ function PlotService.ResolveNavigationCFrame(userId: number, target: Types.Navig
 	return false, "InvalidNavigationTarget", nil
 end
 
+function PlotService.ExecuteNavigationForUserId(
+	userId: number,
+	target: Types.NavigationTarget,
+	pivotFn: (destCFrame: CFrame) -> ()
+): NetworkService.RemoteResult
+	if not DataService.IsUserIdReady(userId) then
+		return { Ok = false, Reason = "ProfileNotReady" }
+	end
+
+	local ok, reason, destCFrame = PlotService.ResolveNavigationCFrame(userId, target)
+	if not ok or destCFrame == nil then
+		return { Ok = false, Reason = reason }
+	end
+
+	for _, cb in ipairs(beforeNavigateCallbacks) do
+		local cbOk, cbErr = pcall(cb, userId)
+		if not cbOk then
+			warn("[PlotService] OnBeforeNavigate callback error: " .. tostring(cbErr))
+		end
+	end
+
+	pivotFn(destCFrame)
+	return { Ok = true, Target = target }
+end
+
 function PlotService.HandleNavigateRequest(player: Player, target: Types.NavigationTarget): NetworkService.RemoteResult
 	if not DataService.IsReady(player) then
 		return { Ok = false, Reason = "ProfileNotReady" }
@@ -727,20 +752,9 @@ function PlotService.HandleNavigateRequest(player: Player, target: Types.Navigat
 		return { Ok = false, Reason = "CharacterUnavailable" }
 	end
 
-	local ok, reason, destCFrame = PlotService.ResolveNavigationCFrame(player.UserId, target)
-	if not ok or destCFrame == nil then
-		return { Ok = false, Reason = reason }
-	end
-
-	for _, cb in ipairs(beforeNavigateCallbacks) do
-		local cbOk, cbErr = pcall(cb, player.UserId)
-		if not cbOk then
-			warn("[PlotService] OnBeforeNavigate callback error: " .. tostring(cbErr))
-		end
-	end
-
-	character:PivotTo(destCFrame)
-	return { Ok = true, Target = target }
+	return PlotService.ExecuteNavigationForUserId(player.UserId, target, function(destCFrame: CFrame)
+		character:PivotTo(destCFrame)
+	end)
 end
 
 local function wirePlotPrompts(plotId: number): ()

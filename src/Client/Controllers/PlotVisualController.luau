@@ -929,6 +929,111 @@ function PlotVisualController.RunSelfTest(): number
 		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapStalePlot, 3), "Envelope accepted while guarding per-plot revision")
 		assert(latestPlots[1].OwnerUserId == 202 and activeVisuals["P1_Pen_1"] ~= nil, "Lower PlotRevision must not roll back newer plot occupant")
 		passed += 1
+
+		-- 3. S3-04 Regression: Full 6-plot x 5-pen (30 critters + 12 pods) visual part budget & reuse purge
+		local speciesCycle: { Types.SpeciesId } = {
+			"StarSlime",
+			"CinderPup",
+			"FrostBeetle",
+			"CometOwl",
+			"NebulaFox",
+			"SolarGolem",
+		}
+		local penSlotNames = { "Pen_1", "Pen_2", "Pen_3", "Pen_4", "Pen_5" }
+		local snapFull: { Types.PublicPlotDTO } = {}
+		for plotId = 1, Constants.MAX_PLOTS_ALPHA do
+			local penVisuals: { [string]: Types.PublicPenVisual } = {}
+			for sIdx, slotId in ipairs(penSlotNames) do
+				local specIdx = ((plotId - 1) * 5 + sIdx - 1) % #speciesCycle + 1
+				penVisuals[slotId] = {
+					SpeciesId = speciesCycle[specIdx],
+					Variant = if (plotId + sIdx) % 2 == 0 then "Radiant" else "Normal",
+					FeedLevel = if (plotId + sIdx) % 3 == 0 then 1 else 0,
+				}
+			end
+			table.insert(snapFull, {
+				PlotId = plotId,
+				OwnerUserId = 1000 + plotId,
+				OwnerDisplayName = "Full_" .. tostring(plotId),
+				PlotRevision = 10,
+				UnlockedUpgrades = { PenSlot_5 = true, Incubator_2 = true },
+				ActivePenVisuals = penVisuals,
+				IncubatorVisuals = {
+					Incubator_1 = { MaturesAt = 9999999999 },
+					Incubator_2 = { MaturesAt = 9999999999 },
+				},
+			})
+		end
+
+		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapFull, 10), "Apply full 6-plot x 5-pen snapshot")
+		local critterCount = 0
+		local podCount = 0
+		for _, entry in pairs(activeVisuals) do
+			if entry.Kind == "Critter" then
+				critterCount += 1
+				local basePartCount = 0
+				for _, desc in ipairs(entry.Model:GetDescendants()) do
+					if desc:IsA("BasePart") then
+						basePartCount += 1
+					end
+				end
+				assert(
+					basePartCount <= 8,
+					string.format("Critter %s exceeded 8-part budget (%d parts)", entry.Key, basePartCount)
+				)
+			elseif entry.Kind == "Pod" then
+				podCount += 1
+			end
+		end
+		assert(critterCount == 30, string.format("Expected 30 active critters across 6 plots (got %d)", critterCount))
+		assert(podCount == 12, string.format("Expected 12 active pods across 6 plots (got %d)", podCount))
+		assert(
+			visualsFolder ~= nil and #(visualsFolder :: Folder):GetChildren() == 42,
+			"Expected 42 child models in StarfallClientVisuals"
+		)
+
+		local oldPlot3Models: { Model } = {}
+		local oldPlot6Models: { Model } = {}
+		for _, entry in pairs(activeVisuals) do
+			if entry.PlotId == 3 then
+				table.insert(oldPlot3Models, entry.Model)
+			elseif entry.PlotId == 6 then
+				table.insert(oldPlot6Models, entry.Model)
+			end
+		end
+		assert(#oldPlot3Models == 7 and #oldPlot6Models == 7, "Plot_3 and Plot_6 each had 7 models before reuse/release")
+
+		local snapReuse2 = table.clone(snapFull)
+		snapReuse2[3] = {
+			PlotId = 3,
+			OwnerUserId = 2003,
+			OwnerDisplayName = "Reused_3",
+			PlotRevision = 12,
+			UnlockedUpgrades = {},
+			ActivePenVisuals = {
+				Pen_1 = { SpeciesId = "StarSlime", Variant = "Normal", FeedLevel = 0 },
+			},
+			IncubatorVisuals = {},
+		}
+		snapReuse2[6] = makeEmptyPlot(6, 12)
+
+		assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapReuse2, 11), "Apply Plot_3 reuse and Plot_6 release")
+		for _, m in ipairs(oldPlot3Models) do
+			assert(m.Parent == nil, "Old Plot_3 model destroyed cleanly on owner change")
+		end
+		for _, m in ipairs(oldPlot6Models) do
+			assert(m.Parent == nil, "Released Plot_6 model destroyed cleanly")
+		end
+		local remainingCount = 0
+		for _ in pairs(activeVisuals) do
+			remainingCount += 1
+		end
+		assert(remainingCount == 29, string.format("Expected 29 active visuals after release + reuse (got %d)", remainingCount))
+		assert(
+			visualsFolder ~= nil and #(visualsFolder :: Folder):GetChildren() == 29,
+			"StarfallClientVisuals has zero leaked child models"
+		)
+		passed += 1
 	end)
 
 	suppressSyncLog = false
