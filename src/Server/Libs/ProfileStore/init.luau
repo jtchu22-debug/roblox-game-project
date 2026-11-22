@@ -1,4 +1,11 @@
 --[[
+NOTICE OF LOCAL MODIFICATION (Apache License 2.0, Section 4(b)):
+  Modified on 2026-11-22 for Starfall Ranch (Stage 3A / Review #018) from pinned upstream
+  MadStudioRoblox/ProfileStore commit 45c9847cbcf1fc260369c50eb335aba7c35aecdd (v1.0.3):
+  Added Profile.OnFinalSaveResult signal firing (committed: boolean, reason, last_saved_data)
+  so callers know with per-operation certainty whether the release UpdateAsync owned & wrote the lock.
+]]
+--[[
 MAD STUDIO (by loleris)
 
 -[ProfileStore]---------------------------------------
@@ -738,6 +745,7 @@ local function SaveProfileAsync(profile, is_ending_session, is_overwriting, last
 			repeat_save_flag = false
 		end
 
+		local committed_in_edit = false
 		local loaded_data, key_info = UpdateAsync(
 			profile.ProfileStore,
 			profile.Key,
@@ -745,6 +753,7 @@ local function SaveProfileAsync(profile, is_ending_session, is_overwriting, last
 				ExistingProfileHandle = nil,
 				MissingProfileHandle = nil,
 				EditProfile = function(latest_data)
+					committed_in_edit = false
 					
 					-- Check if this session still owns the profile:
 
@@ -806,6 +815,8 @@ local function SaveProfileAsync(profile, is_ending_session, is_overwriting, last
 							latest_data.MetaData.ForceLoadSession = nil
 
 						end
+
+						committed_in_edit = true
 
 					end
 
@@ -922,6 +933,9 @@ local function SaveProfileAsync(profile, is_ending_session, is_overwriting, last
 			end
 
 			profile.OnAfterSave:Fire(profile.LastSavedData)
+			if is_ending_session == true and is_overwriting ~= true then
+				profile.OnFinalSaveResult:Fire(committed_in_edit == true, last_save_reason or "Manual", profile.LastSavedData)
+			end
 
 		elseif repeat_save_flag == true then
 			
@@ -982,6 +996,7 @@ export type Profile<T> = {
 	OnLastSave: {Connect: (self: any, listener: (reason: "Manual" | "External" | "Shutdown") -> ()) -> ({Disconnect: (self: any) -> ()})},
 	OnSessionEnd: {Connect: (self: any, listener: () -> ()) -> ({Disconnect: (self: any) -> ()})},
 	OnAfterSave: {Connect: (self: any, listener: (last_saved_data: T & JSONAcceptable) -> ()) -> ({Disconnect: (self: any) -> ()})},
+	OnFinalSaveResult: {Connect: (self: any, listener: (committed: boolean, reason: "Manual" | "External" | "Shutdown", last_saved_data: T & JSONAcceptable) -> ()) -> ({Disconnect: (self: any) -> ()})},
 	ProfileStore: JSONAcceptable,
 	Key: string,
 
@@ -1056,6 +1071,7 @@ function Profile.New(raw_data, key_info, profile_store, key, is_mock, session_to
 		KeyInfo = key_info,
 
 		OnAfterSave = Signal.New(),
+		OnFinalSaveResult = Signal.New(),
 		OnSave = Signal.New(),
 		OnLastSave = Signal.New(),
 		OnSessionEnd = Signal.New(),
