@@ -1175,6 +1175,9 @@ function DataService.RunLiveDevDataStoreSmokeTest(phase: SmokeTestPhase?, testUs
 	local key = Constants.PROFILE_KEY_PREFIX .. tostring(uid)
 	local t0 = math.floor(workspace:GetServerTimeNow())
 
+	local writtenCoins: number = -1
+	local writtenRev: number = -1
+
 	if runPhase == "RoundTrip" or runPhase == "Write" then
 		if smokeStore.RemoveAsync ~= nil then
 			pcall(function()
@@ -1226,14 +1229,20 @@ function DataService.RunLiveDevDataStoreSmokeTest(phase: SmokeTestPhase?, testUs
 			return false, "Live DataStore final write was not confirmed after release"
 		end
 
+		local closingRec = lastClosingSessionsByUserId[uid]
+		writtenCoins = if closingRec ~= nil and closingRec.FinalSaveExpectedCoins ~= nil then closingRec.FinalSaveExpectedCoins else -1
+		writtenRev = if closingRec ~= nil then closingRec.FinalSaveTargetRevision else -1
+
 		if runPhase == "Write" then
 			return true, string.format(
-				"Write phase confirmed (%s, Version=%s, PlaceId=%d, GameId=%d, Key=%s, PlantedAt=%d, MaturesAt=%d). Restart Play/Server and run Verify phase.",
+				"Write phase confirmed (%s, Version=%s, PlaceId=%d, GameId=%d, Key=%s, SettledCoins=%d, Revision=%d, Critter=CinderPup(FeedLevel=1), PlantedAt=%d, MaturesAt=%d). Restart Play/Server and run Verify phase.",
 				smokeStoreName,
 				Constants.GAME_VERSION,
 				game.PlaceId,
 				game.GameId,
 				key,
+				writtenCoins,
+				writtenRev,
 				t0,
 				t0 + 45
 			)
@@ -1250,16 +1259,20 @@ function DataService.RunLiveDevDataStoreSmokeTest(phase: SmokeTestPhase?, testUs
 
 	local reloaded = DataService.GetProfileByUserId(uid) :: Types.PlayerProfileData
 	local savedCoins = reloaded.Coins
+	local savedRev = reloaded.Revision
 	local critter = reloaded.Items["smoke-pen"]
 	local pod = reloaded.Items["smoke-pod"]
-	local coinsOk = savedCoins > 300
+	local coinsOk = if runPhase == "RoundTrip" then savedCoins == writtenCoins else savedCoins > 300
+	local revOk = if runPhase == "RoundTrip" then savedRev == writtenRev else savedRev >= 1
 	local critterOk = critter ~= nil and critter.SpeciesId == "CinderPup" and critter.FeedLevel == 1 and reloaded.Slots["Pen_1"] == "smoke-pen"
+	local feedLv = if critter ~= nil and critter.FeedLevel ~= nil then critter.FeedLevel else -1
+	local podPlantedAt = if pod ~= nil and pod.PlantedAt ~= nil then pod.PlantedAt else -1
+	local podMaturesAt = if pod ~= nil and pod.MaturesAt ~= nil then pod.MaturesAt else -1
 	local podOk = pod ~= nil
 		and pod.State == "Incubating"
 		and pod.PlantedAt ~= nil
 		and pod.MaturesAt == ((pod.PlantedAt :: number) + 45)
 		and reloaded.Slots["Incubator_1"] == "smoke-pod"
-	local podMaturesAt = if pod ~= nil and pod.MaturesAt ~= nil then pod.MaturesAt else -1
 
 	DataService.EndSession(uid)
 	DataService.WaitForUserFinalSave(uid, 10)
@@ -1269,17 +1282,30 @@ function DataService.RunLiveDevDataStoreSmokeTest(phase: SmokeTestPhase?, testUs
 		end)
 	end
 
-	if not (coinsOk and critterOk and podOk) then
-		return false, string.format("Smoke verify mismatch (coinsOk=%s Coins=%d critterOk=%s podOk=%s)", tostring(coinsOk), savedCoins, tostring(critterOk), tostring(podOk))
+	if not (coinsOk and revOk and critterOk and podOk) then
+		return false, string.format(
+			"Smoke verify mismatch (coinsOk=%s Coins=%d/%d revOk=%s Rev=%d/%d critterOk=%s podOk=%s)",
+			tostring(coinsOk),
+			savedCoins,
+			writtenCoins,
+			tostring(revOk),
+			savedRev,
+			writtenRev,
+			tostring(critterOk),
+			tostring(podOk)
+		)
 	end
 	return true, string.format(
-		"Live Dev DataStore %s verified (%s, Version=%s, PlaceId=%d, GameId=%d, SettledCoins=%d, Critter=CinderPup, MaturesAt=%d)",
+		"Live Dev DataStore %s verified (%s, Version=%s, PlaceId=%d, GameId=%d, SettledCoins=%d, Revision=%d, Critter=CinderPup(FeedLevel=%d), PlantedAt=%d, MaturesAt=%d)",
 		runPhase,
 		smokeStoreName,
 		Constants.GAME_VERSION,
 		game.PlaceId,
 		game.GameId,
 		savedCoins,
+		savedRev,
+		feedLv,
+		podPlantedAt,
 		podMaturesAt
 	)
 end
