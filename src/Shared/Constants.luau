@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.3.4-s3-03-six-plot-hub",
+	GAME_VERSION = "0.3.5-s3-03-nav-ack",
 	USE_MOCK_STORE = false,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
@@ -17,6 +17,7 @@ local Constants = {
 	PROFILE_KEY_PREFIX = "Player_",
 	SHUTDOWN_FLUSH_TIMEOUT_SECONDS = 15,
 	DATASTORE_READY_WAIT_SECONDS = 10,
+	NAVIGATE_CLIENT_COOLDOWN_SECONDS = 2.0,
 
 	-- Plot & Server Capacity Bounds
 	MAX_PLOTS_PROTOTYPE = 2,

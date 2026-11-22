@@ -80,7 +80,8 @@ local sizeChangedConn: RBXScriptConnection? = nil
 local layoutChangedConn: RBXScriptConnection? = nil
 local plotActionRemote: RemoteEvent? = nil
 local buyUpgradeRemote: RemoteFunction? = nil
-local navigateRemote: RemoteEvent? = nil
+local navigateRemote: RemoteFunction? = nil
+local navigateDispatcher: ((target: Types.NavigationTarget, customInvoker: ((Types.NavigationTarget) -> any)?) -> boolean)? = nil
 
 local hudGui: ScreenGui? = nil
 local resourceBarFrame: Frame? = nil
@@ -124,7 +125,8 @@ local toastToken = 0
 local pendingSellConfirmUID: string? = nil
 local pendingSellConfirmExpiresAt = 0
 local pendingUpgradeBuy = false
-local lastNavRequestClock = 0
+local pendingNavigate = false
+local lastNavRequestClock = -Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS
 local activeTimerBindings: { TimerBinding } = {}
 local timerLoopStarted = false
 
@@ -1576,27 +1578,70 @@ function UIController.Init(self: typeof(UIController)): ()
 	actionLayout.Padding = UDim.new(0, 6)
 	actionLayout.Parent = actionRow
 
-	local function triggerNavigation(target: Types.NavigationTarget): ()
+	local function triggerNavigation(target: Types.NavigationTarget, customInvoker: ((Types.NavigationTarget) -> any)?): boolean
 		if latestOwnerState == nil then
 			SoundController.Play("Error")
 			UIController.ShowToast("Wait until your Ranch finishes loading!", "Warn")
-			return
+			return false
+		end
+		if pendingNavigate then
+			return false
 		end
 		local now = os.clock()
-		if (now - lastNavRequestClock) < 0.6 then
-			return
+		if (now - lastNavRequestClock) < Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS then
+			SoundController.Play("Error")
+			UIController.ShowToast("Travel cooling down — wait a moment!", "Warn")
+			return false
 		end
-		lastNavRequestClock = now
+
 		UIController.CloseDrawers()
-		SoundController.Play("Click")
-		if navigateRemote ~= nil then
-			navigateRemote:FireServer(target)
+		pendingNavigate = true
+
+		local function handleNavResult(okCall: boolean, res: any): ()
+			pendingNavigate = false
+			if okCall and typeof(res) == "table" and res.Ok == true then
+				lastNavRequestClock = os.clock()
+				SoundController.Play("Click")
+				UIController.ShowToast(
+					if target == "Hub" then "Arrived at Observatory Hub!" else "Returned to your Ranch!",
+					"Success"
+				)
+				return
+			end
+
+			SoundController.Play("Error")
+			local reason = if typeof(res) == "table" and res.Reason then tostring(res.Reason) else "Failed"
+			if reason == "RateLimited" then
+				lastNavRequestClock = os.clock()
+				UIController.ShowToast("Travel cooling down — wait a moment!", "Warn")
+			else
+				UIController.ShowToast("Could not travel: " .. reason, "Warn")
+			end
 		end
-		UIController.ShowToast(
-			if target == "Hub" then "Teleporting to Observatory Hub!" else "Returning to your Ranch!",
-			"Info"
-		)
+
+		if customInvoker ~= nil then
+			local okCall, res = pcall(customInvoker, target)
+			handleNavResult(okCall, res)
+			return true
+		end
+
+		local fn = navigateRemote
+		if fn == nil then
+			pendingNavigate = false
+			SoundController.Play("Error")
+			UIController.ShowToast("Travel unavailable right now!", "Warn")
+			return false
+		end
+
+		task.spawn(function()
+			local okCall, res = pcall(function()
+				return fn:InvokeServer(target)
+			end)
+			handleNavResult(okCall, res)
+		end)
+		return true
 	end
+	navigateDispatcher = triggerNavigation
 
 	local hubBtn = makeTextButton(actionRow, "HubButton", "Hub", PALETTE.AstralViolet, PALETTE.PanelDark, UDim2.fromOffset(52, 44), 13)
 	hubBtn.LayoutOrder = 1
@@ -1847,7 +1892,7 @@ function UIController.Start(self: typeof(UIController)): ()
 	local syncEvent = remotes:WaitForChild(Constants.REMOTE_NAMES.SyncOwnerState) :: RemoteEvent
 	plotActionRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestPlotAction) :: RemoteEvent
 	buyUpgradeRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestBuyUpgrade) :: RemoteFunction
-	navigateRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestNavigate) :: RemoteEvent
+	navigateRemote = remotes:WaitForChild(Constants.REMOTE_NAMES.RequestNavigate) :: RemoteFunction
 
 	if syncConn == nil then
 		syncConn = syncEvent.OnClientEvent:Connect(function(dto: Types.OwnerStateDTO)
@@ -1978,6 +2023,16 @@ function UIController.CloseDrawers(): boolean
 	lastFocusedBagKey = nil
 	applyDrawerVisibility(nil)
 	return hadOpen
+end
+
+function UIController.InvokeNavigationForTest(
+	target: Types.NavigationTarget,
+	customInvoker: (Types.NavigationTarget) -> any
+): boolean
+	if navigateDispatcher == nil then
+		return false
+	end
+	return navigateDispatcher(target, customInvoker)
 end
 
 function UIController.SetInputMode(mode: InputMode): ()
@@ -2195,6 +2250,40 @@ function UIController.RunSelfTest(): number
 		waitForBagSettled()
 		assert(bagCapacityLabel ~= nil and string.find(bagCapacityLabel.Text, "/20", 1, true) ~= nil, "Bag drawer shows /20 capacity after BagCap_20")
 		assert(bagLabel ~= nil and string.find(bagLabel.Text, "/20", 1, true) ~= nil, "Top HUD BagLabel shows /20 capacity")
+
+		-- Verify server-acknowledged navigation only confirms arrival on Ok=true and honors 2.0s client cooldown
+		lastNavRequestClock = -Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS
+		pendingNavigate = false
+		assert(
+			UIController.InvokeNavigationForTest("Hub", function()
+				return { Ok = false, Reason = "RateLimited" }
+			end),
+			"Test navigation dispatches when cooldown expired"
+		)
+		assert(
+			toastLabel ~= nil
+				and toastLabel.Text == "Travel cooling down — wait a moment!"
+				and string.find(toastLabel.Text, "Arrived", 1, true) == nil,
+			"RateLimited RequestNavigate must not show arrival confirmation toast"
+		)
+
+		lastNavRequestClock = -Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS
+		assert(
+			UIController.InvokeNavigationForTest("Hub", function()
+				return { Ok = true, Target = "Hub" }
+			end),
+			"Hub navigation dispatches when server acknowledges Ok"
+		)
+		assert(
+			toastLabel ~= nil and toastLabel.Text == "Arrived at Observatory Hub!",
+			"Successful RequestNavigate shows arrival confirmation"
+		)
+		assert(
+			not UIController.InvokeNavigationForTest("Ranch", function()
+				error("Client cooldown must prevent rapid re-invoke before 2s elapsed")
+			end),
+			"Client cooldown blocks rapid re-invoke within 2.0s"
+		)
 		passed += 1
 	end)
 
@@ -2207,7 +2296,13 @@ function UIController.RunSelfTest(): number
 	latestOwnerState = nil
 	pendingSellConfirmUID = nil
 	pendingSellConfirmExpiresAt = 0
-	lastNavRequestClock = 0
+	pendingNavigate = false
+	lastNavRequestClock = -Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS
+	toastToken += 1
+	if toastLabel ~= nil then
+		toastLabel.Visible = false
+		toastLabel.Text = ""
+	end
 	lastBagStructureSignature = nil
 	lastFocusedBagKey = nil
 	bagRebuildCount = 0

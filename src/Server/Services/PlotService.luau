@@ -9,6 +9,7 @@
 	                       prompt interactivity, cross-plot rejection, and clean leave release.
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -715,20 +716,20 @@ function PlotService.ResolveNavigationCFrame(userId: number, target: Types.Navig
 	return false, "InvalidNavigationTarget", nil
 end
 
-function PlotService.HandleNavigateRequest(player: Player, target: Types.NavigationTarget): (boolean, string)
+function PlotService.HandleNavigateRequest(player: Player, target: Types.NavigationTarget): NetworkService.RemoteResult
 	if not DataService.IsReady(player) then
-		return false, "ProfileNotReady"
+		return { Ok = false, Reason = "ProfileNotReady" }
 	end
 	local character = player.Character
 	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
 	local rootPart = if character then character:FindFirstChild("HumanoidRootPart") else nil
 	if character == nil or humanoid == nil or humanoid.Health <= 0 or rootPart == nil or not rootPart:IsA("BasePart") then
-		return false, "CharacterUnavailable"
+		return { Ok = false, Reason = "CharacterUnavailable" }
 	end
 
 	local ok, reason, destCFrame = PlotService.ResolveNavigationCFrame(player.UserId, target)
 	if not ok or destCFrame == nil then
-		return false, reason
+		return { Ok = false, Reason = reason }
 	end
 
 	for _, cb in ipairs(beforeNavigateCallbacks) do
@@ -739,7 +740,7 @@ function PlotService.HandleNavigateRequest(player: Player, target: Types.Navigat
 	end
 
 	character:PivotTo(destCFrame)
-	return true, "Ok"
+	return { Ok = true, Target = target }
 end
 
 local function wirePlotPrompts(plotId: number): ()
@@ -907,7 +908,13 @@ function PlotService.Init(self: typeof(PlotService)): ()
 	end
 	wireHubStations()
 
-	print(string.format("[PlotService] Greybox map ready (%s: %s, %d plots + CentralHub wired).", status, root.Name, Constants.MAX_PLOTS_ALPHA))
+	print(string.format(
+		"[PlotService] Greybox map ready (%s: %s, %d plots + CentralHub wired; Players.MaxPlayers=%d).",
+		status,
+		root.Name,
+		Constants.MAX_PLOTS_ALPHA,
+		Players.MaxPlayers
+	))
 end
 
 function PlotService.Start(self: typeof(PlotService)): ()

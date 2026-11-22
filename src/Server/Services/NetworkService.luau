@@ -61,7 +61,7 @@ local plotActionHandler: ((player: Player, action: Types.PlotAction, targetSlotO
 local startCrackHandler: ((player: Player, meteorUID: string) -> RemoteResult)? = nil
 local finishCrackHandler: ((player: Player, meteorUID: string, attemptNonce: string) -> RemoteResult)? = nil
 local buyUpgradeHandler: ((player: Player, upgradeId: Types.UpgradeId) -> RemoteResult)? = nil
-local navigateHandler: ((player: Player, target: Types.NavigationTarget) -> ())? = nil
+local navigateHandler: ((player: Player, target: Types.NavigationTarget) -> RemoteResult)? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
 
 local function ensureRemoteEvent(folder: Folder, name: string): RemoteEvent
@@ -252,7 +252,6 @@ function NetworkService.Init(self: typeof(NetworkService)): ()
 	for _, name in ipairs({
 		REMOTE_NAMES.RequestInitialSnapshot,
 		REMOTE_NAMES.RequestPlotAction,
-		REMOTE_NAMES.RequestNavigate,
 	}) do
 		remoteEvents[name] = ensureRemoteEvent(folder, name)
 	end
@@ -262,6 +261,7 @@ function NetworkService.Init(self: typeof(NetworkService)): ()
 		REMOTE_NAMES.RequestStartCrack,
 		REMOTE_NAMES.RequestFinishCrack,
 		REMOTE_NAMES.RequestBuyUpgrade,
+		REMOTE_NAMES.RequestNavigate,
 	}) do
 		remoteFunctions[name] = ensureRemoteFunction(folder, name)
 	end
@@ -309,21 +309,6 @@ function NetworkService.Start(self: typeof(NetworkService)): ()
 		end
 	end)
 
-	remoteEvents[REMOTE_NAMES.RequestNavigate].OnServerEvent:Connect(function(player: Player, ...: any)
-		if not NetworkService.CheckAndConsumeRateLimit(player.UserId, REMOTE_NAMES.RequestNavigate) then
-			return
-		end
-		local valid = NetworkService.ValidateInboundPayload(REMOTE_NAMES.RequestNavigate, ...)
-		if not valid or navigateHandler == nil then
-			return
-		end
-		local target = ...
-		local ok, err = pcall(navigateHandler, player, target :: Types.NavigationTarget)
-		if not ok then
-			warn("[NetworkService] RequestNavigate error: " .. tostring(err))
-		end
-	end)
-
 	remoteFunctions[REMOTE_NAMES.RequestStartCrack].OnServerInvoke = function(player: Player, ...: any): RemoteResult
 		return processInvokeRequest(player.UserId, REMOTE_NAMES.RequestStartCrack, startCrackHandler :: any, player, ...)
 	end
@@ -334,6 +319,10 @@ function NetworkService.Start(self: typeof(NetworkService)): ()
 
 	remoteFunctions[REMOTE_NAMES.RequestBuyUpgrade].OnServerInvoke = function(player: Player, ...: any): RemoteResult
 		return processInvokeRequest(player.UserId, REMOTE_NAMES.RequestBuyUpgrade, buyUpgradeHandler :: any, player, ...)
+	end
+
+	remoteFunctions[REMOTE_NAMES.RequestNavigate].OnServerInvoke = function(player: Player, ...: any): RemoteResult
+		return processInvokeRequest(player.UserId, REMOTE_NAMES.RequestNavigate, navigateHandler :: any, player, ...)
 	end
 end
 
@@ -366,7 +355,7 @@ function NetworkService.BindBuyUpgradeHandler(handler: (player: Player, upgradeI
 	buyUpgradeHandler = handler
 end
 
-function NetworkService.BindNavigateHandler(handler: (player: Player, target: Types.NavigationTarget) -> ()): ()
+function NetworkService.BindNavigateHandler(handler: (player: Player, target: Types.NavigationTarget) -> RemoteResult): ()
 	assert(navigateHandler == nil, "Navigate handler already registered")
 	navigateHandler = handler
 end
@@ -414,7 +403,7 @@ end
 function NetworkService.RunSelfTest(): number
 	local passed = 0
 
-	-- 1. Verify all 8 remote instances exist with exact classes
+	-- 1. Verify all 9 remote instances exist with exact classes
 	local folder = NetworkService.GetRemotesFolder()
 	for _, evName in ipairs({
 		REMOTE_NAMES.SyncOwnerState,
@@ -422,7 +411,6 @@ function NetworkService.RunSelfTest(): number
 		REMOTE_NAMES.MeteorLifecycle,
 		REMOTE_NAMES.RequestInitialSnapshot,
 		REMOTE_NAMES.RequestPlotAction,
-		REMOTE_NAMES.RequestNavigate,
 	}) do
 		local inst = folder:FindFirstChild(evName)
 		assert(inst ~= nil and inst:IsA("RemoteEvent"), "Missing RemoteEvent: " .. evName)
@@ -431,6 +419,7 @@ function NetworkService.RunSelfTest(): number
 		REMOTE_NAMES.RequestStartCrack,
 		REMOTE_NAMES.RequestFinishCrack,
 		REMOTE_NAMES.RequestBuyUpgrade,
+		REMOTE_NAMES.RequestNavigate,
 	}) do
 		local inst = folder:FindFirstChild(fnName)
 		assert(inst ~= nil and inst:IsA("RemoteFunction"), "Missing RemoteFunction: " .. fnName)
@@ -494,6 +483,13 @@ function NetworkService.RunSelfTest(): number
 	NetworkService.ClearPlayerBuckets(testUserId)
 	local unavailableRes = processInvokeRequest(testUserId, REMOTE_NAMES.RequestBuyUpgrade, nil, nil, "PenSlot_2")
 	assert(not unavailableRes.Ok and unavailableRes.Reason == "ServiceUnavailable", "Unbound handler returns ServiceUnavailable")
+
+	NetworkService.ClearPlayerBuckets(testUserId)
+	local badNavRes = processInvokeRequest(testUserId, REMOTE_NAMES.RequestNavigate, nil, nil, "Moon")
+	assert(not badNavRes.Ok and badNavRes.Reason == "InvalidPayload", "Invalid RequestNavigate target returns InvalidPayload")
+	assert(not processInvokeRequest(testUserId, REMOTE_NAMES.RequestNavigate, nil, nil, "Hub").Ok, "Unbound second RequestNavigate fails cleanly")
+	local navRateRes = processInvokeRequest(testUserId, REMOTE_NAMES.RequestNavigate, nil, nil, "Ranch")
+	assert(not navRateRes.Ok and navRateRes.Reason == "RateLimited", "3rd instant RequestNavigate hits RateLimited")
 	NetworkService.ClearPlayerBuckets(testUserId)
 	passed += 1
 
