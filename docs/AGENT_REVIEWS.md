@@ -465,3 +465,9 @@ The existing local lock-loss test exercises the close callback by ending a test 
 2. **Low — Hub and Ranch button travel still needs runtime evidence.** Exercise both directions with the HUD buttons and confirm that the character arrives at the Observatory Hub and then its assigned ranch. The existing acknowledgment tests use a stubbed response. [HUD travel handler](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Client/Controllers/UIController.luau#L1581-L1650) · [Client tests](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Client/Controllers/UIController.luau#L2253-L2288)
 
 Round 3 player results and the product decision remain pending. [Round 3 worksheet](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/docs/S2_01_PLAYTEST_KIT.md#L166-L181)
+
+---
+
+### Review #025 — S3-03 published server capacity
+
+**APPROVE the six-player capacity check. HOLD the S3-04 handoff pending Hub and Ranch travel verification.** The owner's Roblox Player screenshot shows `v0.3.5-s3-03-nav-ack`, six ranches and CentralHub wired, `Players.MaxPlayers=6`, and live DataStore access. The build label matches [b10eebe](https://github.com/jtchu22-debug/roblox-game-project/commit/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1). This clears the capacity finding in Review #024. Verify both HUD buttons in play and confirm arrival at the Observatory Hub and the assigned ranch. Round 3 product sign-off remains pending.
