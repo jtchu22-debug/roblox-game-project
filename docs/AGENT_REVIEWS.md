@@ -452,3 +452,16 @@ The existing local lock-loss test exercises the close callback by ending a test 
 
 1. **High — Published map migration and startup remain unverified.** Boot the reviewed build on the isolated published test place with the regenerated six-ranch map. Capture the startup line and verify Hub and Ranch travel through the live buttons. [Greybox startup](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Server/Services/PlotService.luau#L894-L918) · [Existing map handling](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Shared/Util/GreyboxBuilder.luau#L1423-L1442)
 2. **Medium — The new log shows `Players.MaxPlayers=30` on the local run.** It measures the local place. Capture `Players.MaxPlayers=6` on the intended published test place before the S3-04 handoff. [Startup log source](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Server/Services/PlotService.luau#L911-L917)
+
+---
+
+### Review #024 — S3-03 published-place startup
+
+**HOLD S3-03 sign-off and the S3-04 handoff.** Reviewed new Studio evidence for [`b10eebe`](https://github.com/jtchu22-debug/roblox-game-project/commit/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1), identified by the `v0.3.5-s3-03-nav-ack` startup log.
+
+- **Published-place startup passed.** At 3:54 p.m. on November 22, 2026, the Studio log for place `106917003014718` records reuse of the six-ranch map, CentralHub wiring, `LiveProfileStore` with `DataStoreState=Access`, a `1/6` occupied snapshot, and all 46 startup suites passing. Rojo 7.4.4 and `git diff --check` passed on this SHA in Review #023. This review inspects the new Studio evidence. [Startup and capacity log](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Server/Services/PlotService.luau#L894-L918)
+
+1. **Medium — The published-place Studio session reports `Players.MaxPlayers=60`.** Confirm the intended place's Maximum Visitor Count and capture a fresh run that reports six. If Studio reports a different value after the setting is saved, verify the limit in a fresh Roblox server. [Stage 3 task board](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/docs/AGENT_TASKS.md#L58-L60)
+2. **Low — Hub and Ranch button travel still needs runtime evidence.** Exercise both directions with the HUD buttons and confirm that the character arrives at the Observatory Hub and then its assigned ranch. The existing acknowledgment tests use a stubbed response. [HUD travel handler](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Client/Controllers/UIController.luau#L1581-L1650) · [Client tests](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/src/Client/Controllers/UIController.luau#L2253-L2288)
+
+Round 3 player results and the product decision remain pending. [Round 3 worksheet](https://github.com/jtchu22-debug/roblox-game-project/blob/b10eebeeae7e586461fb0fbc5eff5f9a07a647a1/docs/S2_01_PLAYTEST_KIT.md#L166-L181)
