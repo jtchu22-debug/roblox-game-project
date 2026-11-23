@@ -1,4 +1,4 @@
-# Stage 4 (`S4-03`) Real-Device Soak & Asset-Publish Checklist (`v0.4.0-s4-02-polish`)
+# Stage 4 (`S4-03`) Real-Device Soak & Asset-Publish Checklist (`v0.4.1-s4-03-soak`)
 
 > **Target Private Test Place:** `Bioniccat4000's Place: 11222026_1` (`placeId: 106917003014718`, `universeId: 10778558732`, `serverSize: 6`)
 
@@ -12,7 +12,7 @@ Because Rojo (`default.project.json`) syncs `src/` code and does **not** seriali
 
 - [ ] **6/6 Critter Templates in `ReplicatedStorage.AssetTemplates.Critters`:** `StarSlime`, `CinderPup`, `FrostBeetle`, `NebulaFox`, `SolarGolem`, `CometOwl` (4 flat `MeshPart`s `Accent`, `Body`, `Eyes`, `Secondary`; `PrimaryPart = Body`).
 - [ ] **3/3 Meteor Templates in `ReplicatedStorage.AssetTemplates.Meteors`:** Import `Ember.fbx`, `Frost.fbx`, and `Astral.fbx` from `tools/blender/exports/meteors/` via **File -> Import 3D** (**Scale Unit: Studs**, **Import as Single Mesh** unchecked), move them into `ReplicatedStorage.AssetTemplates.Meteors`, and run [`tools/studio/ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau).
-- [ ] **Rojo Connected & Build Synced:** Confirm `ReplicatedStorage.Shared.Constants.GAME_VERSION` equals `"0.4.0-s4-02-polish"` and `USE_MOCK_STORE == false`.
+- [ ] **Rojo Connected & Build Synced:** Confirm `ReplicatedStorage.Shared.Constants.GAME_VERSION` equals `"0.4.1-s4-03-soak"` and `USE_MOCK_STORE == false`.
 - [ ] **Read-Only Preflight Audit PASS:** Run [`tools/studio/VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) in the Studio Command Bar -> confirm **`Critters=6/6`**, **`Meteors=3/3`**, **`Greybox=PASS`**, and `Status=ASSETS_READY_FOR_PUBLISH`.
 - [ ] **Live Play Startup Verification (`57/57`):** Press **Play (F5)** in Studio -> confirm all `57` Server/Client self-test suites pass, `[PlotVisualController] Runtime Template Verified` prints all `6` species, and `[MeteorService] Runtime Template Verified` prints real **`Ember`**, **`Frost`**, and **`Astral`** (all with `PromptOk=true | ClaimOk=true`, zero mock fallback!).
 - [ ] **Publish & Re-Verify on `106917003014718`:** Save `StarfallRanch_Dev.rbxl`, publish to `106917003014718` (`serverSize: 6`), run [`VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) (confirm `Status=READY_FOR_SOAK`), and boot once in a private live server to confirm `6/6` critters + `3/3` meteors render with working `RescuePrompt`s.
@@ -24,8 +24,8 @@ Because Rojo (`default.project.json`) syncs `src/` code and does **not** seriali
 - **Device Under Test (Record Below):** Low-end mobile phone or budget tablet running the native Roblox mobile client (NOT Studio Device Emulator).
 - **Server Target:** Private server / Playtest instance on `106917003014718` (`MaxPlayers = 6`). If multiple devices or testers join, aim for active pens across multiple plots (`<= 30` critters total server-wide).
 - **Performance & Memory Overlays:**
-  1. Open Roblox Menu -> **Settings -> Performance Stats -> ON** (shows live `FPS` / Frame ms and `MEM`).
-  2. Open chat or quick-console (`/console`) -> switch between **Log** (Client/Server warnings & errors) and **Memory** (`Total`, `LuaHeap`, `PlaceMemory` / `GraphicsMeshParts`) at each checkpoint below.
+  1. Tap **`⚙` (Settings) -> `Soak Perf Stats: ON`** inside the game HUD. This opens a compact non-blocking top-left monitor showing live **`FPS`**, **`Avg / Min FPS`**, **`Frame ms`**, **`Mem MB`**, **`LuaHeap MB`**, active Visuals (`Vis`), active Meteors (`Met`), and elapsed soak time (`T+MM:SS`), and automatically prints a `[SoakTelemetry]` baseline + 1-minute summary to the Developer Console (`/console`). *(Roblox's built-in mobile Performance Stats shows CPU/GPU frame time and Memory rather than a direct FPS counter.)*
+  2. Optionally also enable Roblox Menu -> **Settings -> Performance Stats -> ON**, and open `/console` (**Memory** / **Log** tabs) at each checkpoint below to confirm zero warnings/errors alongside the in-game readout.
 
 ---
 

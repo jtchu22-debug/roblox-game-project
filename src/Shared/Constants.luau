@@ -7,7 +7,7 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.4.0-s4-02-polish",
+	GAME_VERSION = "0.4.1-s4-03-soak",
 	USE_MOCK_STORE = false,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)

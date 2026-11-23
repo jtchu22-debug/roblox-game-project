@@ -13,6 +13,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
 
 local ControllersFolder = script.Parent
 local SoundController = require(ControllersFolder:WaitForChild("SoundController"))
@@ -63,6 +64,7 @@ type TimerBinding = {
 
 local WIDE_TOP_HUD_MIN_WIDTH = 560
 local ACTION_TRAY_WIDTH = 288
+local SETTINGS_DRAWER_HEIGHT = 272
 
 local PALETTE = {
 	PanelDark = Color3.fromRGB(24, 22, 38),
@@ -141,7 +143,21 @@ local guideRestoreInFlight = false
 local settingsDrawer: Frame? = nil
 local muteToggleButton: TextButton? = nil
 local motionToggleButton: TextButton? = nil
+local perfToggleButton: TextButton? = nil
 local controlsHintLabel: TextLabel? = nil
+
+local perfOverlayFrame: Frame? = nil
+local perfLine1Label: TextLabel? = nil
+local perfLine2Label: TextLabel? = nil
+local perfRenderConn: RBXScriptConnection? = nil
+local perfOverlayEnabled = false
+local perfStartClock = 0
+local perfWindowFrames = 0
+local perfWindowDt = 0
+local perfTotalFrames = 0
+local perfTotalDt = 0
+local perfMinFps = math.huge
+local perfLastLogMinute = -1
 
 local bagOpen = false
 local guideOpen = false
@@ -291,6 +307,12 @@ local function applyResponsiveTopLayout(): ()
 	if toastLabel ~= nil then
 		toastLabel.Position = UDim2.new(0.5, 0, 0, layout.ToastY)
 	end
+	if perfOverlayFrame ~= nil then
+		local perfWidth = math.min(296, safeWidth - 20)
+		perfOverlayFrame.AnchorPoint = Vector2.new(0, 0)
+		perfOverlayFrame.Position = UDim2.fromOffset(10, layout.ToastY)
+		perfOverlayFrame.Size = UDim2.fromOffset(perfWidth, 44)
+	end
 	if bagDrawer ~= nil then
 		bagDrawer.AnchorPoint = Vector2.new(0, 0)
 		bagDrawer.Position = UDim2.fromOffset(dLayout.X, dLayout.Y)
@@ -304,7 +326,7 @@ local function applyResponsiveTopLayout(): ()
 	if settingsDrawer ~= nil then
 		settingsDrawer.AnchorPoint = Vector2.new(0, 0)
 		settingsDrawer.Position = UDim2.fromOffset(layout.SettingsX, layout.SettingsY)
-		settingsDrawer.Size = UDim2.fromOffset(layout.SettingsWidth, 224)
+		settingsDrawer.Size = UDim2.fromOffset(layout.SettingsWidth, SETTINGS_DRAWER_HEIGHT)
 	end
 end
 
@@ -492,6 +514,146 @@ local function updateActionButtonsText(): ()
 	end
 end
 
+local function readPerfStatsSnapshot(): (number, number, number, number)
+	local okTotal, rawTotal = pcall(function()
+		return Stats:GetTotalMemoryUsageMb()
+	end)
+	local totalMem = if okTotal and typeof(rawTotal) == "number" then rawTotal else 0
+
+	local okLua, rawLua = pcall(function()
+		return Stats:GetMemoryUsageMbForTag(Enum.DeveloperMemoryTag.LuaHeap)
+	end)
+	local luaMem = if okLua and typeof(rawLua) == "number" then rawLua else 0
+
+	local visualsFolder = workspace:FindFirstChild("StarfallClientVisuals")
+	local visCount = if visualsFolder ~= nil then #visualsFolder:GetChildren() else 0
+	local meteorsFolder = workspace:FindFirstChild("StarfallActiveMeteors")
+	local metCount = if meteorsFolder ~= nil then #meteorsFolder:GetChildren() else 0
+
+	return totalMem, luaMem, visCount, metCount
+end
+
+local function updatePerfReadout(fps: number, avgFps: number, minFps: number, frameMs: number, elapsedSec: number, emitLog: boolean): ()
+	local totalMem, luaMem, visCount, metCount = readPerfStatsSnapshot()
+	local elapsedStr = FormatUtil.FormatTimer(math.floor(elapsedSec))
+
+	if perfLine1Label ~= nil then
+		if fps > 0 then
+			perfLine1Label.Text = string.format(
+				"FPS: %.0f (Avg %.0f / Min %.0f) | %.1fms | T+%s",
+				fps,
+				avgFps,
+				minFps,
+				frameMs,
+				elapsedStr
+			)
+			perfLine1Label.TextColor3 = if fps >= 30
+				then PALETTE.MeadowMint
+				elseif fps >= 24 then PALETTE.StarlightGold
+				else PALETTE.DangerRed
+		else
+			perfLine1Label.Text = string.format("FPS: sampling... | T+%s", elapsedStr)
+			perfLine1Label.TextColor3 = PALETTE.OrbitalCyan
+		end
+	end
+
+	if perfLine2Label ~= nil then
+		perfLine2Label.Text = string.format("Mem: %.0fMB (Lua %.1fMB) | Vis: %d | Met: %d", totalMem, luaMem, visCount, metCount)
+	end
+
+	if emitLog then
+		if fps > 0 then
+			print(string.format(
+				"[SoakTelemetry] Elapsed=%s | FPS=%.1f (Avg=%.1f Min=%.1f) | FrameMs=%.1f | TotalMemMB=%.1f | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
+				elapsedStr,
+				fps,
+				avgFps,
+				minFps,
+				frameMs,
+				totalMem,
+				luaMem,
+				visCount,
+				metCount
+			))
+		else
+			print(string.format(
+				"[SoakTelemetry] Elapsed=%s | BaselineTotalMemMB=%.1f | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
+				elapsedStr,
+				totalMem,
+				luaMem,
+				visCount,
+				metCount
+			))
+		end
+	end
+end
+
+local function updatePerfToggleButtonUI(): ()
+	if perfToggleButton ~= nil then
+		perfToggleButton.Text = if perfOverlayEnabled then "Soak Perf Stats: ON" else "Soak Perf Stats: OFF"
+		perfToggleButton.BackgroundColor3 = if perfOverlayEnabled then PALETTE.OrbitalCyan else PALETTE.CardDark
+		perfToggleButton.TextColor3 = if perfOverlayEnabled then PALETTE.PanelDark else PALETTE.TextCream
+	end
+end
+
+local function setPerfOverlayEnabled(enabled: boolean): ()
+	if perfRenderConn ~= nil then
+		perfRenderConn:Disconnect()
+		perfRenderConn = nil
+	end
+
+	perfOverlayEnabled = enabled
+	updatePerfToggleButtonUI()
+
+	if perfOverlayFrame ~= nil then
+		perfOverlayFrame.Visible = enabled
+	end
+
+	if not enabled then
+		return
+	end
+
+	perfStartClock = os.clock()
+	perfWindowFrames = 0
+	perfWindowDt = 0
+	perfTotalFrames = 0
+	perfTotalDt = 0
+	perfMinFps = math.huge
+	perfLastLogMinute = 0
+	updatePerfReadout(0, 0, 0, 0, 0, true)
+
+	perfRenderConn = RunService.RenderStepped:Connect(function(dt: number)
+		if not perfOverlayEnabled then
+			return
+		end
+		if typeof(dt) ~= "number" or dt ~= dt or dt <= 0 then
+			return
+		end
+
+		perfWindowFrames += 1
+		perfWindowDt += dt
+		perfTotalFrames += 1
+		perfTotalDt += dt
+
+		if perfWindowDt >= 1.0 then
+			local fps = perfWindowFrames / perfWindowDt
+			local avgFps = perfTotalFrames / math.max(0.001, perfTotalDt)
+			perfMinFps = math.min(perfMinFps, fps)
+			local frameMs = (perfWindowDt / perfWindowFrames) * 1000
+			local elapsed = math.max(0, os.clock() - perfStartClock)
+			local minuteIdx = math.floor(elapsed / 60)
+			local shouldLog = minuteIdx > perfLastLogMinute
+			if shouldLog then
+				perfLastLogMinute = minuteIdx
+			end
+
+			updatePerfReadout(fps, avgFps, perfMinFps, frameMs, elapsed, shouldLog)
+			perfWindowFrames = 0
+			perfWindowDt = 0
+		end
+	end)
+end
+
 local function updateSettingsTogglesUI(muted: boolean, reducedMotion: boolean): ()
 	if muteToggleButton ~= nil then
 		muteToggleButton.Text = if muted then "Mute Sound: ON" else "Mute Sound: OFF"
@@ -503,6 +665,7 @@ local function updateSettingsTogglesUI(muted: boolean, reducedMotion: boolean): 
 		motionToggleButton.BackgroundColor3 = if reducedMotion then PALETTE.OrbitalCyan else PALETTE.CardDark
 		motionToggleButton.TextColor3 = if reducedMotion then PALETTE.PanelDark else PALETTE.TextCream
 	end
+	updatePerfToggleButtonUI()
 end
 
 local function updateContextualHint(): ()
@@ -2328,12 +2491,59 @@ function UIController.Init(self: typeof(UIController)): ()
 		end
 	end)
 
+	-- Compact Opt-In Soak Perf Stats Overlay (zero RenderStepped overhead when OFF)
+	local pOverlay = Instance.new("Frame")
+	pOverlay.Name = "PerfOverlay"
+	pOverlay.AnchorPoint = Vector2.new(0, 0)
+	pOverlay.Position = UDim2.fromOffset(10, 58)
+	pOverlay.Size = UDim2.fromOffset(296, 44)
+	pOverlay.BackgroundColor3 = PALETTE.PanelDark
+	pOverlay.BackgroundTransparency = 0.15
+	pOverlay.BorderSizePixel = 0
+	pOverlay.Active = false
+	pOverlay.ZIndex = 1
+	pOverlay.Visible = false
+	addCorner(pOverlay, 10)
+	addStroke(pOverlay, PALETTE.BorderSoft, 1)
+	pOverlay.Parent = screenGui
+	perfOverlayFrame = pOverlay
+
+	local pLine1 = Instance.new("TextLabel")
+	pLine1.Name = "Line1"
+	pLine1.Position = UDim2.fromOffset(8, 3)
+	pLine1.Size = UDim2.new(1, -16, 0, 18)
+	pLine1.BackgroundTransparency = 1
+	pLine1.TextColor3 = PALETTE.MeadowMint
+	pLine1.Font = Enum.Font.GothamBold
+	pLine1.TextSize = 11
+	pLine1.TextXAlignment = Enum.TextXAlignment.Left
+	pLine1.TextTruncate = Enum.TextTruncate.AtEnd
+	pLine1.Active = false
+	pLine1.Text = "FPS: sampling... | T+00:00"
+	pLine1.Parent = pOverlay
+	perfLine1Label = pLine1
+
+	local pLine2 = Instance.new("TextLabel")
+	pLine2.Name = "Line2"
+	pLine2.Position = UDim2.fromOffset(8, 22)
+	pLine2.Size = UDim2.new(1, -16, 0, 18)
+	pLine2.BackgroundTransparency = 1
+	pLine2.TextColor3 = PALETTE.TextCream
+	pLine2.Font = Enum.Font.GothamMedium
+	pLine2.TextSize = 11
+	pLine2.TextXAlignment = Enum.TextXAlignment.Left
+	pLine2.TextTruncate = Enum.TextTruncate.AtEnd
+	pLine2.Active = false
+	pLine2.Text = "Mem: --MB (Lua --MB) | Vis: 0 | Met: 0"
+	pLine2.Parent = pOverlay
+	perfLine2Label = pLine2
+
 	-- Settings Popover
 	local sDrawer = Instance.new("Frame")
 	sDrawer.Name = "SettingsDrawer"
 	sDrawer.AnchorPoint = Vector2.new(0, 0)
 	sDrawer.Position = UDim2.fromOffset(34, 108)
-	sDrawer.Size = UDim2.fromOffset(278, 224)
+	sDrawer.Size = UDim2.fromOffset(278, SETTINGS_DRAWER_HEIGHT)
 	sDrawer.BackgroundColor3 = PALETTE.PanelDark
 	sDrawer.BackgroundTransparency = 0.04
 	sDrawer.BorderSizePixel = 0
@@ -2383,10 +2593,19 @@ function UIController.Init(self: typeof(UIController)): ()
 	end)
 	motionToggleButton = motionBtn
 
+	local perfBtn = makeTextButton(sDrawer, "PerfToggleBtn", "Soak Perf Stats: OFF", PALETTE.CardDark, PALETTE.TextCream, UDim2.new(1, -24, 0, 44), 14)
+	perfBtn.Position = UDim2.fromOffset(12, 162)
+	addStroke(perfBtn, PALETTE.BorderSoft, 1)
+	perfBtn.Activated:Connect(function()
+		UIController.TogglePerfOverlay()
+		SoundController.Play("Click")
+	end)
+	perfToggleButton = perfBtn
+
 	local cHint = Instance.new("TextLabel")
 	cHint.Name = "ControlsHint"
-	cHint.Size = UDim2.new(1, -24, 0, 52)
-	cHint.Position = UDim2.fromOffset(12, 162)
+	cHint.Size = UDim2.new(1, -24, 0, 50)
+	cHint.Position = UDim2.fromOffset(12, 212)
 	cHint.BackgroundTransparency = 1
 	cHint.TextColor3 = PALETTE.TextMuted
 	cHint.Font = Enum.Font.GothamMedium
@@ -2497,6 +2716,15 @@ end
 
 function UIController.IsFieldGuideOpen(): boolean
 	return guideOpen
+end
+
+function UIController.IsPerfOverlayOpen(): boolean
+	return perfOverlayEnabled
+end
+
+function UIController.TogglePerfOverlay(): boolean
+	setPerfOverlayEnabled(not perfOverlayEnabled)
+	return perfOverlayEnabled
 end
 
 function UIController.GetSelectedGamepadTarget(): GuiObject?
@@ -2651,6 +2879,7 @@ function UIController.RunSelfTest(): number
 			assert(dL.X >= 0 and (dL.X + dL.Width) <= dims[1], "Drawer width stays inside Safe Area")
 			assert(dL.Y >= topBottom and (dL.Y + dL.Height) <= dims[2], "Drawer clears Top HUD & stays inside Safe Area height")
 			assert(dL.Height >= 180, "Drawer preserves usable scroll height on compact landscape screens")
+			assert((topL.SettingsY + SETTINGS_DRAWER_HEIGHT) <= dims[2], "SettingsDrawer fits inside Safe Area height")
 		end
 		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, guideButton, settingsButton }) do
 			assert(navBtn ~= nil and navBtn.AbsoluteSize.X >= 44 and navBtn.AbsoluteSize.Y >= 44, "All top HUD buttons maintain >= 44px touch target")
@@ -2933,10 +3162,19 @@ function UIController.RunSelfTest(): number
 		end
 		assert(owlRevealedTitle, "Newly discovered CometOwl reveals title & stats in Field Guide")
 		assert(UIController.CloseDrawers() == true and not UIController.IsDrawerOpen(), "CloseDrawers cleanly closes FieldGuideDrawer")
+
+		-- S4-03 Soak Perf Stats overlay toggles cleanly with zero leftover RenderStepped listener when OFF
+		assert(UIController.TogglePerfOverlay() == true and UIController.IsPerfOverlayOpen() == true, "TogglePerfOverlay opens Soak Perf Stats")
+		assert(perfOverlayFrame ~= nil and perfOverlayFrame.Visible == true and perfRenderConn ~= nil, "PerfOverlay visible and sampling when ON")
+		assert(perfToggleButton ~= nil and perfToggleButton.Text == "Soak Perf Stats: ON", "PerfToggleButton text updates to ON")
+		assert(UIController.TogglePerfOverlay() == false and UIController.IsPerfOverlayOpen() == false, "TogglePerfOverlay closes cleanly")
+		assert(perfOverlayFrame ~= nil and perfOverlayFrame.Visible == false and perfRenderConn == nil, "PerfOverlay disconnects RenderStepped cleanly when OFF")
+		assert(perfToggleButton ~= nil and perfToggleButton.Text == "Soak Perf Stats: OFF", "PerfToggleButton text resets to OFF")
 		passed += 1
 	end)
 
 	-- Restore pristine empty UI state before ClientInit starts live snapshot listener
+	setPerfOverlayEnabled(false)
 	bagRestoreToken += 1
 	bagRestoreInFlight = false
 	guideRestoreToken += 1
