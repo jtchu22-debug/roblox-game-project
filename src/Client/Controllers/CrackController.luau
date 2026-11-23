@@ -856,6 +856,7 @@ function CrackController.TryStartFromPrompt(prompt: ProximityPrompt): boolean
 		activeUsedBeat1Burst = false
 
 		configureFeelBeat(1)
+		UIController.CloseDrawers()
 
 		if feelFrame ~= nil then
 			updateFeelButtonPromptText(false)

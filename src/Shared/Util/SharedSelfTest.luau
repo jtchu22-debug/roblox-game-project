@@ -65,10 +65,21 @@ function SharedSelfTest.RunAll(): number
 		assert(MeteorConfig.ById.Astral.RequiredUpgradeId == "StarCracker", "Astral requires StarCracker")
 		assert(MeteorConfig.ById.Astral.DropWeights.CometOwl == 10, "CometOwl Astral weight tuned to 10%")
 		assert(Constants.CRITTER_FEED_SELL_BONUS < Constants.CRITTER_FEED_COST, "Feed sell bonus must stay strictly below feed cost")
+		assert(
+			Constants.RADIANT_BONUS_COINS_PER_SEC == 0 and Constants.RADIANT_BONUS_SELL_COINS == 0,
+			"Radiant hatch variant must remain 100% cosmetic (zero Coin/Sell multiplier)"
+		)
+		assert(
+			Constants.MAX_CRITTER_PARTS == 8
+				and Constants.MAX_CRITTER_DISPLAY_HEIGHT == 8.0
+				and Constants.MAX_ACTIVE_CRITTERS_SERVER_WIDE == 30,
+			"Visual budget constants must match S4-02 caps"
+		)
 
 		for _, speciesId in ipairs(CritterConfig.OrderedIds) do
 			local def = CritterConfig.ById[speciesId]
 			assert(def ~= nil, "Missing species definition")
+			assert(typeof(def.SecondaryColor) == "Color3", "SecondaryColor required on every species")
 			assert(def.HatchSeconds > 0 and def.HatchSeconds % 1 == 0, "HatchSeconds must be positive integer")
 			assert(def.CoinsPerSecond > 0 and def.CoinsPerSecond % 1 == 0, "CoinsPerSecond must be positive integer")
 			assert(def.SellPrice > 0 and def.SellPrice % 1 == 0, "SellPrice must be positive integer")

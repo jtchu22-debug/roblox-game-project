@@ -40,6 +40,7 @@ type VisualEntry = {
 	Phase: number,
 	MaturesAt: number?,
 	CoreParts: { BasePart }?,
+	RadiantEmitters: { ParticleEmitter }?,
 	WasMature: boolean,
 }
 
@@ -190,6 +191,207 @@ local function attachRadiantHalo(
 	})
 end
 
+local function attachRadiantSparkles(hostPart: BasePart, reducedMotion: boolean): ParticleEmitter
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "RadiantSparkles"
+	emitter.Color = ColorSequence.new(COLOR_RADIANT_GOLD, Color3.fromRGB(255, 255, 255))
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.28),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	emitter.Lifetime = NumberRange.new(0.6, 1.0)
+	emitter.Rate = 4
+	emitter.Speed = NumberRange.new(0.8, 1.6)
+	emitter.SpreadAngle = Vector2.new(35, 35)
+	emitter.Enabled = not reducedMotion
+	emitter.Parent = hostPart
+	return emitter
+end
+
+local function measureModelWorldYBounds(model: Model): (number, number)
+	local minY = math.huge
+	local maxY = -math.huge
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			local half = desc.Size * 0.5
+			local cf = desc.CFrame
+			for _, sx in ipairs({ -1, 1 }) do
+				for _, sy in ipairs({ -1, 1 }) do
+					for _, sz in ipairs({ -1, 1 }) do
+						local wy = cf:PointToWorldSpace(Vector3.new(half.X * sx, half.Y * sy, half.Z * sz)).Y
+						minY = math.min(minY, wy)
+						maxY = math.max(maxY, wy)
+					end
+				end
+			end
+		end
+	end
+	if minY == math.huge then
+		return 0, 0
+	end
+	return minY, maxY
+end
+
+local function computeCritterHopProfile(speciesId: Types.SpeciesId, fed: boolean): (number, number)
+	local hopSpeed = if speciesId == "StarSlime" or speciesId == "CinderPup"
+		then 4.3
+		elseif speciesId == "NebulaFox" or speciesId == "CometOwl" then 4.9
+		else 3.2
+	local baseHop = if speciesId == "SolarGolem" then 0.45 else 0.75
+	return hopSpeed, baseHop + (if fed then 0.15 else 0)
+end
+
+local function tryBuildCritterFromTemplate(
+	folder: Folder,
+	key: string,
+	plotId: number,
+	ownerUserId: number,
+	speciesId: Types.SpeciesId,
+	variant: Types.VariantId,
+	feedLevel: number,
+	pad: BasePart,
+	horizontalRotation: CFrame,
+	phaseSeed: number,
+	def: Types.SpeciesDefinition
+): VisualEntry?
+	local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+	local crittersFolder = if templatesRoot ~= nil then templatesRoot:FindFirstChild("Critters") else nil
+	local template = if crittersFolder ~= nil then crittersFolder:FindFirstChild(speciesId) else nil
+	if template == nil or not template:IsA("Model") then
+		return nil
+	end
+
+	local templateBody = template:FindFirstChild("Body")
+	if templateBody == nil or not templateBody:IsA("BasePart") then
+		return nil
+	end
+
+	local templatePartCount = 0
+	for _, desc in ipairs(template:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			templatePartCount += 1
+		end
+	end
+	if templatePartCount == 0 or templatePartCount > (Constants.MAX_CRITTER_PARTS - 1) then
+		warn(string.format(
+			"[PlotVisualController] Template %s has %d parts (budget max %d pre-halo); using blocky fallback.",
+			template:GetFullName(),
+			templatePartCount,
+			Constants.MAX_CRITTER_PARTS - 1
+		))
+		return nil
+	end
+
+	local fed = feedLevel >= 1
+	local scaleMult = if fed then Constants.FED_CRITTER_SCALE_MULTIPLIER else 1.0
+	local accentColor = if fed then COLOR_RADIANT_GOLD else def.AccentColor
+	local padTopY = pad.Position.Y + pad.Size.X * 0.5
+	local baseCFrame = CFrame.new(pad.Position.X, padTopY, pad.Position.Z) * horizontalRotation
+
+	local clone = template:Clone()
+	clone.Name = string.format("%s_%s", key, speciesId)
+
+	local bodyPart: BasePart? = nil
+	local toStrip: { Instance } = {}
+	for _, desc in ipairs(clone:GetDescendants()) do
+		if desc:IsA("SurfaceAppearance") or desc:IsA("LuaSourceContainer") then
+			table.insert(toStrip, desc)
+		elseif desc:IsA("BasePart") then
+			desc.Anchored = true
+			desc.CanCollide = false
+			desc.CanQuery = false
+			desc.CanTouch = false
+			if desc.Name == "Body" then
+				bodyPart = desc
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = def.BodyColor
+				desc.CastShadow = true
+			elseif desc.Name == "Secondary" then
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = def.SecondaryColor
+				desc.CastShadow = true
+			elseif desc.Name == "Eyes" then
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = COLOR_EYE
+				desc.CastShadow = false
+			elseif desc.Name == "Accent" then
+				desc.Material = Enum.Material.Neon
+				desc.Color = accentColor
+				desc.CastShadow = false
+			else
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = def.BodyColor
+				desc.CastShadow = false
+			end
+		end
+	end
+	for _, item in ipairs(toStrip) do
+		item:Destroy()
+	end
+	if bodyPart == nil then
+		clone:Destroy()
+		return nil
+	end
+	clone.PrimaryPart = bodyPart
+
+	local appliedScale = scaleMult
+	clone:ScaleTo(appliedScale)
+	local minY, maxY = measureModelWorldYBounds(clone)
+	local haloClearance = if variant == "Radiant" then (0.55 * appliedScale + 0.12) else 0
+	local rawHeight = math.max(0.1, maxY - minY)
+	if (rawHeight + haloClearance) > Constants.MAX_CRITTER_DISPLAY_HEIGHT then
+		local clampRatio = math.max(0.1, (Constants.MAX_CRITTER_DISPLAY_HEIGHT - haloClearance) / rawHeight)
+		appliedScale = scaleMult * clampRatio
+		clone:ScaleTo(appliedScale)
+	end
+
+	clone:PivotTo(baseCFrame)
+	local curMinY = measureModelWorldYBounds(clone)
+	if math.abs(curMinY - padTopY) > 1e-4 then
+		clone:PivotTo(baseCFrame * CFrame.new(0, padTopY - curMinY, 0))
+	end
+
+	local partsList: { PartOffset } = {}
+	for _, desc in ipairs(clone:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			table.insert(partsList, {
+				Part = desc,
+				Offset = baseCFrame:ToObjectSpace(desc.CFrame),
+			})
+		end
+	end
+
+	local radiantEmitters: { ParticleEmitter }? = nil
+	if variant == "Radiant" then
+		local _, finalMaxY = measureModelWorldYBounds(clone)
+		local _, finalBbox = clone:GetBoundingBox()
+		local haloYOffset = (finalMaxY - padTopY) + 0.55 * appliedScale
+		local haloDiameter = math.max(finalBbox.X, finalBbox.Z) * 0.85
+		attachRadiantHalo(clone, partsList, baseCFrame, haloYOffset, haloDiameter)
+		radiantEmitters = { attachRadiantSparkles(bodyPart, SoundController.IsReducedMotion()) }
+	end
+
+	clone.Parent = folder
+	local hopSpeed, hopHeight = computeCritterHopProfile(speciesId, fed)
+	return {
+		Key = key,
+		PlotId = plotId,
+		OwnerUserId = ownerUserId,
+		Kind = "Critter",
+		Signature = string.format("%s:%s:%d:mesh", speciesId, variant, feedLevel),
+		Model = clone,
+		BaseCFrame = baseCFrame,
+		Parts = partsList,
+		HopSpeed = hopSpeed,
+		HopHeight = hopHeight,
+		Phase = phaseSeed,
+		MaturesAt = nil,
+		CoreParts = nil,
+		RadiantEmitters = radiantEmitters,
+		WasMature = false,
+	}
+end
+
 local function buildCritterVisual(
 	key: string,
 	plotId: number,
@@ -207,8 +409,25 @@ local function buildCritterVisual(
 		return nil
 	end
 
+	local fromTemplate = tryBuildCritterFromTemplate(
+		folder,
+		key,
+		plotId,
+		ownerUserId,
+		speciesId,
+		variant,
+		feedLevel,
+		pad,
+		horizontalRotation,
+		phaseSeed,
+		def
+	)
+	if fromTemplate ~= nil then
+		return fromTemplate
+	end
+
 	local fed = feedLevel >= 1
-	local scaleMult = if fed then 1.15 else 1.0
+	local scaleMult = if fed then Constants.FED_CRITTER_SCALE_MULTIPLIER else 1.0
 	local accentColor = if fed then COLOR_RADIANT_GOLD else def.AccentColor
 	local bodyScale = def.DisplayScale * scaleMult
 	local padTopY = pad.Position.Y + pad.Size.X * 0.5
@@ -438,29 +657,32 @@ local function buildCritterVisual(
 		haloHeight = bodyScale.Y * 0.5 + 1.15 * scaleMult
 	end
 
+	local radiantEmitters: { ParticleEmitter }? = nil
 	if variant == "Radiant" then
 		attachRadiantHalo(model, partsList, baseCFrame, haloHeight, haloDiameter)
+		local bodyRef = model.PrimaryPart
+		if bodyRef ~= nil then
+			radiantEmitters = { attachRadiantSparkles(bodyRef, SoundController.IsReducedMotion()) }
+		end
 	end
 
 	model.Parent = folder
-	local baseHop = if speciesId == "SolarGolem" then 0.45 else 0.75
+	local hopSpeed, hopHeight = computeCritterHopProfile(speciesId, fed)
 	return {
 		Key = key,
 		PlotId = plotId,
 		OwnerUserId = ownerUserId,
 		Kind = "Critter",
-		Signature = string.format("%s:%s:%d", speciesId, variant, feedLevel),
+		Signature = string.format("%s:%s:%d:blocky", speciesId, variant, feedLevel),
 		Model = model,
 		BaseCFrame = baseCFrame,
 		Parts = partsList,
-		HopSpeed = if speciesId == "StarSlime" or speciesId == "CinderPup"
-			then 4.3
-			elseif speciesId == "NebulaFox" or speciesId == "CometOwl" then 4.9
-			else 3.2,
-		HopHeight = baseHop + (if fed then 0.15 else 0),
+		HopSpeed = hopSpeed,
+		HopHeight = hopHeight,
 		Phase = phaseSeed,
 		MaturesAt = nil,
 		CoreParts = nil,
+		RadiantEmitters = radiantEmitters,
 		WasMature = false,
 	}
 end
@@ -569,7 +791,20 @@ local function reconcilePlotVisuals(): ()
 					local key = string.format("P%d_%s", plotId, slotId)
 					desiredKeys[key] = true
 					local feedLevel = penVisual.FeedLevel or 0
-					local signature = string.format("%s:%s:%d", penVisual.SpeciesId, penVisual.Variant, feedLevel)
+					local hasMeshTemplate = false
+					do
+						local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+						local crittersFolder = if templatesRoot ~= nil then templatesRoot:FindFirstChild("Critters") else nil
+						local tmpl = if crittersFolder ~= nil then crittersFolder:FindFirstChild(penVisual.SpeciesId) else nil
+						hasMeshTemplate = tmpl ~= nil and tmpl:IsA("Model")
+					end
+					local signature = string.format(
+						"%s:%s:%d:%s",
+						penVisual.SpeciesId,
+						penVisual.Variant,
+						feedLevel,
+						if hasMeshTemplate then "mesh" else "blocky"
+					)
 					local current = activeVisuals[key]
 					if current == nil or current.Signature ~= signature or current.OwnerUserId ~= dto.OwnerUserId then
 						destroyVisualEntry(key)
@@ -634,15 +869,18 @@ local function stepVisualAnimations(): ()
 	local reducedMotion = SoundController.IsReducedMotion()
 	local nowClock = workspace:GetServerTimeNow()
 
-	if reducedMotion then
-		if not wasReducedMotion then
-			for _, entry in pairs(activeVisuals) do
+	if reducedMotion ~= wasReducedMotion then
+		for _, entry in pairs(activeVisuals) do
+			if reducedMotion then
 				applyEntryCFrame(entry, entry.BaseCFrame)
 			end
+			if entry.RadiantEmitters ~= nil then
+				for _, emitter in ipairs(entry.RadiantEmitters) do
+					emitter.Enabled = not reducedMotion
+				end
+			end
 		end
-		wasReducedMotion = true
-	else
-		wasReducedMotion = false
+		wasReducedMotion = reducedMotion
 	end
 
 	for _, entry in pairs(activeVisuals) do
@@ -978,8 +1216,13 @@ function PlotVisualController.RunSelfTest(): number
 					end
 				end
 				assert(
-					basePartCount <= 8,
+					basePartCount <= Constants.MAX_CRITTER_PARTS,
 					string.format("Critter %s exceeded 8-part budget (%d parts)", entry.Key, basePartCount)
+				)
+				local _, bbSize = entry.Model:GetBoundingBox()
+				assert(
+					bbSize.Y <= Constants.MAX_CRITTER_DISPLAY_HEIGHT + 0.01,
+					string.format("Critter %s height %.3f exceeded %.1f stud cap", entry.Key, bbSize.Y, Constants.MAX_CRITTER_DISPLAY_HEIGHT)
 				)
 			elseif entry.Kind == "Pod" then
 				podCount += 1
@@ -1033,6 +1276,157 @@ function PlotVisualController.RunSelfTest(): number
 			visualsFolder ~= nil and #(visualsFolder :: Folder):GetChildren() == 29,
 			"StarfallClientVisuals has zero leaked child models"
 		)
+		passed += 1
+
+		-- 4. S4-02 Template Runtime Integration, Ground Contact, Radiant Sparkles, Reduced Motion & Height Reporting
+		local createdTempRoot = false
+		local createdTempCritters = false
+		local createdTempMockStar = false
+		local prevReduced = SoundController.IsReducedMotion()
+		local testOk4, testErr4 = pcall(function()
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			if root == nil then
+				root = Instance.new("Folder")
+				root.Name = Constants.ASSET_TEMPLATES_FOLDER_NAME
+				root.Parent = ReplicatedStorage
+				createdTempRoot = true
+			end
+			local cFolder = (root :: Instance):FindFirstChild("Critters")
+			if cFolder == nil then
+				cFolder = Instance.new("Folder")
+				cFolder.Name = "Critters"
+				cFolder.Parent = root
+				createdTempCritters = true
+			end
+
+			local speciesToTest: { Types.SpeciesId } = {}
+			for _, sid in ipairs(CritterConfig.OrderedIds) do
+				local existing = (cFolder :: Instance):FindFirstChild(sid)
+				if existing ~= nil and existing:IsA("Model") then
+					table.insert(speciesToTest, sid)
+				end
+			end
+
+			if #speciesToTest == 0 then
+				local mock = Instance.new("Model")
+				mock.Name = "StarSlime"
+				local mSec = Instance.new("Part")
+				mSec.Name = "Secondary"
+				mSec.Size = Vector3.new(3.2, 0.6, 2.8)
+				mSec.Position = Vector3.new(0, 0.3, 0)
+				mSec.Parent = mock
+				local mBody = Instance.new("Part")
+				mBody.Name = "Body"
+				mBody.Size = Vector3.new(2.8, 1.5, 2.5)
+				mBody.Position = Vector3.new(0, 1.35, 0)
+				mBody.Parent = mock
+				local mEyes = Instance.new("Part")
+				mEyes.Name = "Eyes"
+				mEyes.Size = Vector3.new(1.4, 0.6, 0.3)
+				mEyes.Position = Vector3.new(0, 1.1, -1.2)
+				mEyes.Parent = mock
+				local mAcc = Instance.new("Part")
+				mAcc.Name = "Accent"
+				mAcc.Size = Vector3.new(0.8, 0.8, 0.4)
+				mAcc.Position = Vector3.new(0, 2.4, 0)
+				mAcc.Parent = mock
+				mock.PrimaryPart = mBody
+				mock.Parent = cFolder
+				createdTempMockStar = true
+				table.insert(speciesToTest, "StarSlime")
+			end
+
+			local pad1 = resolveStationPartOnPlot(getGreyboxPlotModel(1) :: Model, "Pen", "Pen_1") :: BasePart
+			local padTopY = pad1.Position.Y + pad1.Size.X * 0.5
+			SoundController.SetReducedMotion(false)
+			local seqRev = 20
+
+			for _, sid in ipairs(speciesToTest) do
+				seqRev += 1
+				local snapTest: { Types.PublicPlotDTO } = {
+					{
+						PlotId = 1,
+						OwnerUserId = 9001,
+						OwnerDisplayName = "TemplateCheck",
+						PlotRevision = seqRev,
+						UnlockedUpgrades = { PenSlot_3 = true },
+						ActivePenVisuals = {
+							Pen_1 = { SpeciesId = sid, Variant = "Normal", FeedLevel = 0 },
+							Pen_2 = { SpeciesId = sid, Variant = "Radiant", FeedLevel = 0 },
+							Pen_3 = { SpeciesId = sid, Variant = "Radiant", FeedLevel = 1 },
+						},
+						IncubatorVisuals = {},
+					},
+					makeEmptyPlot(2, seqRev),
+					makeEmptyPlot(3, seqRev),
+					makeEmptyPlot(4, seqRev),
+					makeEmptyPlot(5, seqRev),
+					makeEmptyPlot(6, seqRev),
+				}
+				assert(PlotVisualController.ApplyPublicPlotsSnapshot(snapTest, seqRev), "Apply template test for " .. sid)
+
+				local eNorm = activeVisuals["P1_Pen_1"]
+				local eRad = activeVisuals["P1_Pen_2"]
+				local eFed = activeVisuals["P1_Pen_3"]
+				assert(eNorm ~= nil and eRad ~= nil and eFed ~= nil, "Built Normal, Radiant, and Fed Radiant visuals for " .. sid)
+
+				local minNormY = measureModelWorldYBounds(eNorm.Model)
+				assert(math.abs(minNormY - padTopY) <= 0.02, string.format("%s Normal grounded within 0.02 studs (delta=%.4f)", sid, minNormY - padTopY))
+				local minFedY = measureModelWorldYBounds(eFed.Model)
+				assert(math.abs(minFedY - padTopY) <= 0.02, string.format("%s Fed Radiant grounded within 0.02 studs (delta=%.4f)", sid, minFedY - padTopY))
+
+				local _, sNorm = eNorm.Model:GetBoundingBox()
+				local _, sRad = eRad.Model:GetBoundingBox()
+				local _, sFed = eFed.Model:GetBoundingBox()
+				assert(sNorm.Y <= Constants.MAX_CRITTER_DISPLAY_HEIGHT and sFed.Y <= Constants.MAX_CRITTER_DISPLAY_HEIGHT, sid .. " height <= 8.0")
+
+				local bodyRad = eRad.Model:FindFirstChild("Body")
+				local haloRad = eRad.Model:FindFirstChild("RadiantHalo")
+				local sparkleRad = if bodyRad ~= nil then bodyRad:FindFirstChild("RadiantSparkles") else nil
+				assert(haloRad ~= nil and sparkleRad ~= nil and sparkleRad:IsA("ParticleEmitter"), sid .. " Radiant has RadiantHalo & RadiantSparkles")
+				assert((sparkleRad :: ParticleEmitter).Enabled == true, "RadiantSparkles enabled when Reduced Motion OFF")
+
+				SoundController.SetReducedMotion(true)
+				stepVisualAnimations()
+				assert((sparkleRad :: ParticleEmitter).Enabled == false, "RadiantSparkles disabled cleanly when Reduced Motion ON")
+				SoundController.SetReducedMotion(false)
+				stepVisualAnimations()
+
+				if not createdTempMockStar then
+					print(string.format(
+						"[PlotVisualController] Runtime Template Verified %-11s | NormalH=%.3f | Rad1xH=%.3f | FedRadH=%.3f",
+						sid,
+						sNorm.Y,
+						sRad.Y,
+						sFed.Y
+					))
+				end
+			end
+		end)
+
+		SoundController.SetReducedMotion(prevReduced)
+		if createdTempMockStar then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			local cFolder = if root ~= nil then root:FindFirstChild("Critters") else nil
+			local mockStar = if cFolder ~= nil then cFolder:FindFirstChild("StarSlime") else nil
+			if mockStar ~= nil then
+				mockStar:Destroy()
+			end
+		end
+		if createdTempCritters then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			local cFolder = if root ~= nil then root:FindFirstChild("Critters") else nil
+			if cFolder ~= nil then
+				cFolder:Destroy()
+			end
+		end
+		if createdTempRoot then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			if root ~= nil then
+				root:Destroy()
+			end
+		end
+		assert(testOk4, tostring(testErr4))
 		passed += 1
 	end)
 

@@ -131,6 +131,92 @@ local function setMeteorPromptEnabled(meteor: ActiveMeteor, enabled: boolean): (
 	end
 end
 
+local function measureMeteorWorldYBounds(model: Model): (number, number)
+	local minY = math.huge
+	local maxY = -math.huge
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			local half = desc.Size * 0.5
+			local cf = desc.CFrame
+			for _, sx in ipairs({ -1, 1 }) do
+				for _, sy in ipairs({ -1, 1 }) do
+					for _, sz in ipairs({ -1, 1 }) do
+						local wy = cf:PointToWorldSpace(Vector3.new(half.X * sx, half.Y * sy, half.Z * sz)).Y
+						minY = math.min(minY, wy)
+						maxY = math.max(maxY, wy)
+					end
+				end
+			end
+		end
+	end
+	if minY == math.huge then
+		return 0, 0
+	end
+	return minY, maxY
+end
+
+local function tryCloneMeteorTemplate(meteor: ActiveMeteor, traitDef: Types.MeteorTraitDefinition, yawRad: number): (Model?, BasePart?)
+	local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+	local meteorsFolder = if templatesRoot ~= nil then templatesRoot:FindFirstChild("Meteors") else nil
+	local template = if meteorsFolder ~= nil then meteorsFolder:FindFirstChild(meteor.Trait) else nil
+	if template == nil or not template:IsA("Model") then
+		return nil, nil
+	end
+
+	local tmplBody = template:FindFirstChild("RockBody")
+	if tmplBody == nil or not tmplBody:IsA("BasePart") then
+		return nil, nil
+	end
+
+	local clone = template:Clone()
+	local rockBody: BasePart? = nil
+	local toStrip: { Instance } = {}
+	for _, desc in ipairs(clone:GetDescendants()) do
+		if desc:IsA("SurfaceAppearance") or desc:IsA("LuaSourceContainer") then
+			table.insert(toStrip, desc)
+		elseif desc:IsA("BasePart") then
+			desc.Anchored = true
+			desc.CanCollide = false
+			desc.CanQuery = false
+			desc.CanTouch = false
+			if desc.Name == "RockBody" then
+				rockBody = desc
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = traitDef.RockColor
+				desc.CastShadow = true
+			elseif desc.Name == "CoreShards" then
+				desc.Material = Enum.Material.Neon
+				desc.Color = traitDef.CoreColor
+				desc.CastShadow = false
+			elseif desc.Name == "TraitCrest" then
+				desc.Material = Enum.Material.Neon
+				desc.Color = traitDef.TrailColor
+				desc.CastShadow = false
+			else
+				desc.Material = Enum.Material.SmoothPlastic
+				desc.Color = traitDef.RockColor
+				desc.CastShadow = false
+			end
+		end
+	end
+	for _, item in ipairs(toStrip) do
+		item:Destroy()
+	end
+	if rockBody == nil then
+		clone:Destroy()
+		return nil, nil
+	end
+
+	clone.PrimaryPart = rockBody
+	local targetCf = CFrame.new(meteor.Position) * CFrame.Angles(0, yawRad, 0)
+	clone:PivotTo(targetCf)
+	local minY = measureMeteorWorldYBounds(clone)
+	if math.abs(minY - meteor.Position.Y) > 1e-4 then
+		clone:PivotTo(targetCf * CFrame.new(0, meteor.Position.Y - minY, 0))
+	end
+	return clone, rockBody
+end
+
 local function createMeteorModel(meteor: ActiveMeteor): Model?
 	local folder = activeMeteorsFolder
 	if folder == nil then
@@ -141,100 +227,110 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	local isWildFrost = meteor.Trait == "Frost" and not meteor.IsStarter
 	local isWildAstral = meteor.Trait == "Astral" and not meteor.IsStarter
 	local isLured = meteor.LuredByUserId ~= nil
-	local model = Instance.new("Model")
-	model.Name = (if meteor.IsStarter then "StarterMeteor_" elseif isLured then "LuredFrost_" else "WildMeteor_")
-		.. string.sub(meteor.UID, 1, 8)
-	model:SetAttribute("MeteorUID", meteor.UID)
-	model:SetAttribute("Trait", meteor.Trait)
-	model:SetAttribute("IsStarter", meteor.IsStarter)
-	model:SetAttribute("OwnerUserId", meteor.OwnerUserId or 0)
-	model:SetAttribute("LuredByUserId", meteor.LuredByUserId or 0)
-	CollectionService:AddTag(model, Constants.TAG_ACTIVE_METEOR)
+	local yawRad = math.rad(((string.byte(meteor.UID, 1) or 0) * 37) % 360)
 
-	local basePos = meteor.Position + Vector3.new(0, if isWildAstral then 2.4 else 1.8, 0)
-	local body = Instance.new("Part")
-	body.Name = "RockBody"
-	body.Size = if isWildAstral then Vector3.new(5.2, 4.4, 5.2) else Vector3.new(3.8, 3.2, 3.8)
-	body.CFrame = CFrame.new(basePos) * CFrame.Angles(0, math.rad(((string.byte(meteor.UID, 1) or 0) * 37) % 360), 0)
-	body.Color = traitDef.RockColor
-	body.Material = Enum.Material.SmoothPlastic
-	body.Anchored = true
-	body.CanCollide = false
-	body.TopSurface = Enum.SurfaceType.Smooth
-	body.BottomSurface = Enum.SurfaceType.Smooth
-	body.Parent = model
-	model.PrimaryPart = body
+	local model, body = tryCloneMeteorTemplate(meteor, traitDef, yawRad)
+	if model == nil or body == nil then
+		local fallbackModel = Instance.new("Model")
+		local basePos = meteor.Position + Vector3.new(0, if isWildAstral then 2.4 else 1.8, 0)
+		local rock = Instance.new("Part")
+		rock.Name = "RockBody"
+		rock.Size = if isWildAstral then Vector3.new(5.2, 4.4, 5.2) else Vector3.new(3.8, 3.2, 3.8)
+		rock.CFrame = CFrame.new(basePos) * CFrame.Angles(0, yawRad, 0)
+		rock.Color = traitDef.RockColor
+		rock.Material = Enum.Material.SmoothPlastic
+		rock.Anchored = true
+		rock.CanCollide = false
+		rock.TopSurface = Enum.SurfaceType.Smooth
+		rock.BottomSurface = Enum.SurfaceType.Smooth
+		rock.Parent = fallbackModel
+		fallbackModel.PrimaryPart = rock
 
-	local core = Instance.new("Part")
-	core.Name = "CoreCrystal"
-	core.Size = if isWildAstral then Vector3.new(2.4, 5.4, 2.4) else Vector3.new(1.8, 3.8, 1.8)
-	core.CFrame = body.CFrame * CFrame.new(0, 0.7, 0) * CFrame.Angles(0.15, 0.4, -0.15)
-	core.Color = traitDef.CoreColor
-	core.Material = Enum.Material.Neon
-	core.Anchored = true
-	core.CanCollide = false
-	core.Parent = model
+		local core = Instance.new("Part")
+		core.Name = "CoreCrystal"
+		core.Size = if isWildAstral then Vector3.new(2.4, 5.4, 2.4) else Vector3.new(1.8, 3.8, 1.8)
+		core.CFrame = rock.CFrame * CFrame.new(0, 0.7, 0) * CFrame.Angles(0.15, 0.4, -0.15)
+		core.Color = traitDef.CoreColor
+		core.Material = Enum.Material.Neon
+		core.Anchored = true
+		core.CanCollide = false
+		core.Parent = fallbackModel
 
-	-- Color-independent shape silhouette for accessibility
-	if traitDef.ShapeStyle == "FlameCrest" then
-		for _, xOff in ipairs({ -1.1, 1.1 }) do
-			local crest = Instance.new("WedgePart")
-			crest.Name = "FlameHorn"
-			crest.Size = Vector3.new(0.8, 2.2, 1.4)
-			crest.CFrame = body.CFrame * CFrame.new(xOff, 1.8, 0) * CFrame.Angles(0, 0, if xOff < 0 then 0.25 else -0.25)
-			crest.Color = traitDef.TrailColor
-			crest.Material = Enum.Material.Neon
-			crest.Anchored = true
-			crest.CanCollide = false
-			crest.Parent = model
+		-- Color-independent shape silhouette for accessibility
+		if traitDef.ShapeStyle == "FlameCrest" then
+			for _, xOff in ipairs({ -1.1, 1.1 }) do
+				local crest = Instance.new("WedgePart")
+				crest.Name = "FlameHorn"
+				crest.Size = Vector3.new(0.8, 2.2, 1.4)
+				crest.CFrame = rock.CFrame * CFrame.new(xOff, 1.8, 0) * CFrame.Angles(0, 0, if xOff < 0 then 0.25 else -0.25)
+				crest.Color = traitDef.TrailColor
+				crest.Material = Enum.Material.Neon
+				crest.Anchored = true
+				crest.CanCollide = false
+				crest.Parent = fallbackModel
+			end
+		elseif traitDef.ShapeStyle == "IceSpikes" then
+			for i = 1, 3 do
+				local ang = math.rad(i * 120)
+				local spike = Instance.new("Part")
+				spike.Name = "IceSpike_" .. tostring(i)
+				spike.Size = Vector3.new(0.9, 2.8, 0.9)
+				spike.CFrame = rock.CFrame * CFrame.new(math.cos(ang) * 1.4, 1.6, math.sin(ang) * 1.4) * CFrame.Angles(math.sin(ang) * 0.4, 0, -math.cos(ang) * 0.4)
+				spike.Color = traitDef.TrailColor
+				spike.Material = Enum.Material.Neon
+				spike.Anchored = true
+				spike.CanCollide = false
+				spike.Parent = fallbackModel
+			end
+		else
+			local ring = Instance.new("Part")
+			ring.Name = "AstralRing"
+			ring.Shape = Enum.PartType.Cylinder
+			ring.Size = if isWildAstral then Vector3.new(0.45, 7.8, 7.8) else Vector3.new(0.35, 6.2, 6.2)
+			ring.CFrame = rock.CFrame * CFrame.new(0, 0.6, 0) * CFrame.Angles(0.25, 0, math.rad(90))
+			ring.Color = traitDef.TrailColor
+			ring.Material = Enum.Material.Neon
+			ring.Transparency = 0.25
+			ring.Anchored = true
+			ring.CanCollide = false
+			ring.Parent = fallbackModel
 		end
-	elseif traitDef.ShapeStyle == "IceSpikes" then
-		for i = 1, 3 do
-			local ang = math.rad(i * 120)
-			local spike = Instance.new("Part")
-			spike.Name = "IceSpike_" .. tostring(i)
-			spike.Size = Vector3.new(0.9, 2.8, 0.9)
-			spike.CFrame = body.CFrame * CFrame.new(math.cos(ang) * 1.4, 1.6, math.sin(ang) * 1.4) * CFrame.Angles(math.sin(ang) * 0.4, 0, -math.cos(ang) * 0.4)
-			spike.Color = traitDef.TrailColor
-			spike.Material = Enum.Material.Neon
-			spike.Anchored = true
-			spike.CanCollide = false
-			spike.Parent = model
-		end
-	else
-		local ring = Instance.new("Part")
-		ring.Name = "AstralRing"
-		ring.Shape = Enum.PartType.Cylinder
-		ring.Size = if isWildAstral then Vector3.new(0.45, 7.8, 7.8) else Vector3.new(0.35, 6.2, 6.2)
-		ring.CFrame = body.CFrame * CFrame.new(0, 0.6, 0) * CFrame.Angles(0.25, 0, math.rad(90))
-		ring.Color = traitDef.TrailColor
-		ring.Material = Enum.Material.Neon
-		ring.Transparency = 0.25
-		ring.Anchored = true
-		ring.CanCollide = false
-		ring.Parent = model
 
-		if isWildAstral then
-			local beacon = Instance.new("Part")
-			beacon.Name = "AstralBeacon"
-			beacon.Size = Vector3.new(1.1, 32, 1.1)
-			beacon.CFrame = body.CFrame * CFrame.new(0, 17, 0)
-			beacon.Color = traitDef.CoreColor
-			beacon.Material = Enum.Material.Neon
-			beacon.Transparency = 0.62
-			beacon.Anchored = true
-			beacon.CanCollide = false
-			beacon.CanQuery = false
-			beacon.CanTouch = false
-			beacon.Parent = model
-		end
+		model = fallbackModel
+		body = rock
 	end
 
-	if isLured then
+	local meteorModel = model :: Model
+	local primaryBody = body :: BasePart
+	meteorModel.Name = (if meteor.IsStarter then "StarterMeteor_" elseif isLured then "LuredFrost_" else "WildMeteor_")
+		.. string.sub(meteor.UID, 1, 8)
+	meteorModel:SetAttribute("MeteorUID", meteor.UID)
+	meteorModel:SetAttribute("Trait", meteor.Trait)
+	meteorModel:SetAttribute("IsStarter", meteor.IsStarter)
+	meteorModel:SetAttribute("OwnerUserId", meteor.OwnerUserId or 0)
+	meteorModel:SetAttribute("LuredByUserId", meteor.LuredByUserId or 0)
+	CollectionService:AddTag(meteorModel, Constants.TAG_ACTIVE_METEOR)
+
+	if isWildAstral and meteorModel:FindFirstChild("AstralBeacon") == nil then
+		local beacon = Instance.new("Part")
+		beacon.Name = "AstralBeacon"
+		beacon.Size = Vector3.new(1.1, 32, 1.1)
+		beacon.CFrame = primaryBody.CFrame * CFrame.new(0, 17, 0)
+		beacon.Color = traitDef.CoreColor
+		beacon.Material = Enum.Material.Neon
+		beacon.Transparency = 0.62
+		beacon.Anchored = true
+		beacon.CanCollide = false
+		beacon.CanQuery = false
+		beacon.CanTouch = false
+		beacon.Parent = meteorModel
+	end
+
+	if isLured and meteorModel:FindFirstChild("LureBeacon") == nil then
 		local lureBeacon = Instance.new("Part")
 		lureBeacon.Name = "LureBeacon"
 		lureBeacon.Size = Vector3.new(0.85, 30, 0.85)
-		lureBeacon.CFrame = body.CFrame * CFrame.new(0, 16, 0)
+		lureBeacon.CFrame = primaryBody.CFrame * CFrame.new(0, 16, 0)
 		lureBeacon.Color = Color3.fromRGB(65, 210, 255)
 		lureBeacon.Material = Enum.Material.Neon
 		lureBeacon.Transparency = 0.52
@@ -242,7 +338,14 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		lureBeacon.CanCollide = false
 		lureBeacon.CanQuery = false
 		lureBeacon.CanTouch = false
-		lureBeacon.Parent = model
+		lureBeacon.Parent = meteorModel
+	end
+
+	local _, bboxSize = meteorModel:GetBoundingBox()
+	local labelOffsetY = math.max(if isWildAstral then 5.2 else 3.8, bboxSize.Y * 0.5 + 1.8)
+	-- Keep beacon parts out of label height calculation by clamping reasonably
+	if isWildAstral or isLured then
+		labelOffsetY = if isWildAstral then 5.2 else 4.2
 	end
 
 	local gui = Instance.new("BillboardGui")
@@ -253,7 +356,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		elseif isLured then UDim2.fromOffset(148, 28)
 		elseif isWildFrost then UDim2.fromOffset(100, 24)
 		else UDim2.fromOffset(96, 24)
-	gui.StudsOffset = if isWildAstral then Vector3.new(0, 5.2, 0) else Vector3.new(0, 3.8, 0)
+	gui.StudsOffset = Vector3.new(0, labelOffsetY, 0)
 	gui.AlwaysOnTop = false
 	gui.MaxDistance = if meteor.IsStarter
 		then 65
@@ -261,8 +364,8 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		elseif isLured then 95
 		elseif isWildFrost then 42
 		else 38
-	gui.Adornee = body
-	gui.Parent = body
+	gui.Adornee = primaryBody
+	gui.Parent = primaryBody
 
 	local label = Instance.new("TextLabel")
 	label.Name = "Label"
@@ -297,10 +400,10 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 	prompt.MaxActivationDistance = Constants.PROMPT_ACTIVATION_DISTANCE
 	prompt.RequiresLineOfSight = false
 	prompt.Enabled = true
-	prompt.Parent = body
+	prompt.Parent = primaryBody
 
-	model.Parent = folder
-	return model
+	meteorModel.Parent = folder
+	return meteorModel
 end
 
 local function rollWeightedWildTrait(rng: Random): Types.MeteorTraitId
@@ -1698,6 +1801,83 @@ function MeteorService.RunSelfTest(): number
 		for idx = 2, #ridgeUsers do
 			MeteorService.HandlePlayerClosing(ridgeUsers[idx])
 		end
+
+		-- 5d: S4-02 Hero Meteor template clone verification (non-destructive if real templates exist)
+		local createdMRoot = false
+		local createdMFold = false
+		local createdMMock = false
+		local mOk, mErr = pcall(function()
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			if root == nil then
+				root = Instance.new("Folder")
+				root.Name = Constants.ASSET_TEMPLATES_FOLDER_NAME
+				root.Parent = ReplicatedStorage
+				createdMRoot = true
+			end
+			local mFold = (root :: Instance):FindFirstChild("Meteors")
+			if mFold == nil then
+				mFold = Instance.new("Folder")
+				mFold.Name = "Meteors"
+				mFold.Parent = root
+				createdMFold = true
+			end
+			if (mFold :: Instance):FindFirstChild("Ember") == nil then
+				local tmpl = Instance.new("Model")
+				tmpl.Name = "Ember"
+				local rBody = Instance.new("Part")
+				rBody.Name = "RockBody"
+				rBody.Size = Vector3.new(3.6, 3.0, 3.6)
+				rBody.Position = Vector3.new(0, 1.5, 0)
+				rBody.Parent = tmpl
+				local cShards = Instance.new("Part")
+				cShards.Name = "CoreShards"
+				cShards.Size = Vector3.new(1.5, 1.5, 1.5)
+				cShards.Position = Vector3.new(0, 2.0, 0)
+				cShards.Parent = tmpl
+				local tCrest = Instance.new("Part")
+				tCrest.Name = "TraitCrest"
+				tCrest.Size = Vector3.new(0.8, 1.8, 0.8)
+				tCrest.Position = Vector3.new(0, 3.0, 0)
+				tCrest.Parent = tmpl
+				tmpl.PrimaryPart = rBody
+				tmpl.Parent = mFold
+				createdMMock = true
+			end
+
+			wildNodeCooldownUntil = {}
+			local tmplOk, _, tmplRaw = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Ember", 5220)
+			assert(tmplOk and tmplRaw ~= nil, "Template Ember meteor spawns cleanly")
+			local tmplMeteor = tmplRaw :: ActiveMeteor
+			table.insert(createdMeteorUIDs, tmplMeteor.UID)
+			local tmplModel = tmplMeteor.Model
+			assert(tmplModel ~= nil and tmplModel.PrimaryPart ~= nil and tmplModel.PrimaryPart.Name == "RockBody", "Template meteor PrimaryPart is RockBody")
+			assert(tmplModel:FindFirstChild("CoreShards") ~= nil and tmplModel:FindFirstChild("TraitCrest") ~= nil, "Template meteor retains sub-parts")
+			assert(tmplModel.PrimaryPart:FindFirstChild("RescuePrompt") ~= nil and tmplModel.PrimaryPart:FindFirstChild("MeteorLabel") ~= nil, "Template meteor has RescuePrompt & MeteorLabel")
+			assert(CollectionService:HasTag(tmplModel, Constants.TAG_ACTIVE_METEOR), "Template meteor tagged StarfallActiveMeteor")
+			removeMeteorInternal(tmplMeteor.UID)
+		end)
+		if createdMMock then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			local mFold = if root ~= nil then root:FindFirstChild("Meteors") else nil
+			local mockEmber = if mFold ~= nil then mFold:FindFirstChild("Ember") else nil
+			if mockEmber ~= nil then
+				mockEmber:Destroy()
+			end
+		end
+		if createdMFold then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			local mFold = if root ~= nil then root:FindFirstChild("Meteors") else nil
+			if mFold ~= nil then
+				mFold:Destroy()
+			end
+		end
+		if createdMRoot then
+			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+			if root ~= nil then
+				root:Destroy()
+			end
+		end
+		assert(mOk, tostring(mErr))
 		passed += 1
 	end)
 

@@ -21,8 +21,10 @@ local PlotVisualController = require(ControllersFolder:WaitForChild("PlotVisualC
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
-local CritterConfig = require(Shared:WaitForChild("Config"):WaitForChild("CritterConfig"))
-local UpgradeConfig = require(Shared:WaitForChild("Config"):WaitForChild("UpgradeConfig"))
+local ConfigFolder = Shared:WaitForChild("Config")
+local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
+local MeteorConfig = require(ConfigFolder:WaitForChild("MeteorConfig"))
+local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 local EconomyMath = require(Shared:WaitForChild("Util"):WaitForChild("EconomyMath"))
 local FormatUtil = require(Shared:WaitForChild("Util"):WaitForChild("FormatUtil"))
 
@@ -45,6 +47,13 @@ export type TopHudLayout = {
 	SettingsWidth: number,
 }
 
+export type DrawerLayout = {
+	X: number,
+	Y: number,
+	Width: number,
+	Height: number,
+}
+
 type TimerBinding = {
 	Label: TextLabel,
 	MaturesAt: number,
@@ -52,8 +61,8 @@ type TimerBinding = {
 	WasMature: boolean,
 }
 
-local WIDE_TOP_HUD_MIN_WIDTH = 520
-local ACTION_TRAY_WIDTH = 258
+local WIDE_TOP_HUD_MIN_WIDTH = 560
+local ACTION_TRAY_WIDTH = 288
 
 local PALETTE = {
 	PanelDark = Color3.fromRGB(24, 22, 38),
@@ -78,6 +87,7 @@ local stateChangedCallbacks: { (dto: Types.OwnerStateDTO) -> () } = {}
 local syncConn: RBXScriptConnection? = nil
 local sizeChangedConn: RBXScriptConnection? = nil
 local layoutChangedConn: RBXScriptConnection? = nil
+local guideLayoutChangedConn: RBXScriptConnection? = nil
 local plotActionRemote: RemoteEvent? = nil
 local buyUpgradeRemote: RemoteFunction? = nil
 local navigateRemote: RemoteFunction? = nil
@@ -92,6 +102,7 @@ local bagLabel: TextLabel? = nil
 local hubButton: TextButton? = nil
 local ranchButton: TextButton? = nil
 local bagButton: TextButton? = nil
+local guideButton: TextButton? = nil
 local settingsButton: TextButton? = nil
 local toastLabel: TextLabel? = nil
 local hintBarFrame: Frame? = nil
@@ -113,12 +124,27 @@ local bagRebuildCount = 0
 local bagRestoreToken = 0
 local bagRestoreInFlight = false
 
+local guideDrawer: Frame? = nil
+local guideProgressLabel: TextLabel? = nil
+local guideProgressFill: Frame? = nil
+local guideScrollFrame: ScrollingFrame? = nil
+local guideScrollLayout: UIListLayout? = nil
+local guideCloseButton: TextButton? = nil
+local firstGuideSelectable: GuiObject? = nil
+local guideButtonsByKey: { [string]: GuiObject } = {}
+local lastFocusedGuideKey: string? = nil
+local lastGuideStructureSignature: string? = nil
+local guideRebuildCount = 0
+local guideRestoreToken = 0
+local guideRestoreInFlight = false
+
 local settingsDrawer: Frame? = nil
 local muteToggleButton: TextButton? = nil
 local motionToggleButton: TextButton? = nil
 local controlsHintLabel: TextLabel? = nil
 
 local bagOpen = false
+local guideOpen = false
 local settingsOpen = false
 local currentInputMode: InputMode = "Keyboard"
 local toastToken = 0
@@ -169,6 +195,14 @@ local function makeTextButton(
 	return btn
 end
 
+local function trapGamepadFocus(frame: Frame): ()
+	frame.SelectionGroup = true
+	frame.SelectionBehaviorUp = Enum.SelectionBehavior.Stop
+	frame.SelectionBehaviorDown = Enum.SelectionBehavior.Stop
+	frame.SelectionBehaviorLeft = Enum.SelectionBehavior.Stop
+	frame.SelectionBehaviorRight = Enum.SelectionBehavior.Stop
+end
+
 function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
 	local width = if typeof(safeWidth) == "number" and safeWidth == safeWidth and safeWidth > 0 then safeWidth else 320
 
@@ -213,6 +247,24 @@ function UIController.ComputeTopHudLayout(safeWidth: number): TopHudLayout
 	}
 end
 
+function UIController.ComputeDrawerLayout(safeWidth: number, safeHeight: number): DrawerLayout
+	local w = if typeof(safeWidth) == "number" and safeWidth == safeWidth and safeWidth > 0 then safeWidth else 320
+	local h = if typeof(safeHeight) == "number" and safeHeight == safeHeight and safeHeight > 0 then safeHeight else 568
+	local topLayout = UIController.ComputeTopHudLayout(w)
+	local topClear = math.max(topLayout.ResourceY + topLayout.ResourceHeight, topLayout.ActionsY + topLayout.ActionsHeight) + 6
+	local availH = math.max(180, h - topClear - 10)
+	local drawerW = math.clamp(math.floor(w * 0.94), math.min(280, w - 12), 600)
+	local drawerH = math.clamp(math.floor(h * 0.72), math.min(210, availH), math.min(520, availH))
+	local drawerX = math.floor((w - drawerW) * 0.5)
+	local drawerY = math.clamp(math.floor((h - drawerH) * 0.5), topClear, math.max(topClear, h - drawerH - 6))
+	return {
+		X = drawerX,
+		Y = drawerY,
+		Width = drawerW,
+		Height = drawerH,
+	}
+end
+
 local function applyResponsiveTopLayout(): ()
 	local screenGui = hudGui
 	if screenGui == nil then
@@ -220,8 +272,11 @@ local function applyResponsiveTopLayout(): ()
 	end
 
 	local rawWidth = screenGui.AbsoluteSize.X
+	local rawHeight = screenGui.AbsoluteSize.Y
 	local safeWidth = if rawWidth > 0 then rawWidth else 320
+	local safeHeight = if rawHeight > 0 then rawHeight else 568
 	local layout = UIController.ComputeTopHudLayout(safeWidth)
+	local dLayout = UIController.ComputeDrawerLayout(safeWidth, safeHeight)
 
 	if resourceBarFrame ~= nil then
 		resourceBarFrame.AnchorPoint = Vector2.new(0, 0)
@@ -236,11 +291,37 @@ local function applyResponsiveTopLayout(): ()
 	if toastLabel ~= nil then
 		toastLabel.Position = UDim2.new(0.5, 0, 0, layout.ToastY)
 	end
+	if bagDrawer ~= nil then
+		bagDrawer.AnchorPoint = Vector2.new(0, 0)
+		bagDrawer.Position = UDim2.fromOffset(dLayout.X, dLayout.Y)
+		bagDrawer.Size = UDim2.fromOffset(dLayout.Width, dLayout.Height)
+	end
+	if guideDrawer ~= nil then
+		guideDrawer.AnchorPoint = Vector2.new(0, 0)
+		guideDrawer.Position = UDim2.fromOffset(dLayout.X, dLayout.Y)
+		guideDrawer.Size = UDim2.fromOffset(dLayout.Width, dLayout.Height)
+	end
 	if settingsDrawer ~= nil then
 		settingsDrawer.AnchorPoint = Vector2.new(0, 0)
 		settingsDrawer.Position = UDim2.fromOffset(layout.SettingsX, layout.SettingsY)
 		settingsDrawer.Size = UDim2.fromOffset(layout.SettingsWidth, 224)
 	end
+end
+
+function UIController.ComputeGuideStructureSignature(dto: Types.OwnerStateDTO): string
+	local radiantBySpecies: { [Types.SpeciesId]: boolean } = {}
+	for _, item in pairs(dto.Items) do
+		if item.Variant == "Radiant" then
+			radiantBySpecies[item.SpeciesId] = true
+		end
+	end
+	local parts: { string } = {}
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		local discFlag = if dto.DiscoveredSpecies[speciesId] == true then "1" else "0"
+		local radFlag = if radiantBySpecies[speciesId] == true then "1" else "0"
+		table.insert(parts, string.format("%s:%s:%s", speciesId, discFlag, radFlag))
+	end
+	return table.concat(parts, ";")
 end
 
 function UIController.ComputeBagStructureSignature(dto: Types.OwnerStateDTO, pendingSellUID: string?): string
@@ -402,11 +483,11 @@ local function updateActionButtonsText(): ()
 
 	if controlsHintLabel ~= nil then
 		if currentInputMode == "Touch" then
-			controlsHintLabel.Text = "Touch: Tap Meteors & Station Prompts | Tap Gold Zone during Rescue"
+			controlsHintLabel.Text = "Touch: Tap Meteors, Prompts, Bag & Guide buttons"
 		elseif currentInputMode == "Gamepad" then
-			controlsHintLabel.Text = "Gamepad: X Rescue / Gold Burst | Y Bag | B Close Drawer"
+			controlsHintLabel.Text = "Gamepad: X Rescue | Y Bag | L1 Guide | B Close Drawer"
 		else
-			controlsHintLabel.Text = "Keyboard: E Interact / Space Gold Burst | B Open Bag"
+			controlsHintLabel.Text = "Keyboard: E Interact / Space Burst | B Bag | G Guide"
 		end
 	end
 end
@@ -498,9 +579,7 @@ local function updateContextualHint(): ()
 	end
 end
 
-local function syncBagCanvasSize(minHeight: number?): ()
-	local scroll = bagScrollFrame
-	local layout = bagScrollLayout
+local function syncScrollCanvasSize(scroll: ScrollingFrame?, layout: UIListLayout?, minHeight: number?): ()
 	if scroll == nil or layout == nil then
 		return
 	end
@@ -511,14 +590,21 @@ local function syncBagCanvasSize(minHeight: number?): ()
 	scroll.CanvasSize = UDim2.fromOffset(0, contentH)
 end
 
-local function getMaxBagScrollY(): number
-	local scroll = bagScrollFrame
+local function getMaxScrollY(scroll: ScrollingFrame?, layout: UIListLayout?): number
 	if scroll == nil then
 		return 0
 	end
-	local layoutH = if bagScrollLayout ~= nil then math.ceil(bagScrollLayout.AbsoluteContentSize.Y) + 16 else 0
+	local layoutH = if layout ~= nil then math.ceil(layout.AbsoluteContentSize.Y) + 16 else 0
 	local canvasH = math.max(scroll.AbsoluteCanvasSize.Y, layoutH)
 	return math.max(0, canvasH - scroll.AbsoluteWindowSize.Y)
+end
+
+local function syncBagCanvasSize(minHeight: number?): ()
+	syncScrollCanvasSize(bagScrollFrame, bagScrollLayout, minHeight)
+end
+
+local function getMaxBagScrollY(): number
+	return getMaxScrollY(bagScrollFrame, bagScrollLayout)
 end
 
 local function canSelectGuiObject(target: GuiObject?): boolean
@@ -575,11 +661,27 @@ local function resolveBagSelectionTarget(preferredKey: string?): GuiObject?
 	return firstBagSelectable or bagCloseButton
 end
 
-local rebuildBagContents: (preserveFocusAndScroll: boolean?) -> ()
+local function resolveGuideSelectionTarget(preferredKey: string?): GuiObject?
+	if preferredKey ~= nil then
+		if guideButtonsByKey[preferredKey] ~= nil then
+			return guideButtonsByKey[preferredKey]
+		end
+		if preferredKey == "CloseGuide" and guideCloseButton ~= nil then
+			return guideCloseButton
+		end
+	end
+	return firstGuideSelectable or guideCloseButton
+end
 
-local function applyDrawerVisibility(preferredBagKey: string?): ()
+local rebuildBagContents: (preserveFocusAndScroll: boolean?) -> ()
+local rebuildFieldGuideContents: (preserveFocusAndScroll: boolean?) -> ()
+
+local function applyDrawerVisibility(preferredBagKey: string?, preferredGuideKey: string?): ()
 	if bagDrawer ~= nil then
 		bagDrawer.Visible = bagOpen
+	end
+	if guideDrawer ~= nil then
+		guideDrawer.Visible = guideOpen
 	end
 	if settingsDrawer ~= nil then
 		settingsDrawer.Visible = settingsOpen
@@ -595,6 +697,15 @@ local function applyDrawerVisibility(preferredBagKey: string?): ()
 			local insideBag = currentSelected ~= nil and bagDrawer ~= nil and currentSelected:IsDescendantOf(bagDrawer)
 			if preferredBagKey ~= nil or not insideBag then
 				local target = resolveBagSelectionTarget(preferredBagKey or lastFocusedBagKey)
+				safeSetSelectedObject(target)
+			end
+		end
+	elseif guideOpen then
+		if not guideRestoreInFlight then
+			local currentSelected = GuiService.SelectedObject
+			local insideGuide = currentSelected ~= nil and guideDrawer ~= nil and currentSelected:IsDescendantOf(guideDrawer)
+			if preferredGuideKey ~= nil or not insideGuide then
+				local target = resolveGuideSelectionTarget(preferredGuideKey or lastFocusedGuideKey)
 				safeSetSelectedObject(target)
 			end
 		end
@@ -1351,6 +1462,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	if bagDrawer ~= nil then
 		bagDrawer.Visible = bagOpen
 	end
+	if guideDrawer ~= nil then
+		guideDrawer.Visible = guideOpen
+	end
 	if settingsDrawer ~= nil then
 		settingsDrawer.Visible = settingsOpen
 	end
@@ -1401,6 +1515,282 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	end)
 end
 
+local function getTraitBadgeForSpecies(speciesId: Types.SpeciesId): string
+	local traits: { string } = {}
+	for _, traitId in ipairs(MeteorConfig.OrderedIds) do
+		local tDef = MeteorConfig.ById[traitId]
+		if tDef ~= nil and (tDef.DropWeights[speciesId] or 0) > 0 then
+			table.insert(traits, tDef.IconText)
+		end
+	end
+	if #traits == 0 then
+		return "[CRATER]"
+	end
+	return "[" .. table.concat(traits, " / ") .. "]"
+end
+
+local function syncGuideCanvasSize(minHeight: number?): ()
+	syncScrollCanvasSize(guideScrollFrame, guideScrollLayout, minHeight)
+end
+
+local function getMaxGuideScrollY(): number
+	return getMaxScrollY(guideScrollFrame, guideScrollLayout)
+end
+
+rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
+	local scroll = guideScrollFrame
+	if scroll == nil then
+		return
+	end
+
+	local preserve = preserveFocusAndScroll == true
+	local savedCanvasPos = if preserve then scroll.CanvasPosition else Vector2.zero
+	local prevCanvasHeight = if preserve then math.max(scroll.AbsoluteCanvasSize.Y, scroll.CanvasSize.Y.Offset, 1) else 0
+	local preferredKey: string? = nil
+	if preserve then
+		local currentSelected = GuiService.SelectedObject
+		if currentSelected ~= nil and guideDrawer ~= nil and currentSelected:IsDescendantOf(guideDrawer) then
+			local attr = currentSelected:GetAttribute("GuideActionKey")
+			if typeof(attr) == "string" then
+				preferredKey = attr
+			end
+		end
+		if preferredKey == nil then
+			preferredKey = lastFocusedGuideKey
+		end
+	end
+
+	guideRestoreToken += 1
+	local myToken = guideRestoreToken
+	guideRestoreInFlight = true
+
+	local currentSelected = GuiService.SelectedObject
+	if currentSelected ~= nil and currentSelected:IsDescendantOf(scroll) then
+		GuiService.SelectedObject = nil
+	end
+	if preserve then
+		scroll.CanvasSize = UDim2.fromOffset(0, prevCanvasHeight)
+	end
+
+	for _, child in ipairs(scroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	guideButtonsByKey = {}
+	firstGuideSelectable = nil
+
+	local function registerGuideButton(actionKey: string, btn: GuiObject): ()
+		btn:SetAttribute("GuideActionKey", actionKey)
+		guideButtonsByKey[actionKey] = btn
+		btn.SelectionGained:Connect(function()
+			lastFocusedGuideKey = actionKey
+		end)
+		if firstGuideSelectable == nil then
+			firstGuideSelectable = btn
+		end
+	end
+
+	local dto = latestOwnerState
+	if dto == nil then
+		createEmptyNote(scroll, "Loading Cosmic Field Guide...", 1)
+		lastGuideStructureSignature = nil
+		syncGuideCanvasSize(nil)
+		guideRestoreInFlight = false
+		applyDrawerVisibility(nil, nil)
+		return
+	end
+
+	local radiantBySpecies: { [Types.SpeciesId]: boolean } = {}
+	for _, item in pairs(dto.Items) do
+		if item.Variant == "Radiant" then
+			radiantBySpecies[item.SpeciesId] = true
+		end
+	end
+
+	local discoveredCount = 0
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		if dto.DiscoveredSpecies[speciesId] == true then
+			discoveredCount += 1
+		end
+	end
+	local totalSpecies = #CritterConfig.OrderedIds
+
+	if guideProgressLabel ~= nil then
+		guideProgressLabel.Text = string.format(
+			"Discovered: %d / %d  •  Cosmetic Checklist (No Stat Bonuses)",
+			discoveredCount,
+			totalSpecies
+		)
+	end
+	if guideProgressFill ~= nil then
+		local ratio = if totalSpecies > 0 then math.clamp(discoveredCount / totalSpecies, 0, 1) else 0
+		guideProgressFill.Size = UDim2.fromScale(ratio, 1)
+	end
+
+	local order = 1
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		local def = CritterConfig.ById[speciesId]
+		local discovered = dto.DiscoveredSpecies[speciesId] == true
+		local hasRadiant = radiantBySpecies[speciesId] == true
+		local traitBadge = getTraitBadgeForSpecies(speciesId)
+
+		local card = Instance.new("TextButton")
+		card.Name = "GuideCard_" .. speciesId
+		card.Size = UDim2.new(1, 0, 0, 82)
+		card.BackgroundColor3 = PALETTE.CardDark
+		card.BorderSizePixel = 0
+		card.Text = ""
+		card.AutoButtonColor = false
+		card.Selectable = true
+		card.LayoutOrder = order
+		order += 1
+		addCorner(card, 10)
+		addStroke(card, if discovered then def.BodyColor else PALETTE.BorderSoft, if hasRadiant then 1.8 else 1.2)
+		card.Parent = scroll
+		registerGuideButton("Species:" .. speciesId, card)
+
+		local swatchHolder = Instance.new("Frame")
+		swatchHolder.Size = UDim2.fromOffset(12, 62)
+		swatchHolder.Position = UDim2.new(0, 8, 0.5, -31)
+		swatchHolder.BackgroundColor3 = if discovered then def.BodyColor else Color3.fromRGB(40, 38, 56)
+		swatchHolder.BorderSizePixel = 0
+		addCorner(swatchHolder, 4)
+		swatchHolder.Parent = card
+
+		local swatchBottom = Instance.new("Frame")
+		swatchBottom.Size = UDim2.new(1, 0, 0.42, 0)
+		swatchBottom.Position = UDim2.fromScale(0, 0.58)
+		swatchBottom.BackgroundColor3 = if discovered then def.SecondaryColor else Color3.fromRGB(28, 26, 40)
+		swatchBottom.BorderSizePixel = 0
+		addCorner(swatchBottom, 3)
+		swatchBottom.Parent = swatchHolder
+
+		local title = Instance.new("TextLabel")
+		title.Size = UDim2.new(1, -124, 0, 22)
+		title.Position = UDim2.fromOffset(28, 8)
+		title.BackgroundTransparency = 1
+		title.Font = Enum.Font.GothamBold
+		title.TextSize = 14
+		title.TextXAlignment = Enum.TextXAlignment.Left
+		title.TextTruncate = Enum.TextTruncate.AtEnd
+		title.TextColor3 = if discovered then PALETTE.TextCream else PALETTE.TextMuted
+		title.Text = if discovered
+			then (string.format("%s [%s]%s", def.DisplayName, def.Rarity, if hasRadiant then "  ★ Radiant" else ""))
+			else string.format("??? [%s]", def.Rarity)
+		title.Parent = card
+
+		local details = Instance.new("TextLabel")
+		details.Size = UDim2.new(1, -124, 0, 18)
+		details.Position = UDim2.fromOffset(28, 32)
+		details.BackgroundTransparency = 1
+		details.Font = Enum.Font.GothamMedium
+		details.TextSize = 12
+		details.TextXAlignment = Enum.TextXAlignment.Left
+		details.TextTruncate = Enum.TextTruncate.AtEnd
+		details.TextColor3 = if discovered then PALETTE.MeadowMint else PALETTE.OrbitalCyan
+		details.Text = if discovered
+			then string.format("+%d/s  |  Sell %d  |  %ds  |  %s", def.CoinsPerSecond, def.SellPrice, def.HatchSeconds, traitBadge)
+			else ("Clue: " .. def.FieldClue)
+		details.Parent = card
+
+		local subInfo = Instance.new("TextLabel")
+		subInfo.Size = UDim2.new(1, -124, 0, 18)
+		subInfo.Position = UDim2.fromOffset(28, 54)
+		subInfo.BackgroundTransparency = 1
+		subInfo.Font = Enum.Font.GothamMedium
+		subInfo.TextSize = 11
+		subInfo.TextXAlignment = Enum.TextXAlignment.Left
+		subInfo.TextTruncate = Enum.TextTruncate.AtEnd
+		subInfo.TextColor3 = PALETTE.TextMuted
+		subInfo.Text = if discovered then def.Description else ("Source: " .. traitBadge .. " Meteors")
+		subInfo.Parent = card
+
+		local badge = Instance.new("TextLabel")
+		badge.Size = UDim2.fromOffset(82, 34)
+		badge.Position = UDim2.new(1, -92, 0.5, -17)
+		badge.BackgroundColor3 = PALETTE.PanelDark
+		badge.TextColor3 = if discovered then PALETTE.MeadowMint else PALETTE.TextMuted
+		badge.Font = Enum.Font.GothamBold
+		badge.TextSize = 12
+		badge.Text = if discovered then "Found" else "Locked"
+		addCorner(badge, 8)
+		badge.Parent = card
+
+		card.Activated:Connect(function()
+			SoundController.Play("Click")
+			if discovered then
+				UIController.ShowToast(
+					string.format("%s: %s%s", def.DisplayName, def.Description, if hasRadiant then " (Radiant seen!)" else ""),
+					"Info"
+				)
+			else
+				UIController.ShowToast(string.format("Clue (%s): %s %s", def.Rarity, def.FieldClue, traitBadge), "Info")
+			end
+		end)
+	end
+
+	createEmptyNote(scroll, "Radiant Variant (10% hatch): Purely cosmetic gold halo & sparkles — zero Coin/Sell multiplier.", order)
+
+	guideRebuildCount += 1
+	lastGuideStructureSignature = UIController.ComputeGuideStructureSignature(dto)
+
+	if bagDrawer ~= nil then
+		bagDrawer.Visible = bagOpen
+	end
+	if guideDrawer ~= nil then
+		guideDrawer.Visible = guideOpen
+	end
+	if settingsDrawer ~= nil then
+		settingsDrawer.Visible = settingsOpen
+	end
+
+	task.spawn(function()
+		RunService.RenderStepped:Wait()
+		if myToken ~= guideRestoreToken then
+			return
+		end
+		syncGuideCanvasSize(nil)
+		if guideScrollLayout ~= nil and guideScrollLayout.AbsoluteContentSize.Y == 0 and #scroll:GetChildren() > 1 then
+			RunService.RenderStepped:Wait()
+			if myToken ~= guideRestoreToken then
+				return
+			end
+			syncGuideCanvasSize(nil)
+		end
+
+		if not guideOpen then
+			guideRestoreInFlight = false
+			return
+		end
+
+		local maxScrollY = getMaxGuideScrollY()
+		if preserve then
+			scroll.CanvasPosition = Vector2.new(savedCanvasPos.X, math.clamp(savedCanvasPos.Y, 0, maxScrollY))
+		else
+			scroll.CanvasPosition = Vector2.zero
+		end
+
+		if currentInputMode == "Gamepad" then
+			local target = resolveGuideSelectionTarget(if preserve then preferredKey else lastFocusedGuideKey)
+			safeSetSelectedObject(target)
+			if preserve and target ~= nil then
+				local winTop = scroll.AbsolutePosition.Y
+				local winBottom = winTop + scroll.AbsoluteWindowSize.Y
+				local targetTop = target.AbsolutePosition.Y
+				local targetBottom = targetTop + target.AbsoluteSize.Y
+				if targetTop >= winTop - 2 and targetBottom <= winBottom + 2 then
+					scroll.CanvasPosition = Vector2.new(savedCanvasPos.X, math.clamp(savedCanvasPos.Y, 0, maxScrollY))
+				end
+			end
+		end
+
+		if myToken == guideRestoreToken then
+			guideRestoreInFlight = false
+		end
+	end)
+end
+
 local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
 	local bagCount, incubatingCount, _, totalRate = countBagAndIncome(dto)
 	local committed = bagCount + incubatingCount
@@ -1435,6 +1825,13 @@ local function refreshAllHUD(dto: Types.OwnerStateDTO): ()
 			rebuildBagContents(true)
 		end
 	end
+
+	if guideOpen then
+		local nextGuideSig = UIController.ComputeGuideStructureSignature(dto)
+		if nextGuideSig ~= lastGuideStructureSignature then
+			rebuildFieldGuideContents(true)
+		end
+	end
 end
 
 local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextDto: Types.OwnerStateDTO): ()
@@ -1461,6 +1858,22 @@ local function handleAuthoritativeStateDiff(prevDto: Types.OwnerStateDTO?, nextD
 			local soldAmount = EconomyMath.GetCritterSellPrice(prevItem.SpeciesId, prevItem.Variant, prevItem.FeedLevel)
 			SoundController.Play("Sell")
 			UIController.ShowToast(string.format("Sold %s for +%s Coins!", def.DisplayName, FormatUtil.FormatCoins(soldAmount)), "Success")
+		end
+	end
+
+	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
+		if prevDto.DiscoveredSpecies[speciesId] ~= true and nextDto.DiscoveredSpecies[speciesId] == true then
+			local def = CritterConfig.ById[speciesId]
+			local discTotal = 0
+			for _, sid in ipairs(CritterConfig.OrderedIds) do
+				if nextDto.DiscoveredSpecies[sid] == true then
+					discTotal += 1
+				end
+			end
+			UIController.ShowToast(
+				string.format("NEW DISCOVERY: %s! (%d/%d in Field Guide)", def.DisplayName, discTotal, #CritterConfig.OrderedIds),
+				"Success"
+			)
 		end
 	end
 
@@ -1575,7 +1988,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	actionLayout.FillDirection = Enum.FillDirection.Horizontal
 	actionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 	actionLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	actionLayout.Padding = UDim.new(0, 6)
+	actionLayout.Padding = UDim.new(0, 5)
 	actionLayout.Parent = actionRow
 
 	local function triggerNavigation(target: Types.NavigationTarget, customInvoker: ((Types.NavigationTarget) -> any)?): boolean
@@ -1643,21 +2056,21 @@ function UIController.Init(self: typeof(UIController)): ()
 	end
 	navigateDispatcher = triggerNavigation
 
-	local hubBtn = makeTextButton(actionRow, "HubButton", "Hub", PALETTE.AstralViolet, PALETTE.PanelDark, UDim2.fromOffset(52, 44), 13)
+	local hubBtn = makeTextButton(actionRow, "HubButton", "Hub", PALETTE.AstralViolet, PALETTE.PanelDark, UDim2.fromOffset(46, 44), 12)
 	hubBtn.LayoutOrder = 1
 	hubBtn.Activated:Connect(function()
 		triggerNavigation("Hub")
 	end)
 	hubButton = hubBtn
 
-	local ranchBtn = makeTextButton(actionRow, "RanchButton", "Ranch", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(64, 44), 13)
+	local ranchBtn = makeTextButton(actionRow, "RanchButton", "Ranch", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(54, 44), 12)
 	ranchBtn.LayoutOrder = 2
 	ranchBtn.Activated:Connect(function()
 		triggerNavigation("Ranch")
 	end)
 	ranchButton = ranchBtn
 
-	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag (0)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(80, 44), 12)
+	local bagBtn = makeTextButton(actionRow, "BagButton", "Bag (0)", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(64, 44), 12)
 	bagBtn.LayoutOrder = 3
 	bagBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -1665,8 +2078,16 @@ function UIController.Init(self: typeof(UIController)): ()
 	end)
 	bagButton = bagBtn
 
+	local guideBtn = makeTextButton(actionRow, "GuideButton", "Guide", PALETTE.StarlightGold, PALETTE.PanelDark, UDim2.fromOffset(60, 44), 12)
+	guideBtn.LayoutOrder = 4
+	guideBtn.Activated:Connect(function()
+		SoundController.Play("Click")
+		UIController.ToggleFieldGuide()
+	end)
+	guideButton = guideBtn
+
 	local setBtn = makeTextButton(actionRow, "SettingsButton", "⚙", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(44, 44), 18)
-	setBtn.LayoutOrder = 4
+	setBtn.LayoutOrder = 5
 	addStroke(setBtn, PALETTE.BorderSoft, 1.5)
 	setBtn.Activated:Connect(function()
 		SoundController.Play("Click")
@@ -1729,19 +2150,16 @@ function UIController.Init(self: typeof(UIController)): ()
 	-- Bag & Keep-vs-Sell Drawer
 	local drawer = Instance.new("Frame")
 	drawer.Name = "BagDrawer"
-	drawer.AnchorPoint = Vector2.new(0.5, 0.5)
-	drawer.Position = UDim2.fromScale(0.5, 0.5)
-	drawer.Size = UDim2.fromScale(0.94, 0.72)
+	drawer.AnchorPoint = Vector2.new(0, 0)
+	drawer.Position = UDim2.fromOffset(10, 104)
+	drawer.Size = UDim2.fromOffset(300, 400)
 	drawer.BackgroundColor3 = PALETTE.PanelDark
 	drawer.BackgroundTransparency = 0.04
 	drawer.BorderSizePixel = 0
 	drawer.Visible = false
 	addCorner(drawer, 16)
 	addStroke(drawer, PALETTE.OrbitalCyan, 1.5)
-	local drawerConstraint = Instance.new("UISizeConstraint")
-	drawerConstraint.MinSize = Vector2.new(280, 260)
-	drawerConstraint.MaxSize = Vector2.new(600, 520)
-	drawerConstraint.Parent = drawer
+	trapGamepadFocus(drawer)
 	drawer.Parent = screenGui
 	bagDrawer = drawer
 
@@ -1810,6 +2228,106 @@ function UIController.Init(self: typeof(UIController)): ()
 		end
 	end)
 
+	-- Dedicated Discovered Species Checklist ("Cosmic Field Guide") Drawer
+	local gDrawer = Instance.new("Frame")
+	gDrawer.Name = "FieldGuideDrawer"
+	gDrawer.AnchorPoint = Vector2.new(0, 0)
+	gDrawer.Position = UDim2.fromOffset(10, 104)
+	gDrawer.Size = UDim2.fromOffset(300, 400)
+	gDrawer.BackgroundColor3 = PALETTE.PanelDark
+	gDrawer.BackgroundTransparency = 0.04
+	gDrawer.BorderSizePixel = 0
+	gDrawer.Visible = false
+	addCorner(gDrawer, 16)
+	addStroke(gDrawer, PALETTE.StarlightGold, 1.5)
+	trapGamepadFocus(gDrawer)
+	gDrawer.Parent = screenGui
+	guideDrawer = gDrawer
+
+	local gTitle = Instance.new("TextLabel")
+	gTitle.Size = UDim2.new(1, -76, 0, 26)
+	gTitle.Position = UDim2.fromOffset(16, 10)
+	gTitle.BackgroundTransparency = 1
+	gTitle.Text = "Cosmic Field Guide"
+	gTitle.TextColor3 = PALETTE.StarlightGold
+	gTitle.Font = Enum.Font.GothamBold
+	gTitle.TextSize = 18
+	gTitle.TextXAlignment = Enum.TextXAlignment.Left
+	gTitle.Parent = gDrawer
+
+	local gProgSub = Instance.new("TextLabel")
+	gProgSub.Size = UDim2.new(1, -76, 0, 18)
+	gProgSub.Position = UDim2.fromOffset(16, 36)
+	gProgSub.BackgroundTransparency = 1
+	gProgSub.Text = "Discovered: 0 / 6  •  Cosmetic Checklist"
+	gProgSub.TextColor3 = PALETTE.TextCream
+	gProgSub.Font = Enum.Font.GothamMedium
+	gProgSub.TextSize = 12
+	gProgSub.TextXAlignment = Enum.TextXAlignment.Left
+	gProgSub.TextTruncate = Enum.TextTruncate.AtEnd
+	gProgSub.Parent = gDrawer
+	guideProgressLabel = gProgSub
+
+	local gProgTrack = Instance.new("Frame")
+	gProgTrack.Name = "GuideProgressTrack"
+	gProgTrack.Size = UDim2.new(1, -32, 0, 8)
+	gProgTrack.Position = UDim2.fromOffset(16, 58)
+	gProgTrack.BackgroundColor3 = PALETTE.CardDark
+	gProgTrack.BorderSizePixel = 0
+	addCorner(gProgTrack, 4)
+	gProgTrack.Parent = gDrawer
+
+	local gProgFill = Instance.new("Frame")
+	gProgFill.Name = "GuideProgressFill"
+	gProgFill.Size = UDim2.fromScale(0, 1)
+	gProgFill.BackgroundColor3 = PALETTE.StarlightGold
+	gProgFill.BorderSizePixel = 0
+	addCorner(gProgFill, 4)
+	gProgFill.Parent = gProgTrack
+	guideProgressFill = gProgFill
+
+	local closeGuideBtn = makeTextButton(gDrawer, "CloseGuideBtn", "X", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(44, 44), 16)
+	closeGuideBtn.AnchorPoint = Vector2.new(1, 0)
+	closeGuideBtn.Position = UDim2.new(1, -12, 0, 10)
+	closeGuideBtn:SetAttribute("GuideActionKey", "CloseGuide")
+	closeGuideBtn.SelectionGained:Connect(function()
+		lastFocusedGuideKey = "CloseGuide"
+	end)
+	addStroke(closeGuideBtn, PALETTE.BorderSoft, 1)
+	closeGuideBtn.Activated:Connect(function()
+		SoundController.Play("Click")
+		UIController.CloseDrawers()
+	end)
+	guideCloseButton = closeGuideBtn
+
+	local gScroll = Instance.new("ScrollingFrame")
+	gScroll.Name = "FieldGuideScroll"
+	gScroll.Position = UDim2.fromOffset(12, 74)
+	gScroll.Size = UDim2.new(1, -24, 1, -86)
+	gScroll.BackgroundTransparency = 1
+	gScroll.BorderSizePixel = 0
+	gScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	gScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+	gScroll.ScrollBarThickness = 6
+	gScroll.ScrollBarImageColor3 = PALETTE.StarlightGold
+	gScroll.Parent = gDrawer
+	guideScrollFrame = gScroll
+
+	local gScrollLayout = Instance.new("UIListLayout")
+	gScrollLayout.Padding = UDim.new(0, 8)
+	gScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	gScrollLayout.Parent = gScroll
+	guideScrollLayout = gScrollLayout
+
+	if guideLayoutChangedConn ~= nil then
+		guideLayoutChangedConn:Disconnect()
+	end
+	guideLayoutChangedConn = gScrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		if not guideRestoreInFlight then
+			syncGuideCanvasSize(nil)
+		end
+	end)
+
 	-- Settings Popover
 	local sDrawer = Instance.new("Frame")
 	sDrawer.Name = "SettingsDrawer"
@@ -1822,6 +2340,7 @@ function UIController.Init(self: typeof(UIController)): ()
 	sDrawer.Visible = false
 	addCorner(sDrawer, 14)
 	addStroke(sDrawer, PALETTE.BorderSoft, 1.5)
+	trapGamepadFocus(sDrawer)
 	sDrawer.Parent = screenGui
 	settingsDrawer = sDrawer
 
@@ -1973,12 +2492,18 @@ function UIController.GetHudScreenGui(): ScreenGui?
 end
 
 function UIController.IsDrawerOpen(): boolean
-	return bagOpen or settingsOpen
+	return bagOpen or guideOpen or settingsOpen
+end
+
+function UIController.IsFieldGuideOpen(): boolean
+	return guideOpen
 end
 
 function UIController.GetSelectedGamepadTarget(): GuiObject?
 	if bagOpen then
 		return resolveBagSelectionTarget(lastFocusedBagKey)
+	elseif guideOpen then
+		return resolveGuideSelectionTarget(lastFocusedGuideKey)
 	elseif settingsOpen then
 		return muteToggleButton
 	end
@@ -1988,40 +2513,71 @@ end
 function UIController.ToggleBag(): boolean
 	bagOpen = not bagOpen
 	if bagOpen then
+		guideOpen = false
 		settingsOpen = false
+		guideRestoreToken += 1
+		guideRestoreInFlight = false
+		lastFocusedGuideKey = nil
 		rebuildBagContents(false)
 	else
 		bagRestoreToken += 1
 		bagRestoreInFlight = false
 		pendingSellConfirmUID = nil
 		lastFocusedBagKey = nil
-		applyDrawerVisibility(nil)
+		applyDrawerVisibility(nil, nil)
 	end
 	return bagOpen
+end
+
+function UIController.ToggleFieldGuide(): boolean
+	guideOpen = not guideOpen
+	if guideOpen then
+		bagOpen = false
+		settingsOpen = false
+		bagRestoreToken += 1
+		bagRestoreInFlight = false
+		pendingSellConfirmUID = nil
+		lastFocusedBagKey = nil
+		rebuildFieldGuideContents(false)
+	else
+		guideRestoreToken += 1
+		guideRestoreInFlight = false
+		lastFocusedGuideKey = nil
+		applyDrawerVisibility(nil, nil)
+	end
+	return guideOpen
 end
 
 function UIController.ToggleSettings(): boolean
 	settingsOpen = not settingsOpen
 	if settingsOpen then
 		bagOpen = false
+		guideOpen = false
 		bagRestoreToken += 1
 		bagRestoreInFlight = false
+		guideRestoreToken += 1
+		guideRestoreInFlight = false
 		pendingSellConfirmUID = nil
 		lastFocusedBagKey = nil
+		lastFocusedGuideKey = nil
 	end
-	applyDrawerVisibility(nil)
+	applyDrawerVisibility(nil, nil)
 	return settingsOpen
 end
 
 function UIController.CloseDrawers(): boolean
-	local hadOpen = bagOpen or settingsOpen
+	local hadOpen = bagOpen or guideOpen or settingsOpen
 	bagOpen = false
+	guideOpen = false
 	settingsOpen = false
 	bagRestoreToken += 1
 	bagRestoreInFlight = false
+	guideRestoreToken += 1
+	guideRestoreInFlight = false
 	pendingSellConfirmUID = nil
 	lastFocusedBagKey = nil
-	applyDrawerVisibility(nil)
+	lastFocusedGuideKey = nil
+	applyDrawerVisibility(nil, nil)
 	return hadOpen
 end
 
@@ -2048,6 +2604,7 @@ function UIController.RunSelfTest(): number
 	local passed = 0
 	local scroll = bagScrollFrame :: ScrollingFrame
 	local layoutRef = bagScrollLayout :: UIListLayout
+	local gScroll = guideScrollFrame :: ScrollingFrame
 	local savedMode = currentInputMode
 
 	local function waitForBagSettled(): ()
@@ -2059,16 +2616,25 @@ function UIController.RunSelfTest(): number
 		RunService.RenderStepped:Wait()
 	end
 
+	local function waitForGuideSettled(): ()
+		local frames = 0
+		while guideRestoreInFlight and frames < 15 do
+			RunService.RenderStepped:Wait()
+			frames += 1
+		end
+		RunService.RenderStepped:Wait()
+	end
+
 	local testOk, testErr = pcall(function()
 		RunService.RenderStepped:Wait()
 
-		-- 1. Narrow (320px portrait), landscape mobile (667x375) & desktop safe-width top HUD geometry invariants
-		for _, w in ipairs({ 320, 360, 375, 440, 519, 520, 667, 1280 }) do
+		-- 1. Narrow (320px portrait), landscape mobile (667x375) & desktop safe-width top HUD & drawer geometry invariants
+		for _, w in ipairs({ 320, 360, 375, 440, 559, 560, 667, 1280 }) do
 			local layout = UIController.ComputeTopHudLayout(w)
-			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout only below 520px")
+			assert(layout.Stacked == (w < WIDE_TOP_HUD_MIN_WIDTH), "Expected stacked layout only below 560px")
 			assert(layout.ResourceX >= 0 and (layout.ResourceX + layout.ResourceWidth) <= w, "ResourceBar stays in bounds")
 			assert(layout.ActionsX >= 0 and (layout.ActionsX + layout.ActionsWidth) <= w, "ActionTray stays in bounds")
-			assert(layout.ActionsWidth >= ACTION_TRAY_WIDTH, "ActionTray fits Hub + Ranch + Bag + Settings")
+			assert(layout.ActionsWidth >= ACTION_TRAY_WIDTH, "ActionTray fits Hub + Ranch + Bag + Guide + Settings")
 			assert(layout.SettingsX >= 0 and (layout.SettingsX + layout.SettingsWidth) <= w, "SettingsDrawer stays in bounds")
 
 			local xOverlap = layout.ResourceX < (layout.ActionsX + layout.ActionsWidth)
@@ -2078,9 +2644,23 @@ function UIController.RunSelfTest(): number
 			assert(not (xOverlap and yOverlap), "ResourceBar and ActionTray must never overlap at width " .. tostring(w))
 			assert(layout.ToastY >= math.max(layout.ResourceY + layout.ResourceHeight, layout.ActionsY + layout.ActionsHeight), "Toast sits cleanly below top HUD")
 		end
-		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, settingsButton }) do
+		for _, dims in ipairs({ { 320, 568 }, { 375, 667 }, { 667, 375 }, { 1280, 720 } }) do
+			local topL = UIController.ComputeTopHudLayout(dims[1])
+			local dL = UIController.ComputeDrawerLayout(dims[1], dims[2])
+			local topBottom = math.max(topL.ResourceY + topL.ResourceHeight, topL.ActionsY + topL.ActionsHeight)
+			assert(dL.X >= 0 and (dL.X + dL.Width) <= dims[1], "Drawer width stays inside Safe Area")
+			assert(dL.Y >= topBottom and (dL.Y + dL.Height) <= dims[2], "Drawer clears Top HUD & stays inside Safe Area height")
+			assert(dL.Height >= 180, "Drawer preserves usable scroll height on compact landscape screens")
+		end
+		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, guideButton, settingsButton }) do
 			assert(navBtn ~= nil and navBtn.AbsoluteSize.X >= 44 and navBtn.AbsoluteSize.Y >= 44, "All top HUD buttons maintain >= 44px touch target")
 		end
+		assert(
+			bagDrawer ~= nil and bagDrawer.SelectionGroup == true
+				and guideDrawer ~= nil and guideDrawer.SelectionGroup == true
+				and settingsDrawer ~= nil and settingsDrawer.SelectionGroup == true,
+			"Modal drawers enforce Gamepad SelectionGroup trapping"
+		)
 		passed += 1
 
 		-- 2. Final rendered Bag scroll, Coin-only in-place update & post-layout structural rebuild
@@ -2285,13 +2865,85 @@ function UIController.RunSelfTest(): number
 			"Client cooldown blocks rapid re-invoke within 2.0s"
 		)
 		passed += 1
+
+		-- 3. S4-02 Dedicated Field Guide Checklist (cosmetic-only discovery tracking, Coin-tick stability, Gamepad/mutual exclusion)
+		assert(UIController.ToggleFieldGuide() == true, "ToggleFieldGuide opens FieldGuideDrawer")
+		waitForGuideSettled()
+		assert(not bagOpen and not settingsOpen and guideDrawer ~= nil and guideDrawer.Visible, "FieldGuide opens mutually exclusively")
+		assert(guideProgressLabel ~= nil and string.find(guideProgressLabel.Text, "3 / 6", 1, true) ~= nil, "FieldGuide displays 3 / 6 discovered")
+
+		local guideRebuildsBefore = guideRebuildCount
+		local slimeCard = gScroll:FindFirstChild("GuideCard_StarSlime")
+		local owlCard = gScroll:FindFirstChild("GuideCard_CometOwl")
+		assert(slimeCard ~= nil and owlCard ~= nil, "FieldGuide renders all species cards")
+		local hasRadiantText = false
+		for _, ch in ipairs(slimeCard:GetChildren()) do
+			if ch:IsA("TextLabel") and string.find(ch.Text, "Radiant", 1, true) ~= nil then
+				hasRadiantText = true
+			end
+		end
+		assert(hasRadiantText, "FieldGuide highlights Radiant specimen seen for StarSlime")
+		local owlUnknownText = false
+		for _, ch in ipairs(owlCard:GetChildren()) do
+			if ch:IsA("TextLabel") and string.find(ch.Text, "??? [Legendary]", 1, true) ~= nil then
+				owlUnknownText = true
+			end
+		end
+		assert(owlUnknownText, "Undiscovered CometOwl remains concealed behind clue card")
+
+		-- Coin-only state change must not rebuild Field Guide cards
+		local dtoCoinTick: Types.OwnerStateDTO = {
+			Revision = 4,
+			Coins = 2200,
+			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
+			ReservedBagSlots = 0,
+			Items = mockItems,
+			Slots = { Pen_1 = "pen-1" },
+			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
+		}
+		latestOwnerState = dtoCoinTick
+		refreshAllHUD(dtoCoinTick)
+		RunService.RenderStepped:Wait()
+		assert(guideRebuildCount == guideRebuildsBefore, "Coin-only update must not rebuild Field Guide")
+
+		-- New species discovery updates Field Guide cleanly to 4 / 6
+		local dtoDiscoverOwl: Types.OwnerStateDTO = {
+			Revision = 5,
+			Coins = 2200,
+			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
+			ReservedBagSlots = 0,
+			Items = mockItems,
+			Slots = { Pen_1 = "pen-1" },
+			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
+			DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true, CometOwl = true },
+		}
+		latestOwnerState = dtoDiscoverOwl
+		refreshAllHUD(dtoDiscoverOwl)
+		waitForGuideSettled()
+		assert(guideRebuildCount == guideRebuildsBefore + 1, "New species discovery rebuilds Field Guide")
+		assert(guideProgressLabel ~= nil and string.find(guideProgressLabel.Text, "4 / 6", 1, true) ~= nil, "FieldGuide updates cleanly to 4 / 6")
+		local revealedOwlCard = gScroll:FindFirstChild("GuideCard_CometOwl")
+		assert(revealedOwlCard ~= nil, "CometOwl card present after discovery")
+		local owlRevealedTitle = false
+		for _, ch in ipairs(revealedOwlCard:GetChildren()) do
+			if ch:IsA("TextLabel") and string.find(ch.Text, "Comet Owl [Legendary]", 1, true) ~= nil then
+				owlRevealedTitle = true
+			end
+		end
+		assert(owlRevealedTitle, "Newly discovered CometOwl reveals title & stats in Field Guide")
+		assert(UIController.CloseDrawers() == true and not UIController.IsDrawerOpen(), "CloseDrawers cleanly closes FieldGuideDrawer")
+		passed += 1
 	end)
 
 	-- Restore pristine empty UI state before ClientInit starts live snapshot listener
 	bagRestoreToken += 1
 	bagRestoreInFlight = false
+	guideRestoreToken += 1
+	guideRestoreInFlight = false
 	currentInputMode = savedMode
 	bagOpen = false
+	guideOpen = false
 	settingsOpen = false
 	latestOwnerState = nil
 	pendingSellConfirmUID = nil
@@ -2312,8 +2964,19 @@ function UIController.RunSelfTest(): number
 	frostLureButton = nil
 	activeTimerBindings = {}
 	firstBagSelectable = nil
+	lastGuideStructureSignature = nil
+	lastFocusedGuideKey = nil
+	guideRebuildCount = 0
+	guideButtonsByKey = {}
+	firstGuideSelectable = nil
 	if bagCapacityLabel ~= nil then
 		bagCapacityLabel.Text = "Bag: 0/10 committed"
+	end
+	if guideProgressLabel ~= nil then
+		guideProgressLabel.Text = "Discovered: 0 / 6  •  Cosmetic Checklist"
+	end
+	if guideProgressFill ~= nil then
+		guideProgressFill.Size = UDim2.fromScale(0, 1)
 	end
 	GuiService.SelectedObject = nil
 	for _, child in ipairs(scroll:GetChildren()) do
@@ -2324,6 +2987,14 @@ function UIController.RunSelfTest(): number
 	scroll.CanvasPosition = Vector2.zero
 	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	scroll.AutomaticCanvasSize = Enum.AutomaticSize.None
+	for _, child in ipairs(gScroll:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+			child:Destroy()
+		end
+	end
+	gScroll.CanvasPosition = Vector2.zero
+	gScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	gScroll.AutomaticCanvasSize = Enum.AutomaticSize.None
 	if coinsLabel ~= nil then
 		coinsLabel.Text = "0 Coins"
 	end
@@ -2342,7 +3013,7 @@ function UIController.RunSelfTest(): number
 		hintLabel.TextColor3 = PALETTE.StarlightGold
 	end
 	updateActionButtonsText()
-	applyDrawerVisibility(nil)
+	applyDrawerVisibility(nil, nil)
 	applyResponsiveTopLayout()
 
 	if not testOk then

@@ -96,6 +96,7 @@ export type SpeciesDefinition = {
 	CoinsPerSecond: number,
 	SellPrice: number,
 	BodyColor: Color3,
+	SecondaryColor: Color3,
 	AccentColor: Color3,
 	DisplayScale: Vector3,
 	FieldClue: string,

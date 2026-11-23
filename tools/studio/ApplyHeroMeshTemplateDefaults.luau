@@ -46,7 +46,7 @@ local function loadPalettes(): ({ [string]: CritterPalette }, { [string]: Meteor
 		for speciesId, def in pairs(critterCfg.ById) do
 			mergedCritters[speciesId] = {
 				BodyColor = def.BodyColor,
-				SecondaryColor = SECONDARY_CRITTER_COLORS[speciesId],
+				SecondaryColor = def.SecondaryColor or SECONDARY_CRITTER_COLORS[speciesId],
 				AccentColor = def.AccentColor,
 			}
 		end

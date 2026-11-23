@@ -268,7 +268,10 @@ function InputController.Start(self: typeof(InputController)): ()
 			if key == Enum.KeyCode.B or key == Enum.KeyCode.ButtonY then
 				SoundController.Play("Click")
 				UIController.ToggleBag()
-			elseif key == Enum.KeyCode.ButtonB and UIController.IsDrawerOpen() then
+			elseif key == Enum.KeyCode.G or key == Enum.KeyCode.ButtonL1 then
+				SoundController.Play("Click")
+				UIController.ToggleFieldGuide()
+			elseif (key == Enum.KeyCode.Escape or key == Enum.KeyCode.ButtonB) and UIController.IsDrawerOpen() then
 				SoundController.Play("Click")
 				UIController.CloseDrawers()
 			end
