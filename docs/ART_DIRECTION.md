@@ -7,6 +7,8 @@
 
 ---
 
+The [Stage 6 critter roster and concept sheet](./CRITTER_ROSTER.md#visual-reference) guide production of the 108-species launch collection. Use the approved soft-stylized v2 meshes as the technical baseline and the concept art for silhouettes, expressive faces, and restrained accent colors.
+
 ## 1. Visual Style, Accessibility & Performance Budgets
 
 1. **Readable Silhouettes + Color-Independent Cues:**  
