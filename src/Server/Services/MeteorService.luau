@@ -131,11 +131,14 @@ local function setMeteorPromptEnabled(meteor: ActiveMeteor, enabled: boolean): (
 	end
 end
 
-local function measureMeteorWorldYBounds(model: Model): (number, number)
+local function measureMeteorWorldYBounds(model: Model, excludeBeacons: boolean?): (number, number)
 	local minY = math.huge
 	local maxY = -math.huge
 	for _, desc in ipairs(model:GetDescendants()) do
 		if desc:IsA("BasePart") then
+			if excludeBeacons and (desc.Name == "AstralBeacon" or desc.Name == "LureBeacon") then
+				continue
+			end
 			local half = desc.Size * 0.5
 			local cf = desc.CFrame
 			for _, sx in ipairs({ -1, 1 }) do
@@ -315,7 +318,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		local beacon = Instance.new("Part")
 		beacon.Name = "AstralBeacon"
 		beacon.Size = Vector3.new(1.1, 32, 1.1)
-		beacon.CFrame = primaryBody.CFrame * CFrame.new(0, 17, 0)
+		beacon.CFrame = CFrame.new(meteor.Position + Vector3.new(0, 17, 0))
 		beacon.Color = traitDef.CoreColor
 		beacon.Material = Enum.Material.Neon
 		beacon.Transparency = 0.62
@@ -330,7 +333,7 @@ local function createMeteorModel(meteor: ActiveMeteor): Model?
 		local lureBeacon = Instance.new("Part")
 		lureBeacon.Name = "LureBeacon"
 		lureBeacon.Size = Vector3.new(0.85, 30, 0.85)
-		lureBeacon.CFrame = primaryBody.CFrame * CFrame.new(0, 16, 0)
+		lureBeacon.CFrame = CFrame.new(meteor.Position + Vector3.new(0, 16, 0))
 		lureBeacon.Color = Color3.fromRGB(65, 210, 255)
 		lureBeacon.Material = Enum.Material.Neon
 		lureBeacon.Transparency = 0.52
@@ -1802,7 +1805,15 @@ function MeteorService.RunSelfTest(): number
 			MeteorService.HandlePlayerClosing(ridgeUsers[idx])
 		end
 
-		-- 5d: S4-02 Hero Meteor template clone verification (non-destructive if real templates exist)
+		-- 5d: S4-02 / S4-03 Hero Meteor template clone, rescue prompt, ground & claim verification
+		pendingAstralFall = nil
+		activeAstralUID = nil
+		wildNodeCooldownUntil = {}
+
+		local prevStarCracker = p2Lure.Upgrades["StarCracker"]
+		p2Lure.Upgrades["FrostCracker"] = true
+		p2Lure.Upgrades["StarCracker"] = true
+
 		local createdMRoot = false
 		local createdMFold = false
 		local createdMMock = false
@@ -1821,7 +1832,25 @@ function MeteorService.RunSelfTest(): number
 				mFold.Parent = root
 				createdMFold = true
 			end
-			if (mFold :: Instance):FindFirstChild("Ember") == nil then
+
+			local traitSpecs: { { Trait: Types.MeteorTraitId, NodeName: string } } = {
+				{ Trait = "Ember", NodeName = "MeteorNode_2" },
+				{ Trait = "Frost", NodeName = "MeteorNode_4" },
+				{ Trait = "Astral", NodeName = "MeteorNode_5" },
+			}
+			local specsToVerify: { { Trait: Types.MeteorTraitId, NodeName: string, IsMock: boolean } } = {}
+			for _, spec in ipairs(traitSpecs) do
+				local existingTmpl = (mFold :: Instance):FindFirstChild(spec.Trait)
+				if existingTmpl ~= nil and existingTmpl:IsA("Model") then
+					table.insert(specsToVerify, {
+						Trait = spec.Trait,
+						NodeName = spec.NodeName,
+						IsMock = false,
+					})
+				end
+			end
+
+			if #specsToVerify == 0 then
 				local tmpl = Instance.new("Model")
 				tmpl.Name = "Ember"
 				local rBody = Instance.new("Part")
@@ -1842,20 +1871,61 @@ function MeteorService.RunSelfTest(): number
 				tmpl.PrimaryPart = rBody
 				tmpl.Parent = mFold
 				createdMMock = true
+				table.insert(specsToVerify, {
+					Trait = "Ember",
+					NodeName = "MeteorNode_2",
+					IsMock = true,
+				})
 			end
 
-			wildNodeCooldownUntil = {}
-			local tmplOk, _, tmplRaw = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Ember", 5220)
-			assert(tmplOk and tmplRaw ~= nil, "Template Ember meteor spawns cleanly")
-			local tmplMeteor = tmplRaw :: ActiveMeteor
-			table.insert(createdMeteorUIDs, tmplMeteor.UID)
-			local tmplModel = tmplMeteor.Model
-			assert(tmplModel ~= nil and tmplModel.PrimaryPart ~= nil and tmplModel.PrimaryPart.Name == "RockBody", "Template meteor PrimaryPart is RockBody")
-			assert(tmplModel:FindFirstChild("CoreShards") ~= nil and tmplModel:FindFirstChild("TraitCrest") ~= nil, "Template meteor retains sub-parts")
-			assert(tmplModel.PrimaryPart:FindFirstChild("RescuePrompt") ~= nil and tmplModel.PrimaryPart:FindFirstChild("MeteorLabel") ~= nil, "Template meteor has RescuePrompt & MeteorLabel")
-			assert(CollectionService:HasTag(tmplModel, Constants.TAG_ACTIVE_METEOR), "Template meteor tagged StarfallActiveMeteor")
-			removeMeteorInternal(tmplMeteor.UID)
+			for idx, spec in ipairs(specsToVerify) do
+				wildNodeCooldownUntil = {}
+				local testClock = 5220 + idx * 10
+				local tmplOk, _, tmplRaw = MeteorService.SpawnWildMeteorAtNode(spec.NodeName, spec.Trait, testClock)
+				assert(tmplOk and tmplRaw ~= nil, "Template meteor spawns cleanly: " .. spec.Trait)
+				local tmplMeteor = tmplRaw :: ActiveMeteor
+				table.insert(createdMeteorUIDs, tmplMeteor.UID)
+				local tmplModel = tmplMeteor.Model
+				assert(tmplModel ~= nil and tmplModel.PrimaryPart ~= nil and tmplModel.PrimaryPart.Name == "RockBody", spec.Trait .. " PrimaryPart must be RockBody")
+				assert(tmplModel:FindFirstChild("CoreShards") ~= nil and tmplModel:FindFirstChild("TraitCrest") ~= nil, spec.Trait .. " retains CoreShards & TraitCrest")
+
+				local promptInst = tmplModel.PrimaryPart:FindFirstChild("RescuePrompt")
+				assert(promptInst ~= nil and promptInst:IsA("ProximityPrompt") and promptInst.Enabled == true and promptInst.ActionText == "Crack", spec.Trait .. " RescuePrompt missing or disabled")
+				assert(tmplModel.PrimaryPart:FindFirstChild("MeteorLabel") ~= nil, spec.Trait .. " MeteorLabel missing")
+				assert(CollectionService:HasTag(tmplModel, Constants.TAG_ACTIVE_METEOR), spec.Trait .. " missing StarfallActiveMeteor tag")
+
+				local rockMinY, rockMaxY = measureMeteorWorldYBounds(tmplModel, true)
+				local minDeltaY = math.abs(rockMinY - tmplMeteor.Position.Y)
+				local rockHeight = rockMaxY - rockMinY
+				assert(minDeltaY <= 0.02, string.format("%s ground pivot offset %.4f > 0.02", spec.Trait, minDeltaY))
+				assert(rockHeight <= Constants.MAX_CRITTER_DISPLAY_HEIGHT, string.format("%s height %.3f > %.1f", spec.Trait, rockHeight, Constants.MAX_CRITTER_DISPLAY_HEIGHT))
+
+				local partCount = 0
+				for _, d in ipairs(tmplModel:GetDescendants()) do
+					if d:IsA("BasePart") then
+						partCount += 1
+					end
+				end
+
+				local claimRes = MeteorService.StartCrackAtPosition(u2, tmplMeteor.Position, tmplMeteor.UID, testClock + 1)
+				assert(claimRes.Ok == true, spec.Trait .. " StartCrackAtPosition claim failed: " .. tostring(claimRes.Reason))
+				MeteorService.ReleaseClaimForUserId(u2)
+				removeMeteorInternal(tmplMeteor.UID)
+
+				if spec.IsMock then
+					print("[MeteorService] Runtime Template Verified Ember (mock fallback — import Ember/Frost/Astral into ReplicatedStorage.AssetTemplates.Meteors before S4-03 soak)")
+				else
+					print(string.format(
+						"[MeteorService] Runtime Template Verified %-7s | Parts=%d | Height=%.3f | MinDeltaY=%.4f | PromptOk=true | ClaimOk=true",
+						spec.Trait,
+						partCount,
+						rockHeight,
+						minDeltaY
+					))
+				end
+			end
 		end)
+		p2Lure.Upgrades["StarCracker"] = prevStarCracker
 		if createdMMock then
 			local root = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
 			local mFold = if root ~= nil then root:FindFirstChild("Meteors") else nil
