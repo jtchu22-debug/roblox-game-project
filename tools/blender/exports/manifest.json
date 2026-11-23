@@ -1,0 +1,211 @@
+{
+  "assets": [
+    {
+      "name": "StarSlime",
+      "category": "Critter",
+      "total_tris": 320,
+      "sub_tris": {
+        "Body": 240,
+        "Eyes": 40,
+        "Accent": 40
+      },
+      "studs_wdh": [
+        2.845,
+        2.624,
+        2.825
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 10.0797,
+        "Eyes": 0.0374,
+        "Accent": 0.1042
+      },
+      "file_bytes": 27836,
+      "fbx_rel_path": "critters/StarSlime.fbx"
+    },
+    {
+      "name": "CinderPup",
+      "category": "Critter",
+      "total_tris": 342,
+      "sub_tris": {
+        "Body": 212,
+        "Eyes": 40,
+        "Accent": 90
+      },
+      "studs_wdh": [
+        1.867,
+        3.779,
+        2.929
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 8.9836,
+        "Eyes": 0.0292,
+        "Accent": 0.4485
+      },
+      "file_bytes": 28204,
+      "fbx_rel_path": "critters/CinderPup.fbx"
+    },
+    {
+      "name": "FrostBeetle",
+      "category": "Critter",
+      "total_tris": 326,
+      "sub_tris": {
+        "Body": 220,
+        "Eyes": 40,
+        "Accent": 66
+      },
+      "studs_wdh": [
+        2.615,
+        3.74,
+        2.323
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 8.8611,
+        "Eyes": 0.023,
+        "Accent": 0.3533
+      },
+      "file_bytes": 28396,
+      "fbx_rel_path": "critters/FrostBeetle.fbx"
+    },
+    {
+      "name": "NebulaFox",
+      "category": "Critter",
+      "total_tris": 346,
+      "sub_tris": {
+        "Body": 212,
+        "Eyes": 40,
+        "Accent": 94
+      },
+      "studs_wdh": [
+        1.959,
+        3.95,
+        3.182
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 8.5703,
+        "Eyes": 0.0278,
+        "Accent": 0.9512
+      },
+      "file_bytes": 28252,
+      "fbx_rel_path": "critters/NebulaFox.fbx"
+    },
+    {
+      "name": "SolarGolem",
+      "category": "Critter",
+      "total_tris": 348,
+      "sub_tris": {
+        "Body": 232,
+        "Eyes": 40,
+        "Accent": 76
+      },
+      "studs_wdh": [
+        4.101,
+        3.21,
+        4.913
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 19.7014,
+        "Eyes": 0.0348,
+        "Accent": 1.486
+      },
+      "file_bytes": 28300,
+      "fbx_rel_path": "critters/SolarGolem.fbx"
+    },
+    {
+      "name": "CometOwl",
+      "category": "Critter",
+      "total_tris": 326,
+      "sub_tris": {
+        "Body": 156,
+        "Eyes": 40,
+        "Accent": 130
+      },
+      "studs_wdh": [
+        3.635,
+        3.225,
+        3.807
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "Body": 12.3315,
+        "Eyes": 0.0682,
+        "Accent": 2.4639
+      },
+      "file_bytes": 28812,
+      "fbx_rel_path": "critters/CometOwl.fbx"
+    },
+    {
+      "name": "Ember",
+      "category": "Meteor",
+      "total_tris": 246,
+      "sub_tris": {
+        "RockBody": 102,
+        "CoreShards": 88,
+        "TraitCrest": 56
+      },
+      "studs_wdh": [
+        3.761,
+        3.648,
+        3.312
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "RockBody": 18.5208,
+        "CoreShards": 0.8226,
+        "TraitCrest": 0.7592
+      },
+      "file_bytes": 27804,
+      "fbx_rel_path": "meteors/Ember.fbx"
+    },
+    {
+      "name": "Frost",
+      "category": "Meteor",
+      "total_tris": 284,
+      "sub_tris": {
+        "RockBody": 108,
+        "CoreShards": 88,
+        "TraitCrest": 88
+      },
+      "studs_wdh": [
+        3.923,
+        3.802,
+        4.041
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "RockBody": 19.8341,
+        "CoreShards": 0.7976,
+        "TraitCrest": 1.1172
+      },
+      "file_bytes": 28828,
+      "fbx_rel_path": "meteors/Frost.fbx"
+    },
+    {
+      "name": "Astral",
+      "category": "Meteor",
+      "total_tris": 398,
+      "sub_tris": {
+        "RockBody": 104,
+        "CoreShards": 110,
+        "TraitCrest": 184
+      },
+      "studs_wdh": [
+        6.3,
+        6.174,
+        3.72
+      ],
+      "min_z": 0.0,
+      "volumes": {
+        "RockBody": 39.8084,
+        "CoreShards": 1.948,
+        "TraitCrest": 1.3766
+      },
+      "file_bytes": 31996,
+      "fbx_rel_path": "meteors/Astral.fbx"
+    }
+  ]
+}

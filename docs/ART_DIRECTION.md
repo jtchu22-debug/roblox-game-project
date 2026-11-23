@@ -40,12 +40,16 @@
 
 ---
 
-## 3. Blender Automation Script Status & Required Fixes (`R-010` Caveats)
+## 3. Blender Automation Script Status (`R-010` Validated — Stage 4 `S4-01`)
 
-The starter generator script at [`tools/blender/generate_lowpoly_assets.py`](../tools/blender/generate_lowpoly_assets.py) was statically inspected during the Phase 0 audit and **must not be used for production exports as-is** until `R-010` runs in Stage 4. Known gaps documented for `R-010`:
+The earlier Phase 0 caveats in [`tools/blender/generate_lowpoly_assets.py`](../tools/blender/generate_lowpoly_assets.py) have been resolved after completing single-sample validation (`R-010`):
 
-1. **Scope Mismatch:** Currently creates 3 sample crystal clusters (cut from MVP), 2 meteors, and 2 critters—not the 3 MVP species (*Star-Slime*, *Nebula Fox*, *Solar Golem*) + 3 meteor traits (*Ember*, *Frost*, *Astral*).
-2. **Incomplete Geometry:** `create_meteor_geode` currently ignores its `core_rgba` parameter and does not embed crystal shards; `create_blocky_critter` does not generate visible eyes or tail attachments.
-3. **Missing `.fbx` Exporter:** No automated `bpy.ops.export_scene.fbx` step is implemented yet.
-4. **Destructive Collection Cleanup:** `clear_generated_collections()` removes existing objects in `SR_Crystals`, `SR_Meteors`, and `SR_Critters` on rerun. **Never run this script inside an artist's main `.blend` scene**—use a dedicated clean generator `.blend` file only and add an explicit confirmation guard before `R-010`.
-5. **Single-Sample Validation First:** When `R-010` begins in Stage 4, export **one sample model (`StarSlime.fbx`)**, import it into an isolated Roblox Studio test place, and verify exact stud dimensions, face normals, ground-contact pivot, material assignment, and runtime `Radiant` recoloring before generating the rest of the catalog.
+1. **Single-Sample `R-010` Validation (`StarSlime.fbx` on Isolated `Place1` — Verified Nov 22, 2026):**
+   - [`tools/blender/export_starslime_sample.py`](../tools/blender/export_starslime_sample.py) verified **exact `1:1` stud scaling** (`2.845 × 2.825 × 2.624` studs), clean outward-facing normals (`DoubleSided = false` across front/back/top renders), **ground-contact pivot** (`DeltaPivotToMinY = 0.0000`), single-level `Model -> {Body, Eyes, Accent}` hierarchy, **`-Z` forward orientation** (`EyesOffsetObj.Z = -1.2341`, matching `LookVector = (0, 0, -1)`), and clean runtime `SmoothPlastic` / `Neon` + `RadiantHalo` recoloring (`StarSlime_RadiantTest`, `4/8` BaseParts, `3.495` studs tall).
+2. **Upgraded 9-Asset Stage 4 Hero Catalog (`<= 400` tris each):**
+   - Removed the cut `SR_Crystals` generator and updated [`tools/blender/generate_lowpoly_assets.py`](../tools/blender/generate_lowpoly_assets.py) for Blender 5.3+ (plus 3.6/4.x compatibility) using the validated FBX export settings (`global_scale=0.01`, `apply_unit_scale=True`, `apply_scale_options="FBX_SCALE_ALL"`, `axis_forward="-Z"`, `axis_up="Y"`, `bake_space_transform=True`, Blender `-Y` front).
+   - **6 Hero Critters** (`tools/blender/exports/critters/<SpeciesId>.fbx`, flat `Body` / `Eyes` / `Accent` meshes with sculpted eyes, tails/wings, and ground contact `min_z = 0.0`): *StarSlime* (`320` tris), *CinderPup* (`342` tris), *FrostBeetle* (`326` tris), *NebulaFox* (`346` tris), *SolarGolem* (`348` tris), *CometOwl* (`326` tris).
+   - **3 Crater Meteors** (`tools/blender/exports/meteors/<TraitId>.fbx`, flat `RockBody` / `CoreShards` / `TraitCrest` meshes with embedded hex crystal shards and color-independent silhouettes): *Ember* (`246` tris), *Frost* (`284` tris), *Astral* (`398` tris).
+   - **Safe Rerun Protection:** Interactive runs refuse to delete non-default scene objects or prior `SR_Critters` / `SR_Meteors` collections unless `--force` (`ALLOW_DESTRUCTIVE_CLEAR = True`) is explicitly passed.
+   - **Studio Styling Helper:** [`tools/studio/ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau) applies `CritterConfig` / `MeteorConfig` `SmoothPlastic` & `Neon` defaults, disables collision/query/touch on child meshes, assigns `PrimaryPart`, and asserts `<= 8` BaseParts / `<= 8` stud height budgets.
+   - **Full 9-Asset Studio Verification (`Place1` — Verified Nov 22, 2026):** Imported all 9 `.fbx` models into `Place1`, ran [`ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau), verified front and angled Studio screenshots across every model (clean facets, zero reversed normals or missing geometry), and confirmed runtime integration (`ScaleTo(1.15)` + `RadiantHalo` at `4/8` BaseParts and `<= 6.320` studs height on all 6 critters; `RescuePrompt`, `MeteorLabel`, and `StarfallActiveMeteor` tag on `RockBody` for all 3 meteors).
