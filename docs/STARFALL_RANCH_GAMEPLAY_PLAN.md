@@ -2,7 +2,7 @@
 
 ## The pitch
 
-**Chase falling stars, hatch what’s inside, and raise a ranch that helps you find the next rare critter.** A player starts with one free meteor and a simple decision about where to spend their Coins. A returning player can hunt a species, raise a favorite, work toward a tool or habitat, help at a public meteor fall, or pursue a heavyweight mutation. Every path runs through the same rescue, hatch, and ranch loop.
+**Chase falling stars, hatch what’s inside, and raise a ranch that helps you find the next rare critter.** A player starts with one free meteor and a simple decision about where to spend their Coins. A returning player can hunt a species, raise a favorite, work toward a tool or habitat, help at a public meteor fall, send a critter squad on an expedition, or pursue a heavyweight mutation. Expeditions earn boosts that feed back into the rescue, hatch, and ranch loop.
 
 The signature feature is the connection between a player’s ranch and their next expedition. An assigned critter can highlight one meteor family on the Observatory scanner, and a Coin-funded lure can target a known family. What players keep on the ranch shapes what they can hunt. A bright sky streak, a clear landing marker, and a distinct crack interaction give them a reason to leave the ranch when something special lands.
 
@@ -33,9 +33,9 @@ Those times are tuning targets. Keep the starter interaction mobile-friendly, sh
 
 ## Systems that create choices
 
-- **Meteor fields and cracking.** Build one connected map with the home Crater, Frost Ridge, and Astral Shelf. Reuse the existing meteor, claim, and hatch pipeline. Ember has the familiar quick crack, Frost exposes two fracture points in sequence, and Astral has a short pulse with a generous action window. Each gets a readable silhouette, icon, and sound or static cue. Good timing shortens the crack. A missed timing action still allows normal completion with the same reward pool. Provide touch, keyboard, gamepad, and reduced-motion inputs. Fields can support distinct families and overlapping drop pools.
-- **Crackers and Observatory.** The starting tool handles Ember. The first Coin upgrade opens Frost. The second opens Astral after the appropriate ranch milestone. The workbench shows costs and access requirements before payment. Target 8–12 short Observatory contracts at launch across exploration, rescues, ranch upgrades and collection milestones. The Observatory uses one selected discovered critter to highlight its meteor family on the scanner. The scanner changes visibility, so its benefit is independent of drop odds and paid luck.
-- **Feeding, lures, and ranch spending.** Launch with one currency and four uses for it. Permanent tools open new hunts, pens and incubators improve throughput, capped feeding makes a favorite critter more valuable, and a single-use lure targets a named meteor family. A lure makes the family predictable while its pod still uses the normal published pool. Preview price and family, and charge only when an eligible encounter can be assigned. Feeding grants a small bounded bonus, previewed on the critter card. Duplicates can be income upgrades, sellable stock, or personal records.
+- **Meteor fields and cracking.** Build one connected map with the home Crater, Frost Ridge, and Astral Shelf. Use five meteor families across those fields. Reuse the existing claim, crack, and hatch pipeline, with readable effects and crack timing patterns for each family. Good timing shortens the crack. A missed timing action still allows normal completion with the same reward pool. Provide touch, keyboard, gamepad, and reduced-motion inputs.
+- **Crackers and Observatory.** The starting tool handles Ember. The first Coin upgrade opens Frost and Verdant. The second opens Storm and Astral after the appropriate ranch milestone. Show costs and access requirements at the workbench. Target 8–12 short Observatory contracts at launch across exploration, rescues, ranch upgrades, and collection. The Observatory uses one selected discovered critter to highlight its meteor family on the scanner. The scanner changes visibility, leaving hatch odds intact.
+- **Feeding, lures, and ranch spending.** Keep one Coin currency. Permanent tool tiers, habitat pens, bag space, and incubators give players visible progression goals. Capped feeding raises a favorite critter's income. Named lures and optional potion brewing provide repeatable purchases. A lure makes the meteor family predictable while its pod keeps that family's published pool. Preview the price and family, and charge when the server can assign an eligible encounter. Duplicates can be income upgrades, sellable stock, or personal records.
 - **Public meteor falls.** Standard wild spawns reward the first eligible player to claim. A periodic large Astral fall announces its location and lets multiple players contribute to cracking it. The server grants at most one personal pod per qualified player per fall, with the same hatch and bag-capacity rules as other encounters. Keep a regular earnable Astral route available so the Secret chase works solo and around any schedule.
 - **Collection and progression.** Target **108 distinct earnable species** for public launch, with the roster split below. Gear tiers open access to new pools. Species base income, weight, and one mutation make specimens meaningfully different. Keep feeding additive against base income, and tune with per-critter and ranch caps. The Field Guide records discovered species and best weight, so players can sell duplicates while keeping their records. Each ranch has one featured display.
 - **Eclipse Dragon.** Show an Astral clue and silhouette early. Keep the dragon and its finishes in the standard earnable Astral pool with fixed per-pod odds. Exclude Eclipse Dragon from paid luck and Premium Meteor pools. Hatch speed can affect attempts per hour, so include it in the release balance test. Lock outcomes server-side once per pod and preserve them across relog or purchase retries.
@@ -61,7 +61,7 @@ A workable starting map has three ranches on each side of the shared plaza, Embe
 
 ## Launch roster and rarity tiers
 
-Stage 6 targets **108 distinct earnable species** across the three meteor fields. The earlier [24-species proposal](https://github.com/jtchu22-debug/roblox-game-project/pull/9) serves as the first production batch for the private candidate. Complete the full roster before public launch.
+Stage 6 targets **108 distinct earnable species** across five meteor families and three fields. The earlier [24-species proposal](https://github.com/jtchu22-debug/roblox-game-project/pull/9) serves as the first production batch for the private candidate. Complete the full roster before public launch.
 
 | Species tier | Launch target |
 | --- | ---: |
@@ -76,7 +76,31 @@ Stage 6 targets **108 distinct earnable species** across the three meteor fields
 
 **Secret** is the highest species tier. **Astral** is a meteor family and field that can yield multiple tiers. Gold, Rainbow, mutations, and weight variations belong to existing species. Shop-exclusive companions sit outside the earnable roster.
 
-Reuse rigs, materials, and model components where practical. Give each species a recognizable name, silhouette or identifying feature, and a Field Guide card with its source and odds. Validate the first batch from model import through hatch, pen, save, and mobile display before producing the remaining batches. Spread hunts across the fields so stronger tools open new collection goals while earlier areas still have targets worth returning for.
+Reuse rigs, materials, and model components where practical. Give each species a recognizable name, silhouette or identifying feature, and a Field Guide card with its source and odds. Validate the first batch from model import through hatch, pen, save, and mobile display before producing the remaining batches. Give each family some exclusive species and overlap the lower tiers. Spread hunts across the fields so stronger tools open new collection goals while earlier areas still have targets worth returning for.
+
+## Meteor families and spawn pacing
+
+| Meteor family | Where to find it | Launch role |
+| --- | --- | --- |
+| Ember | Home Crater | Most frequent. Guaranteed first rescue and steady early collection. |
+| Frost | Frost Ridge | Frequent after the first tool upgrade. Supports reliable early ranch upgrades. |
+| Verdant | Home Crater and Frost Ridge pockets | Mid-game branch with its own collection and regular opportunities after the first tool upgrade. |
+| Storm | Frost Ridge and Astral Shelf | Uncommon, clearly announced encounters with a distinct pool. |
+| Astral | Astral Shelf | Least frequent ordinary family, with a predictable solo route and a separate public group fall. |
+
+Lower the ordinary spawn frequency of Storm and Astral while preserving predictable opportunities at each tool tier. Reserve regular spawn opportunities for the early families so adding new pools preserves starter pacing. Count time to an eligible claim in both solo and six-player runs, including contested spawns. Tune by observed attempts per hour and use teasers or countdowns to make rare encounters legible. Keep standard Astral available between group falls.
+
+Show spawn availability separately from hatch chance. The Field Guide and Rarest Hatch board report the outcome chance per pod from its pool. A scarce meteor reduces attempts per hour. Its spawn rate does not enter the displayed hatch odds.
+
+## Critter Expeditions and earnable potions
+
+After placing the first critter, unlock a short solo PvE expedition at the Observatory. Let players send up to three owned, hatched critters against corrupted meteor creatures. Use one shared auto-battle format with **Guard**, **Striker**, and **Support** roles and one optional player-activated ability. Start with three difficulty tiers drawn from the same format. Make the basic tier clearable with ordinary early critters and add stronger rewards at higher tiers. Equipped critters can keep producing ranch income. Use species combat stats and roles for squad choices, and keep weight and income mutations out of combat power at launch.
+
+- **Earn free potions.** Guarantee a basic potion choice on the first expedition clear and reward brewing materials on repeat clears. Let players trade materials plus earned Coins for a chosen potion at the Observatory. Introductory rewards and expedition access cost no Coins or Robux. Solo play can earn every launch potion type.
+- **Field Luck Potion.** Temporarily improves selected Rare through Mythic odds in eligible standard pools. Preserve exact Secret and finish probabilities. Apply the potion at the server's pod outcome roll and show effective odds before that roll. Apply the existing rarity board eligibility rule for boosted-odds hatches and show when a potion would make a roll ineligible. Keep the standard Astral pool outside the launch potion's effect so the Eclipse Dragon chase stays eligible.
+- **Coin Boost Potion.** Prototype **+25% online ranch income for 15 minutes**. Keep offline income and the permanent Coins/s leaderboard on the base lineup calculation. Show the temporary payout bonus separately and keep one active buff of each type. Use server timestamps and settle accrual when an income buff starts or expires.
+- **Balance Coin spending.** Tools, slots, and feeding should offer clear permanent gains at each tier. Lures and brewing compete for surplus Coins after the next upgrade is affordable. Test a typical early, mid-game, and late-game session with and without potions to keep ordinary progression viable and brewing attractive.
+- **Validate the loop privately.** Prototype one expedition and both potions with the first roster batch before expanding to all three tiers. Verify owned squad and unlock checks, one grant per completion, potion expiry and reconnect behavior, loot odds, and actual mobile play. Keep encounters, rewards, and potion timing server-authoritative.
 
 ## Hatch odds and leaderboards
 
@@ -85,7 +109,7 @@ Add this during Stage 6 alongside the expanded roster, before the public launch.
 | Board | What counts |
 | --- | --- |
 | **Rarest Hatch** | Highest lifetime rarity among the player's eligible species-and-finish hatches. Show the critter, its finish, meteor pool, and `1 in N` hatch odds. Keep the record if the critter is sold. Use standard earnable pod rolls at published, unboosted odds. Exclude premium, boosted-odds, granted, and legacy critters without a verifiable roll record. |
-| **Ranch Coins/s** | Combined steady Coins per second from the player's currently placed critters, including weight, mutation, and feeding. A player's latest saved lineup stands while offline. Update after a lineup or income change and publish on a bounded refresh interval. Exclude one-time rewards and offline payouts. |
+| **Ranch Coins/s** | Combined steady Coins per second from the player's currently placed critters, including weight, mutation, and feeding. A player's latest saved lineup stands while offline. Update after a lineup or income change and publish on a bounded refresh interval. Exclude temporary potion boosts, one-time rewards, and offline payouts. |
 
 ### Roblox PlayerList
 
@@ -119,7 +143,7 @@ Keep hunt-lure Coins earnable through play. Price exclusive guaranteed pets insi
 | **Stage 2B — Expanded playable loop** | Stay on MockStore. Use the existing Crater with two distinct paths, two purchasable Cracker tiers, a distinct Astral arrival and crack, one named Frost lure, one capped feeding upgrade, and 2–3 new critters for 5–6 total. Show one follow-up goal after the first ranch pads. | Play through roughly 10–15 minutes of purposeful progression before inviting live testers. Run 3–5 new uncoached testers and log anonymous outcomes. |
 | **Stage 3 — Persistence and multiplayer** | Persist the tool, ranch, critter and collection state. Support offline hatching, migrate old/default state, and verify larger servers. | Rejoin, overlapping sessions, server failures, inventory capacity and meteor claim cleanup behave consistently. |
 | **Stages 4–5 — Art pipeline and private baseline** | Validate a Blender import end to end, build representative assets and the Field Guide, and test field readability, input and multiplayer performance. Prototype one public fall on a private server. | Clean mobile and desktop runs, working accessibility, and stable claims and per-player rewards. |
-| **Stage 6 — Content-complete private candidate, then public launch** | Ship-ready roster of 108 earnable species, three exploration fields, Field Guide and records, Observatory contracts and scanner, Rarest Hatch and Ranch Coins/s leaderboards, collectible finishes, weight and mutations, public meteor falls, tool and ranch progression, feeding, lures, capped offline Coins, and the day-one shop. | Privately verify the whole build, including all species’ earnable paths, leaderboard odds, PlayerList display, and cross-server updates, mobile play, save and offline recovery, late-game balance, and real purchase delivery and eligibility. Open publicly with those systems complete. |
+| **Stage 6 — Content-complete private candidate, then public launch** | Ship-ready roster of 108 earnable species, five meteor families across three fields, Critter Expeditions and earnable potions, Field Guide and records, Observatory contracts and scanner, Rarest Hatch and Ranch Coins/s leaderboards, collectible finishes, weight and mutations, public meteor falls, tool and ranch progression, feeding, lures, capped offline Coins, and the day-one shop. | Privately verify the whole build, including all species’ earnable paths, meteor cadence, expedition rewards and temporary boosts, leaderboard odds, PlayerList display, and cross-server updates, mobile play, save and offline recovery, late-game balance, and real purchase delivery and eligibility. Open publicly with those systems complete. |
 
 ### Stage 2B decision
 
@@ -129,6 +153,6 @@ Advance if the opening remains legible and most testers show a reason to hunt or
 
 ### Implementation notes for Gemini
 
-Keep players’ Coins, unlocks, lure entitlements, claims, drops and payouts under server authority. Reuse the current economy writer for spending, and use the shared configs to define fields, encounter rules, species and progression costs. Keep join/retry behavior consistent for the same reward. Settle offline earnings from saved pen rates and a server timestamp with a durable checkpoint. Deliver developer products through durable, idempotent receipts and verify player eligibility when offering and redeeming paid random items.
+Keep players’ Coins, unlocks, lure entitlements, claims, drops, expedition rewards, potion timing and payouts under server authority. Reuse the current economy writer for spending, and use the shared configs to define fields, encounter rules, species and progression costs. Keep join/retry behavior consistent for the same reward. Settle offline earnings from saved pen rates and a server timestamp with a durable checkpoint. Deliver developer products through durable, idempotent receipts and verify player eligibility when offering and redeeming paid random items.
 
 Keep the broad live-service ideas, such as additional maps, global trading, and reset-based rebirth, in the post-launch backlog. Launch depth comes from the expedition choices, ranch investment, collection chase and social falls above.
