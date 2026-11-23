@@ -1,26 +1,27 @@
 """
-Starfall Ranch: Procedural Low-Poly Asset Generator (Stage 4 / S4-01 / R-010)
+Starfall Ranch: Procedural Low-Poly Asset Generator (Stage 4 Art Revision)
 Location: tools/blender/generate_lowpoly_assets.py
 
-Generates and exports the complete 9-asset Stage 4 low-poly hero catalog:
-- 6 Cosmic Critters (`tools/blender/exports/critters/<SpeciesId>.fbx`):
+Generates and exports the complete 9-asset Stage 4 hero catalog:
+- 6 Soft-Stylized Cosmic Critters (`tools/blender/exports/critters/<SpeciesId>.fbx`):
   StarSlime, CinderPup, FrostBeetle, NebulaFox, SolarGolem, CometOwl
-- 3 Crater Meteors (`tools/blender/exports/meteors/<TraitId>.fbx`):
+  Each exports as 4 flat top-level MeshParts (`Body`, `Secondary`, `Eyes`, `Accent`)
+  with sculpted silhouettes, expressive faces + eye catchlights, and `<= 400` tris.
+- 3 Angular Crater Meteors (`tools/blender/exports/meteors/<TraitId>.fbx`):
   Ember, Frost, Astral
+  Each retains angular faceted rock geometry with embedded crystal shards and
+  color-independent silhouettes (`RockBody`, `CoreShards`, `TraitCrest`, `<= 400` tris).
 
-Studio-Validated Coordinate & Export Convention (R-010 verified on Place1):
+Studio-Validated Coordinate & Export Convention:
 - 1 Blender unit = 1 Roblox stud.
 - Blender Z-up (`+Z` up, `-Y` front -> Roblox `-Z` LookVector forward, `+Y` back -> `+Z`).
-- All sub-meshes sit on `min_z = 0.0` with identity transforms `(0, 0, 0)` / `(1, 1, 1)`
-  and export as flat top-level MeshParts (`Body`/`Eyes`/`Accent` for critters;
-  `RockBody`/`CoreShards`/`TraitCrest` for meteors) so Studio Import 3D wraps each
-  file in a single-level Model without double-nesting.
-- Every asset strictly passes `<= 400` triangles, `<= 8.0` studs max height,
-  positive closed-manifold volumes, and zero degenerate faces.
+- Ground-contact pivot (`min_z = 0.0` across combined sub-meshes), `height <= 8.0` studs.
+- `global_scale=0.01`, `apply_unit_scale=True`, `apply_scale_options="FBX_SCALE_ALL"`,
+  `axis_forward="-Z"`, `axis_up="Y"`, `bake_space_transform=True`.
 
 Safe Rerun Guard:
-- When run interactively inside an existing Blender scene, refuses to delete user
-  objects unless `--force` (or `ALLOW_DESTRUCTIVE_CLEAR = True`) is set.
+- Interactive sessions refuse to delete user objects or existing collections unless
+  `--force` (or `ALLOW_DESTRUCTIVE_CLEAR = True`) is passed.
 
 Usage (CLI):
     blender --background --factory-startup --python tools/blender/generate_lowpoly_assets.py
@@ -49,12 +50,12 @@ SHOWCASE_SPACING_X = 7.0
 COLOR_EYES_SRGB = (22, 20, 34)
 
 CRITTER_PALETTES = {
-    "StarSlime": {"body": (95, 225, 165), "accent": (255, 225, 95)},
-    "CinderPup": {"body": (255, 125, 85), "accent": (255, 215, 90)},
-    "FrostBeetle": {"body": (85, 205, 245), "accent": (185, 245, 255)},
-    "NebulaFox": {"body": (165, 115, 255), "accent": (95, 220, 255)},
-    "SolarGolem": {"body": (255, 175, 65), "accent": (255, 240, 145)},
-    "CometOwl": {"body": (105, 85, 210), "accent": (255, 215, 85)},
+    "StarSlime": {"body": (95, 225, 165), "secondary": (42, 152, 116), "accent": (255, 225, 95)},
+    "CinderPup": {"body": (255, 125, 85), "secondary": (245, 228, 204), "accent": (255, 215, 90)},
+    "FrostBeetle": {"body": (85, 205, 245), "secondary": (42, 108, 170), "accent": (185, 245, 255)},
+    "NebulaFox": {"body": (165, 115, 255), "secondary": (236, 228, 250), "accent": (95, 220, 255)},
+    "SolarGolem": {"body": (255, 175, 65), "secondary": (168, 100, 44), "accent": (255, 240, 145)},
+    "CometOwl": {"body": (105, 85, 210), "secondary": (228, 220, 246), "accent": (255, 215, 85)},
 }
 
 METEOR_PALETTES = {
@@ -65,7 +66,7 @@ METEOR_PALETTES = {
 
 
 def srgb_channel_to_linear(channel_01: float) -> float:
-    """Converts a normalized sRGB channel (0..1) into linear RGB for Blender shaders."""
+    """Converts normalized sRGB (0..1) to linear RGB for Blender materials."""
     if channel_01 <= 0.04045:
         return channel_01 / 12.92
     return ((channel_01 + 0.055) / 1.055) ** 2.4
@@ -96,14 +97,16 @@ def is_managed_object_name(name: str) -> bool:
     """Identifies objects owned by previous runs of this generator."""
     if name.startswith("SR_"):
         return True
-    return name in {"Body", "Eyes", "Accent", "RockBody", "CoreShards", "TraitCrest"}
+    return name in {"Body", "Secondary", "Eyes", "Accent", "RockBody", "CoreShards", "TraitCrest"}
 
 
-def guard_and_prepare_scene(allow_force: bool, force_interactive_guard: bool = False) -> tuple[bpy.types.Collection, bpy.types.Collection]:
+def guard_and_prepare_scene(
+    allow_force: bool,
+    force_interactive_guard: bool = False,
+) -> tuple[bpy.types.Collection, bpy.types.Collection]:
     """
     Safely prepares `SR_Critters` and `SR_Meteors` collections.
-    Refuses destructive cleanup when non-default user objects or prior managed collections
-    exist in interactive mode unless `--force` / `ALLOW_DESTRUCTIVE_CLEAR` is enabled.
+    Refuses destructive clear in interactive sessions unless `--force` is passed.
     """
     interactive = force_interactive_guard or (not bpy.app.background)
     has_prior_collections = any(c in bpy.data.collections for c in MANAGED_COLLECTIONS)
@@ -158,7 +161,7 @@ def create_material(
     roughness: float,
     emission_strength: float = 0.0,
 ) -> bpy.types.Material:
-    """Creates or replaces a flat low-poly Principled BSDF material."""
+    """Creates or replaces a Principled BSDF material without Blender 5/6 warnings."""
     existing = bpy.data.materials.get(mat_name)
     if existing is not None:
         bpy.data.materials.remove(existing)
@@ -180,7 +183,7 @@ def create_material(
 
 
 def append_bmesh(target_bm: bmesh.types.BMesh, source_bm: bmesh.types.BMesh) -> list[bmesh.types.BMVert]:
-    """Copies vertices and faces from `source_bm` into `target_bm` and returns created verts."""
+    """Copies vertices and faces from `source_bm` into `target_bm` cleanly."""
     vert_map: dict[bmesh.types.BMVert, bmesh.types.BMVert] = {}
     new_verts: list[bmesh.types.BMVert] = []
     for src_vert in source_bm.verts:
@@ -200,7 +203,7 @@ def transform_bmesh(
     center: tuple[float, float, float],
     euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> None:
-    """Rotates around origin and translates `bm` vertices cleanly."""
+    """Rotates around origin and translates `bm` vertices."""
     if any(angle != 0.0 for angle in euler_deg):
         rot_mat = Euler(tuple(math.radians(a) for a in euler_deg), "XYZ").to_matrix()
         bmesh.ops.rotate(bm, cent=Vector((0.0, 0.0, 0.0)), matrix=rot_mat, verts=list(bm.verts))
@@ -208,127 +211,229 @@ def transform_bmesh(
         bmesh.ops.translate(bm, vec=Vector(center), verts=list(bm.verts))
 
 
-def add_beveled_box(
+def add_lathe_shape(
     target_bm: bmesh.types.BMesh,
-    size: tuple[float, float, float],
-    center: tuple[float, float, float],
-    bevel_offset: float = 0.0,
-    bevel_segments: int = 0,
+    radial_segments: int,
+    rings_spec: list[tuple[float, float, float, float, float, float]],
+    bottom_cap_z: float | None,
+    top_cap_z: float | None,
+    center: tuple[float, float, float] = (0.0, 0.0, 0.0),
     euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
     snap_min_z: float | None = None,
-) -> list[bmesh.types.BMVert]:
-    """Adds a closed cube (optionally beveled) transformed into `target_bm`."""
+) -> None:
+    """
+    Builds a closed manifold sculpted lathe form from ring descriptors
+    `(z, rx, ry, y_shift, a2_cos2theta, b1_sintheta)` with optional flat/domed apex caps.
+    """
     sub = bmesh.new()
-    bmesh.ops.create_cube(sub, size=1.0)
-    bmesh.ops.scale(sub, vec=Vector(size), verts=list(sub.verts))
-    if bevel_segments > 0 and bevel_offset > 0.0:
-        bmesh.ops.bevel(
-            sub,
-            geom=list(sub.edges),
-            offset=bevel_offset,
-            offset_type="OFFSET",
-            segments=bevel_segments,
-            profile=0.5,
-            affect="EDGES",
-            clamp_overlap=True,
-        )
+    rings: list[list[bmesh.types.BMVert]] = []
+    for z, rx, ry, y_shift, a2, b1 in rings_spec:
+        ring: list[bmesh.types.BMVert] = []
+        for k in range(radial_segments):
+            theta = k * (2.0 * math.pi / radial_segments)
+            mod = 1.0 + a2 * math.cos(2.0 * theta) + b1 * math.sin(theta)
+            ring.append(sub.verts.new((rx * mod * math.cos(theta), ry * mod * math.sin(theta) + y_shift, z)))
+        rings.append(ring)
+
+    if bottom_cap_z is not None:
+        b_center = sub.verts.new((0.0, rings_spec[0][3], bottom_cap_z))
+        for k in range(radial_segments):
+            nk = (k + 1) % radial_segments
+            sub.faces.new((b_center, rings[0][nk], rings[0][k]))
+    else:
+        sub.faces.new(list(reversed(rings[0])))
+
+    for r_idx in range(len(rings) - 1):
+        for k in range(radial_segments):
+            nk = (k + 1) % radial_segments
+            sub.faces.new((rings[r_idx][k], rings[r_idx][nk], rings[r_idx + 1][nk], rings[r_idx + 1][k]))
+
+    if top_cap_z is not None:
+        t_center = sub.verts.new((0.0, rings_spec[-1][3], top_cap_z))
+        top_r = rings[-1]
+        for k in range(radial_segments):
+            nk = (k + 1) % radial_segments
+            sub.faces.new((top_r[k], top_r[nk], t_center))
+    else:
+        sub.faces.new(rings[-1])
+
     transform_bmesh(sub, center, euler_deg)
     if snap_min_z is not None:
         dz = snap_min_z - min(v.co.z for v in sub.verts)
         bmesh.ops.translate(sub, vec=Vector((0.0, 0.0, dz)), verts=list(sub.verts))
     bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
-    verts = append_bmesh(target_bm, sub)
+    append_bmesh(target_bm, sub)
     sub.free()
-    return verts
 
 
-def add_tapered_prism(
+def add_rounded_ellipsoid(
     target_bm: bmesh.types.BMesh,
-    sides: int,
-    radius_bottom: float,
-    radius_top: float,
-    height: float,
+    radial_segments: int,
+    radii: tuple[float, float, float],
     center: tuple[float, float, float],
     euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    scale_xy: tuple[float, float] = (1.0, 1.0),
+    ring_count: int = 3,
+    taper_front_y: float = 0.0,
     snap_min_z: float | None = None,
-) -> list[bmesh.types.BMVert]:
-    """Adds a closed N-sided tapered prism/limb (non-zero caps so zero degenerate tris)."""
+) -> None:
+    """
+    Builds a smooth low-poly ellipsoid/capsule (`ring_count=2` or `3`) with optional
+    `-Y` forward face tapering (ideal for foxes, heads, snouts, muzzles, and paws).
+    """
+    rx, ry, rz = radii
+    if ring_count == 2:
+        levels = [(-0.52, 0.84), (0.52, 0.84)]
+    elif ring_count == 3:
+        levels = [(-0.72, 0.68), (0.0, 1.0), (0.72, 0.68)]
+    else:
+        levels = [(-0.80, 0.56), (-0.30, 0.94), (0.30, 0.94), (0.80, 0.56)]
+
+    rings_spec: list[tuple[float, float, float, float, float, float]] = []
+    for z_frac, rad_scale in levels:
+        rings_spec.append((z_frac * rz, rx * rad_scale, ry * rad_scale, 0.0, 0.0, 0.0))
+
     sub = bmesh.new()
-    bmesh.ops.create_cone(
-        sub,
-        cap_ends=True,
-        cap_tris=False,
-        segments=sides,
-        radius1=radius_bottom,
-        radius2=max(0.02, radius_top),
-        depth=height,
-    )
-    if scale_xy != (1.0, 1.0):
-        bmesh.ops.scale(sub, vec=Vector((scale_xy[0], scale_xy[1], 1.0)), verts=list(sub.verts))
+    add_lathe_shape(sub, radial_segments, rings_spec, bottom_cap_z=-rz, top_cap_z=rz)
+    if taper_front_y > 0.0:
+        for v in sub.verts:
+            if v.co.y < 0.0:
+                t = max(0.0, min(1.0, -v.co.y / max(1e-4, ry)))
+                shrink = 1.0 - taper_front_y * t
+                v.co.x *= shrink
+                v.co.z *= 1.0 - (taper_front_y * 0.55) * t
+
     transform_bmesh(sub, center, euler_deg)
     if snap_min_z is not None:
         dz = snap_min_z - min(v.co.z for v in sub.verts)
         bmesh.ops.translate(sub, vec=Vector((0.0, 0.0, dz)), verts=list(sub.verts))
     bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
-    verts = append_bmesh(target_bm, sub)
+    append_bmesh(target_bm, sub)
     sub.free()
-    return verts
 
 
-def add_crystal_shard(
+def add_curved_tube(
     target_bm: bmesh.types.BMesh,
-    radius: float,
-    shaft_height: float,
-    tip_height: float,
-    base_center: tuple[float, float, float],
-    euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    sides: int = 6,
-) -> list[bmesh.types.BMVert]:
-    """Builds a closed hexagonal crystal prism tapering to a sharp crystal apex (22 tris for 6 sides)."""
+    points_and_radii: list[tuple[tuple[float, float, float], float]],
+    sides: int = 4,
+    capped_tips: bool = True,
+) -> None:
+    """Sweeps a closed manifold low-poly tube along arbitrary 3D points & radii."""
     sub = bmesh.new()
-    bottom_ring: list[bmesh.types.BMVert] = []
-    shoulder_ring: list[bmesh.types.BMVert] = []
-    for idx in range(sides):
-        angle = idx * (2.0 * math.pi / sides)
-        bx = math.cos(angle) * radius
-        by = math.sin(angle) * radius
-        sx = math.cos(angle) * (radius * 0.78)
-        sy = math.sin(angle) * (radius * 0.78)
-        bottom_ring.append(sub.verts.new((bx, by, 0.0)))
-        shoulder_ring.append(sub.verts.new((sx, sy, shaft_height)))
+    rings: list[list[bmesh.types.BMVert]] = []
+    pts = [Vector(p) for p, _ in points_and_radii]
 
-    apex = sub.verts.new((0.0, 0.0, shaft_height + tip_height))
-    sub.faces.new(list(reversed(bottom_ring)))
-    for idx in range(sides):
-        nxt = (idx + 1) % sides
-        sub.faces.new((bottom_ring[idx], bottom_ring[nxt], shoulder_ring[nxt], shoulder_ring[idx]))
-        sub.faces.new((shoulder_ring[idx], shoulder_ring[nxt], apex))
+    prev_up = Vector((0.0, 0.0, 1.0))
+    for idx, (_raw_pt, radius) in enumerate(points_and_radii):
+        pt = pts[idx]
+        if idx == 0:
+            tangent = (pts[1] - pts[0]).normalized()
+        elif idx == len(pts) - 1:
+            tangent = (pts[-1] - pts[-2]).normalized()
+        else:
+            tangent = (pts[idx + 1] - pts[idx - 1]).normalized()
 
-    transform_bmesh(sub, base_center, euler_deg)
+        ref = prev_up if abs(tangent.dot(prev_up)) < 0.92 else Vector((0.0, -1.0, 0.0))
+        right = tangent.cross(ref).normalized()
+        up = right.cross(tangent).normalized()
+        prev_up = up
+
+        ring: list[bmesh.types.BMVert] = []
+        for k in range(sides):
+            ang = k * (2.0 * math.pi / sides)
+            ring.append(sub.verts.new(pt + (right * math.cos(ang) + up * math.sin(ang)) * radius))
+        rings.append(ring)
+
+    if capped_tips:
+        sub.faces.new(list(reversed(rings[0])))
+        sub.faces.new(rings[-1])
+    else:
+        start_tip = sub.verts.new(pts[0] - (pts[1] - pts[0]).normalized() * (points_and_radii[0][1] * 0.5))
+        end_tip = sub.verts.new(pts[-1] + (pts[-1] - pts[-2]).normalized() * (points_and_radii[-1][1] * 0.7))
+        for k in range(sides):
+            nk = (k + 1) % sides
+            sub.faces.new((start_tip, rings[0][nk], rings[0][k]))
+            sub.faces.new((rings[-1][k], rings[-1][nk], end_tip))
+
+    for i in range(len(rings) - 1):
+        for k in range(sides):
+            nk = (k + 1) % sides
+            sub.faces.new((rings[i][k], rings[i][nk], rings[i + 1][nk], rings[i + 1][k]))
+
     bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
-    verts = append_bmesh(target_bm, sub)
+    append_bmesh(target_bm, sub)
     sub.free()
-    return verts
 
 
-def add_eye_pair(
-    target_bm: bmesh.types.BMesh,
+def add_eye_pair_with_catchlights(
+    eyes_bm: bmesh.types.BMesh,
+    accent_bm: bmesh.types.BMesh,
     half_sep_x: float,
     pos_y: float,
     pos_z: float,
     radii: tuple[float, float, float],
-    yaw_deg: float = 10.0,
+    pitch_x_deg: float,
+    yaw_z_deg: float,
+    radial_segs: int = 8,
+    catch_scale: float = 1.0,
 ) -> None:
-    """Adds a symmetric left/right faceted icosphere eye pair facing `-Y` front (40 tris total)."""
+    """
+    Adds a symmetric pair of curved oval eyes facing `-Y` front plus nestled glowing
+    upper-left octahedron eye-shine catchlights (`16` tris in `accent_bm`).
+    """
+    rx, ry, rz = radii
     for side in (-1, 1):
+        # Eye lens oriented with polar axis along Y so radial_segs form the front XZ oval
         sub = bmesh.new()
-        bmesh.ops.create_icosphere(sub, subdivisions=1, radius=1.0)
-        bmesh.ops.scale(sub, vec=Vector(radii), verts=list(sub.verts))
-        transform_bmesh(sub, (side * half_sep_x, pos_y, pos_z), (0.0, 0.0, -side * yaw_deg))
+        y_rings = [(-0.35, 0.88), (0.35, 0.88)]
+        front_pole = sub.verts.new((0.0, -ry, 0.0))
+        rings: list[list[bmesh.types.BMVert]] = []
+        for y_frac, rad_scale in y_rings:
+            ring: list[bmesh.types.BMVert] = []
+            vy = y_frac * ry
+            for k in range(radial_segs):
+                ang = k * (2.0 * math.pi / radial_segs)
+                ring.append(sub.verts.new((math.cos(ang) * rx * rad_scale, vy, math.sin(ang) * rz * rad_scale)))
+            rings.append(ring)
+        back_pole = sub.verts.new((0.0, ry, 0.0))
+
+        for k in range(radial_segs):
+            nk = (k + 1) % radial_segs
+            sub.faces.new((front_pole, rings[0][k], rings[0][nk]))
+            sub.faces.new((rings[-1][nk], rings[-1][k], back_pole))
+        for r_idx in range(len(rings) - 1):
+            for k in range(radial_segs):
+                nk = (k + 1) % radial_segs
+                sub.faces.new((rings[r_idx][k], rings[r_idx + 1][k], rings[r_idx + 1][nk], rings[r_idx][nk]))
+
+        rot_mat = Euler((math.radians(pitch_x_deg), 0.0, math.radians(side * yaw_z_deg)), "XYZ").to_matrix()
+        bmesh.ops.rotate(sub, cent=Vector((0.0, 0.0, 0.0)), matrix=rot_mat, verts=list(sub.verts))
+        bmesh.ops.translate(sub, vec=Vector((side * half_sep_x, pos_y, pos_z)), verts=list(sub.verts))
         bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
-        append_bmesh(target_bm, sub)
+        append_bmesh(eyes_bm, sub)
         sub.free()
+
+        # Nestled upper-left glowing starry catchlight octahedron
+        gem = bmesh.new()
+        grx, gry, grz = 0.068 * catch_scale, 0.048 * catch_scale, 0.076 * catch_scale
+        gv = [
+            gem.verts.new((-grx, 0.0, 0.0)),
+            gem.verts.new((0.0, -gry, 0.0)),
+            gem.verts.new((grx, 0.0, 0.0)),
+            gem.verts.new((0.0, gry, 0.0)),
+        ]
+        gtop = gem.verts.new((0.0, 0.0, grz))
+        gbot = gem.verts.new((0.0, 0.0, -grz))
+        for k in range(4):
+            nk = (k + 1) % 4
+            gem.faces.new((gv[k], gv[nk], gtop))
+            gem.faces.new((gv[nk], gv[k], gbot))
+        local_offset = Vector((-rx * 0.30, -ry * 0.90, rz * 0.36))
+        bmesh.ops.translate(gem, vec=local_offset, verts=list(gem.verts))
+        bmesh.ops.rotate(gem, cent=Vector((0.0, 0.0, 0.0)), matrix=rot_mat, verts=list(gem.verts))
+        bmesh.ops.translate(gem, vec=Vector((side * half_sep_x, pos_y, pos_z)), verts=list(gem.verts))
+        bmesh.ops.recalc_face_normals(gem, faces=list(gem.faces))
+        append_bmesh(accent_bm, gem)
+        gem.free()
 
 
 def add_star_crest(
@@ -366,6 +471,76 @@ def add_star_crest(
     sub.free()
 
 
+def add_beveled_box(
+    target_bm: bmesh.types.BMesh,
+    size: tuple[float, float, float],
+    center: tuple[float, float, float],
+    bevel_offset: float = 0.0,
+    bevel_segments: int = 0,
+    euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    snap_min_z: float | None = None,
+) -> list[bmesh.types.BMVert]:
+    """Adds a closed beveled block (kept for SolarGolem stone character & angular trims)."""
+    sub = bmesh.new()
+    bmesh.ops.create_cube(sub, size=1.0)
+    bmesh.ops.scale(sub, vec=Vector(size), verts=list(sub.verts))
+    if bevel_segments > 0 and bevel_offset > 0.0:
+        bmesh.ops.bevel(
+            sub,
+            geom=list(sub.edges),
+            offset=bevel_offset,
+            offset_type="OFFSET",
+            segments=bevel_segments,
+            profile=0.5,
+            affect="EDGES",
+            clamp_overlap=True,
+        )
+    transform_bmesh(sub, center, euler_deg)
+    if snap_min_z is not None:
+        dz = snap_min_z - min(v.co.z for v in sub.verts)
+        bmesh.ops.translate(sub, vec=Vector((0.0, 0.0, dz)), verts=list(sub.verts))
+    bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
+    verts = append_bmesh(target_bm, sub)
+    sub.free()
+    return verts
+
+
+def add_crystal_shard(
+    target_bm: bmesh.types.BMesh,
+    radius: float,
+    shaft_height: float,
+    tip_height: float,
+    base_center: tuple[float, float, float],
+    euler_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    sides: int = 6,
+) -> list[bmesh.types.BMVert]:
+    """Builds a closed faceted crystal prism tapering to a sharp apex (retained for angular meteors)."""
+    sub = bmesh.new()
+    bottom_ring: list[bmesh.types.BMVert] = []
+    shoulder_ring: list[bmesh.types.BMVert] = []
+    for idx in range(sides):
+        angle = idx * (2.0 * math.pi / sides)
+        bx = math.cos(angle) * radius
+        by = math.sin(angle) * radius
+        sx = math.cos(angle) * (radius * 0.78)
+        sy = math.sin(angle) * (radius * 0.78)
+        bottom_ring.append(sub.verts.new((bx, by, 0.0)))
+        shoulder_ring.append(sub.verts.new((sx, sy, shaft_height)))
+
+    apex = sub.verts.new((0.0, 0.0, shaft_height + tip_height))
+    sub.faces.new(list(reversed(bottom_ring)))
+    for idx in range(sides):
+        nxt = (idx + 1) % sides
+        sub.faces.new((bottom_ring[idx], bottom_ring[nxt], shoulder_ring[nxt], shoulder_ring[idx]))
+        sub.faces.new((shoulder_ring[idx], shoulder_ring[nxt], apex))
+
+    transform_bmesh(sub, base_center, euler_deg)
+    bmesh.ops.recalc_face_normals(sub, faces=list(sub.faces))
+    verts = append_bmesh(target_bm, sub)
+    sub.free()
+    return verts
+
+
 def add_orbiting_ring(
     target_bm: bmesh.types.BMesh,
     major_r: float,
@@ -376,7 +551,7 @@ def add_orbiting_ring(
     center: tuple[float, float, float],
     euler_deg: tuple[float, float, float],
 ) -> None:
-    """Builds a closed diamond-profile low-poly torus ring around `center`."""
+    """Builds a closed diamond-profile torus ring around `center` (for Astral meteor)."""
     sub = bmesh.new()
     rings: list[list[bmesh.types.BMVert]] = []
     for i in range(major_segments):
@@ -403,164 +578,378 @@ def add_orbiting_ring(
 
 
 def build_starslime() -> dict[str, bmesh.types.BMesh]:
-    """StarSlime (~320 tris, 2.85 x 2.62 x 2.83 studs): jelly body + nubs + eyes + star crest."""
-    body = bmesh.new()
-    torso_verts = add_beveled_box(body, (2.32, 2.28, 2.08), (0.0, 0.0, 1.04), bevel_offset=0.28, bevel_segments=2, snap_min_z=0.0)
-    for v in torso_verts:
-        z_norm = max(0.0, min(1.0, v.co.z / 2.08))
-        if z_norm > 0.65:
-            taper = 1.0 - 0.14 * ((z_norm - 0.65) / 0.35)
-            v.co.x *= taper
-            v.co.y *= taper
-        elif 0.12 <= z_norm <= 0.50:
-            belly = 1.0 + 0.05 * math.sin(((z_norm - 0.12) / 0.38) * math.pi)
-            v.co.x *= belly
-            v.co.y *= belly
+    """
+    StarSlime (soft squishy dome + darker emerald-mint lower base contrast, <= 400 tris):
+    - Secondary (`84` tris): wide flattened base puddle skirt (`Z = 0.00..0.58`)
+    - Body (`140` tris): soft rounded upper dome (`Z = 0.58..2.12`)
+    - Eyes (`108` tris): large 10-sided oval eyes + cute U-smile above seam
+    - Accent (`56` tris): 5-point star crest + twin starry eye catchlights
+    """
+    radial = 14
+    lower_rings = [
+        (0.00, 1.46, 1.38, 0.03, 0.045, 0.035),
+        (0.24, 1.56, 1.48, 0.04, 0.040, 0.030),
+        (0.58, 1.47, 1.40, 0.03, 0.025, 0.020),
+    ]
+    upper_rings = [
+        (0.58, 1.47, 1.40, 0.03, 0.025, 0.020),
+        (1.00, 1.28, 1.24, 0.01, 0.010, 0.010),
+        (1.42, 1.01, 0.98, 0.00, 0.000, 0.000),
+        (1.78, 0.64, 0.62, 0.00, 0.000, 0.000),
+        (2.02, 0.28, 0.27, 0.00, 0.000, 0.000),
+    ]
 
-    for side in (-1, 1):
-        add_beveled_box(body, (0.56, 0.70, 0.64), (side * 1.12, -0.04, 0.34), bevel_offset=0.14, bevel_segments=1, euler_deg=(0.0, side * 8.0, 0.0), snap_min_z=0.0)
-    add_beveled_box(body, (0.56, 0.62, 0.52), (0.0, 1.06, 0.44), bevel_offset=0.13, bevel_segments=1, euler_deg=(-18.0, 0.0, 0.0))
+    secondary = bmesh.new()
+    add_lathe_shape(secondary, radial, lower_rings, bottom_cap_z=0.0, top_cap_z=0.58)
+
+    body = bmesh.new()
+    add_lathe_shape(body, radial, upper_rings, bottom_cap_z=0.58, top_cap_z=2.12)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.48, pos_y=-1.11, pos_z=1.08, radii=(0.21, 0.13, 0.27), yaw_deg=10.0)
-
     accent = bmesh.new()
-    add_star_crest(accent, outer_r=0.56, inner_r=0.25, rim_half_depth=0.09, apex_half_depth=0.20, center=(0.0, -0.04, 2.26), euler_deg=(-14.0, 0.0, 0.0))
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.50,
+        pos_y=-1.15,
+        pos_z=1.00,
+        radii=(0.27, 0.14, 0.37),
+        pitch_x_deg=-20.0,
+        yaw_z_deg=20.0,
+        radial_segs=10,
+        catch_scale=1.05,
+    )
+    add_curved_tube(
+        eyes,
+        [
+            ((-0.24, -1.34, 0.75), 0.046),
+            ((-0.09, -1.36, 0.67), 0.048),
+            ((0.09, -1.36, 0.67), 0.048),
+            ((0.24, -1.34, 0.75), 0.046),
+        ],
+        sides=4,
+        capped_tips=True,
+    )
+    add_star_crest(accent, outer_r=0.58, inner_r=0.28, rim_half_depth=0.10, apex_half_depth=0.22, center=(0.0, -0.02, 2.30), euler_deg=(-12.0, 0.0, 0.0))
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_cinderpup() -> dict[str, bmesh.types.BMesh]:
-    """CinderPup (~290 tris, ~2.7 x 3.0 x 2.8 studs): chunky pup + snout + 4 paws + ember ears + flame tail."""
+    """
+    CinderPup (<= 400 tris: softly rounded puppy torso/head, broad warm-cream muzzle,
+    4 chunky paws, twin ember ears & upright curved flame-plume tail):
+    """
     body = bmesh.new()
-    add_beveled_box(body, (1.76, 2.08, 1.32), (0.0, 0.18, 1.06), bevel_offset=0.20, bevel_segments=2)
-    add_beveled_box(body, (1.84, 1.62, 1.36), (0.0, -0.62, 1.56), bevel_offset=0.20, bevel_segments=1)
-    add_tapered_prism(body, sides=4, radius_bottom=0.58, radius_top=0.42, height=0.66, center=(0.0, -1.52, 1.30), euler_deg=(90.0, 0.0, 45.0), scale_xy=(1.2, 0.72))
-    for px in (-0.58, 0.58):
-        for py in (-0.65, 0.78):
-            add_tapered_prism(body, sides=4, radius_bottom=0.30, radius_top=0.24, height=0.56, center=(px, py, 0.28), euler_deg=(0.0, 0.0, 45.0), scale_xy=(1.0, 1.15), snap_min_z=0.0)
+    add_rounded_ellipsoid(body, radial_segments=8, radii=(0.90, 1.12, 0.70), center=(0.0, 0.24, 1.06), ring_count=3)
+    add_rounded_ellipsoid(body, radial_segments=8, radii=(0.94, 0.86, 0.76), center=(0.0, -0.62, 1.56), ring_count=3)
+
+    secondary = bmesh.new()
+    # Broad plush rounded cream muzzle
+    add_rounded_ellipsoid(secondary, radial_segments=8, radii=(0.58, 0.44, 0.34), center=(0.0, -1.28, 1.32), ring_count=2)
+    # Four chunky rounded puppy paws flat on Z = 0.0
+    for px in (-0.54, 0.54):
+        for py in (-0.58, 0.84):
+            add_rounded_ellipsoid(secondary, radial_segments=6, radii=(0.33, 0.37, 0.30), center=(px, py, 0.30), ring_count=2, snap_min_z=0.0)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.48, pos_y=-1.39, pos_z=1.74, radii=(0.20, 0.12, 0.24), yaw_deg=8.0)
-
     accent = bmesh.new()
-    for side in (-1, 1):
-        add_crystal_shard(accent, radius=0.28, shaft_height=0.35, tip_height=0.52, base_center=(side * 0.62, -0.58, 2.12), euler_deg=(12.0, side * 18.0, 0.0), sides=4)
-    # Upright twin-faceted flame plume tail at +Y back
-    add_beveled_box(accent, (0.56, 0.60, 0.74), (0.0, 1.18, 1.48), bevel_offset=0.10, bevel_segments=1, euler_deg=(-32.0, 0.0, 0.0))
-    add_crystal_shard(accent, radius=0.32, shaft_height=0.42, tip_height=0.62, base_center=(0.0, 1.28, 1.68), euler_deg=(-22.0, 0.0, 0.0), sides=5)
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.45,
+        pos_y=-1.33,
+        pos_z=1.74,
+        radii=(0.21, 0.12, 0.27),
+        pitch_x_deg=-16.0,
+        yaw_z_deg=20.0,
+        radial_segs=8,
+        catch_scale=0.95,
+    )
+    # Cute button nose atop broad muzzle
+    add_rounded_ellipsoid(eyes, radial_segments=4, radii=(0.15, 0.12, 0.11), center=(0.0, -1.68, 1.46), ring_count=2)
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    # Twin soft-faceted curved leaf-flame puppy ears
+    for side in (-1, 1):
+        s = float(side)
+        add_curved_tube(
+            accent,
+            [
+                ((s * 0.60, -0.58, 2.08), 0.25),
+                ((s * 0.86, -0.46, 2.82), 0.15),
+            ],
+            sides=4,
+            capped_tips=False,
+        )
+    # Playful upward curving ember flame-plume tail at +Y back
+    add_curved_tube(
+        accent,
+        [
+            ((0.0, 1.18, 1.22), 0.22),
+            ((0.0, 1.58, 1.68), 0.30),
+            ((0.0, 1.48, 2.30), 0.14),
+        ],
+        sides=5,
+        capped_tips=False,
+    )
+
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_frostbeetle() -> dict[str, bmesh.types.BMesh]:
-    """FrostBeetle (~302 tris, ~2.9 x 3.2 x 2.5 studs): domed shell + head shield + 4 legs + ice horn & wing crystals."""
+    """
+    FrostBeetle (<= 400 tris: plump domed scarab carapace shell, rounded dark glacier-blue
+    head hood & 4 sturdy rounded beetle legs on Z=0, curved ice horn & crystal wing fins):
+    """
     body = bmesh.new()
-    shell_verts = add_beveled_box(body, (2.36, 2.56, 1.44), (0.0, 0.16, 1.04), bevel_offset=0.28, bevel_segments=2)
-    for v in shell_verts:
-        if v.co.z > 1.2:
-            v.co.x *= 0.88
-            v.co.y *= 0.90
-    add_beveled_box(body, (1.42, 0.92, 0.88), (0.0, -1.06, 0.78), bevel_offset=0.14, bevel_segments=1)
-    for px in (-1.10, 1.10):
-        for py in (-0.48, 0.62):
-            sign_x = -1.0 if px < 0 else 1.0
-            add_tapered_prism(body, sides=4, radius_bottom=0.26, radius_top=0.20, height=0.68, center=(px, py, 0.34), euler_deg=(0.0, sign_x * 16.0, 45.0), snap_min_z=0.0)
-    add_tapered_prism(body, sides=6, radius_bottom=0.52, radius_top=0.26, height=0.56, center=(0.0, 1.38, 0.72), euler_deg=(-72.0, 0.0, 0.0))
+    shell_rings = [
+        (0.42, 1.10, 1.24, 0.18, 0.0, 0.0),
+        (0.84, 1.28, 1.44, 0.18, 0.0, 0.0),
+        (1.38, 1.14, 1.32, 0.18, 0.0, 0.0),
+        (1.80, 0.74, 0.90, 0.18, 0.0, 0.0),
+    ]
+    add_lathe_shape(body, 12, shell_rings, bottom_cap_z=0.38, top_cap_z=1.98)
+
+    secondary = bmesh.new()
+    # Rounded front head hood protruding -Y
+    add_rounded_ellipsoid(secondary, radial_segments=8, radii=(0.82, 0.68, 0.56), center=(0.0, -1.04, 0.86), ring_count=3, taper_front_y=0.14)
+    # Rounded rear tail plate at +Y
+    add_rounded_ellipsoid(secondary, radial_segments=6, radii=(0.64, 0.44, 0.34), center=(0.0, 1.46, 0.70), ring_count=2)
+    # Four sturdy arched beetle legs grounded cleanly at Z = 0.0
+    for side in (-1, 1):
+        s = float(side)
+        for py in (-0.42, 0.66):
+            add_curved_tube(
+                secondary,
+                [
+                    ((s * 0.84, py, 0.68), 0.19),
+                    ((s * 1.24, py - 0.05, 0.38), 0.18),
+                    ((s * 1.30, py - 0.08, 0.14), 0.15),
+                ],
+                sides=4,
+                capped_tips=True,
+            )
+    sec_min_z = min(v.co.z for v in secondary.verts)
+    if sec_min_z > 0.0:
+        for v in secondary.verts:
+            if v.co.z < 0.25:
+                v.co.z = max(0.0, v.co.z - sec_min_z)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.45, pos_y=-1.48, pos_z=0.88, radii=(0.18, 0.12, 0.21), yaw_deg=12.0)
-
     accent = bmesh.new()
-    # Forward-angled crystal rhino horn
-    add_crystal_shard(accent, radius=0.28, shaft_height=0.56, tip_height=0.68, base_center=(0.0, -1.25, 1.05), euler_deg=(38.0, 0.0, 0.0), sides=6)
-    # Flanking back crystal wing-spines
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.45,
+        pos_y=-1.52,
+        pos_z=0.96,
+        radii=(0.19, 0.11, 0.23),
+        pitch_x_deg=-18.0,
+        yaw_z_deg=24.0,
+        radial_segs=8,
+        catch_scale=0.88,
+    )
+    # Curved ice rhino horn sweeping forward then upward
+    add_curved_tube(
+        accent,
+        [
+            ((0.0, -1.26, 1.18), 0.22),
+            ((0.0, -1.68, 1.46), 0.16),
+            ((0.0, -1.80, 1.98), 0.10),
+        ],
+        sides=4,
+        capped_tips=False,
+    )
+    # Twin ice wing-fins on carapace
     for side in (-1, 1):
-        add_crystal_shard(accent, radius=0.28, shaft_height=0.58, tip_height=0.56, base_center=(side * 0.72, 0.32, 1.48), euler_deg=(-36.0, side * 24.0, 0.0), sides=6)
+        s = float(side)
+        add_curved_tube(
+            accent,
+            [
+                ((s * 0.72, 0.04, 1.44), 0.24),
+                ((s * 1.02, 1.00, 1.88), 0.14),
+            ],
+            sides=4,
+            capped_tips=False,
+        )
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_nebulafox() -> dict[str, bmesh.types.BMesh]:
-    """NebulaFox (~342 tris, ~2.8 x 3.2 x 3.0 studs): chibi fox + snout + 4 paws + swept ears + comet tail."""
+    """
+    NebulaFox (<= 400 tris: sleek rounded torso, tapered soft fox head + tapered cream muzzle,
+    4 sleek paws on Z=0, tall swept ears, and large curled comet tail):
+    """
     body = bmesh.new()
-    add_beveled_box(body, (1.62, 2.04, 1.30), (0.0, 0.18, 1.05), bevel_offset=0.20, bevel_segments=1)
-    add_beveled_box(body, (1.92, 1.66, 1.40), (0.0, -0.58, 1.64), bevel_offset=0.24, bevel_segments=2)
-    add_tapered_prism(body, sides=4, radius_bottom=0.58, radius_top=0.28, height=0.76, center=(0.0, -1.48, 1.38), euler_deg=(90.0, 0.0, 45.0), scale_xy=(1.1, 0.7))
-    for px in (-0.54, 0.54):
-        for py in (-0.64, 0.78):
-            add_tapered_prism(body, sides=4, radius_bottom=0.26, radius_top=0.20, height=0.58, center=(px, py, 0.29), euler_deg=(0.0, 0.0, 45.0), snap_min_z=0.0)
+    add_rounded_ellipsoid(body, radial_segments=8, radii=(0.82, 1.14, 0.68), center=(0.0, 0.22, 1.04), ring_count=3)
+    add_rounded_ellipsoid(body, radial_segments=10, radii=(0.94, 0.88, 0.74), center=(0.0, -0.56, 1.58), ring_count=3, taper_front_y=0.34)
+
+    secondary = bmesh.new()
+    # Tapered cream fox muzzle
+    add_rounded_ellipsoid(secondary, radial_segments=8, radii=(0.48, 0.58, 0.30), center=(0.0, -1.26, 1.38), ring_count=2, taper_front_y=0.45)
+    # Fluffy chest bib
+    add_rounded_ellipsoid(secondary, radial_segments=6, radii=(0.56, 0.34, 0.48), center=(0.0, -0.78, 1.00), ring_count=2)
+    # Four sleek fox paws grounded at Z = 0.0
+    for px in (-0.48, 0.48):
+        for py in (-0.60, 0.82):
+            add_rounded_ellipsoid(secondary, radial_segments=4, radii=(0.25, 0.30, 0.30), center=(px, py, 0.30), euler_deg=(0.0, 0.0, 45.0), ring_count=2, snap_min_z=0.0)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.50, pos_y=-1.36, pos_z=1.78, radii=(0.19, 0.12, 0.24), yaw_deg=12.0)
-
     accent = bmesh.new()
-    for side in (-1, 1):
-        add_crystal_shard(accent, radius=0.30, shaft_height=0.45, tip_height=0.62, base_center=(side * 0.62, -0.45, 2.18), euler_deg=(-10.0, side * 18.0, 0.0), sides=4)
-    # Iconic sweeping upward nebula comet tail
-    add_beveled_box(accent, (0.76, 0.86, 0.96), (0.0, 1.24, 1.48), bevel_offset=0.14, bevel_segments=1, euler_deg=(-38.0, 0.0, 0.0))
-    add_crystal_shard(accent, radius=0.40, shaft_height=0.54, tip_height=0.68, base_center=(0.0, 1.56, 1.88), euler_deg=(-18.0, 0.0, 0.0), sides=6)
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.44,
+        pos_y=-1.24,
+        pos_z=1.74,
+        radii=(0.20, 0.12, 0.26),
+        pitch_x_deg=-18.0,
+        yaw_z_deg=28.0,
+        radial_segs=8,
+        catch_scale=0.92,
+    )
+    add_rounded_ellipsoid(eyes, radial_segments=4, radii=(0.13, 0.11, 0.10), center=(0.0, -1.78, 1.44), ring_count=2)
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    # Tall swept fox ears
+    for side in (-1, 1):
+        s = float(side)
+        add_curved_tube(
+            accent,
+            [
+                ((s * 0.54, -0.48, 2.12), 0.25),
+                ((s * 0.82, -0.18, 3.04), 0.12),
+            ],
+            sides=4,
+            capped_tips=False,
+        )
+    # Iconic curled comet tail sweeping up and curling forward over back
+    add_curved_tube(
+        accent,
+        [
+            ((0.0, 1.12, 1.16), 0.24),
+            ((0.0, 1.62, 1.46), 0.40),
+            ((0.0, 1.76, 2.04), 0.44),
+            ((0.0, 1.16, 2.42), 0.22),
+        ],
+        sides=5,
+        capped_tips=False,
+    )
+
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_solargolem() -> dict[str, bmesh.types.BMesh]:
-    """SolarGolem (~348 tris, ~3.8 x 3.4 x 4.6 studs): guardian torso + heavy arms + pillar legs + core + sun crown."""
+    """
+    SolarGolem (<= 400 tris: preserves chunky stone guardian silhouette with chamfered
+    stone torso/arms, bronze pauldrons/gauntlets/pillar legs on Z=0, core diamond & sun crown):
+    """
     body = bmesh.new()
-    add_beveled_box(body, (2.56, 2.18, 2.68), (0.0, 0.04, 2.52), bevel_offset=0.24, bevel_segments=2)
+    add_beveled_box(body, (2.52, 2.16, 2.64), (0.0, 0.04, 2.52), bevel_offset=0.24, bevel_segments=1)
     for side in (-1, 1):
-        add_beveled_box(body, (0.86, 1.04, 2.16), (side * 1.54, -0.04, 2.18), bevel_offset=0.14, bevel_segments=1, euler_deg=(0.0, side * 5.0, 0.0))
+        add_rounded_ellipsoid(body, radial_segments=4, radii=(0.52, 0.62, 0.68), center=(side * 1.54, -0.02, 2.74), euler_deg=(0.0, side * 4.0, 45.0), ring_count=3)
+
+    secondary = bmesh.new()
+    for side in (-1, 1):
+        add_rounded_ellipsoid(secondary, radial_segments=4, radii=(0.60, 0.70, 0.34), center=(side * 1.52, -0.02, 3.50), euler_deg=(0.0, side * -8.0, 45.0), ring_count=2)
+        add_rounded_ellipsoid(secondary, radial_segments=4, radii=(0.58, 0.68, 0.64), center=(side * 1.58, -0.10, 1.72), euler_deg=(-6.0, side * 4.0, 45.0), ring_count=3)
     for px in (-0.72, 0.72):
-        add_tapered_prism(body, sides=4, radius_bottom=0.56, radius_top=0.48, height=1.32, center=(px, 0.04, 0.66), euler_deg=(0.0, 0.0, 45.0), snap_min_z=0.0)
-    add_tapered_prism(body, sides=4, radius_bottom=0.48, radius_top=0.20, height=0.86, center=(0.0, 1.18, 1.48), euler_deg=(-55.0, 0.0, 45.0))
+        add_rounded_ellipsoid(secondary, radial_segments=4, radii=(0.60, 0.70, 0.70), center=(px, 0.04, 0.70), euler_deg=(0.0, 0.0, 45.0), ring_count=3, snap_min_z=0.0)
+    add_rounded_ellipsoid(secondary, radial_segments=4, radii=(0.44, 0.46, 0.58), center=(0.0, 1.16, 1.56), euler_deg=(-38.0, 0.0, 45.0), ring_count=2)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.62, pos_y=-1.08, pos_z=3.18, radii=(0.24, 0.13, 0.22), yaw_deg=6.0)
-
     accent = bmesh.new()
-    # Front chest SolarCore faceted octa-diamond
-    add_crystal_shard(accent, radius=0.56, shaft_height=0.22, tip_height=0.38, base_center=(0.0, -1.04, 2.18), euler_deg=(90.0, 0.0, 0.0), sides=4)
-    # Sun Crown band + 3 solar crest spikes on head
-    add_tapered_prism(accent, sides=6, radius_bottom=1.08, radius_top=1.18, height=0.36, center=(0.0, 0.02, 3.88))
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.60,
+        pos_y=-1.04,
+        pos_z=3.18,
+        radii=(0.24, 0.13, 0.24),
+        pitch_x_deg=-4.0,
+        yaw_z_deg=6.0,
+        radial_segs=8,
+        catch_scale=1.0,
+    )
+    add_crystal_shard(accent, radius=0.56, shaft_height=0.20, tip_height=0.36, base_center=(0.0, -1.04, 2.20), euler_deg=(90.0, 0.0, 0.0), sides=4)
+    add_lathe_shape(
+        accent,
+        6,
+        [(3.74, 1.08, 1.04, 0.02, 0.0, 0.0), (4.06, 1.16, 1.10, 0.02, 0.0, 0.0)],
+        bottom_cap_z=3.74,
+        top_cap_z=4.06,
+    )
     for side in (-1, 0, 1):
-        height_scale = 0.74 if side == 0 else 0.56
-        add_crystal_shard(accent, radius=0.24, shaft_height=height_scale * 0.6, tip_height=height_scale * 0.7, base_center=(side * 0.64, -0.06, 3.96), euler_deg=(-8.0, side * 16.0, 0.0), sides=4)
+        h_s = 0.76 if side == 0 else 0.58
+        add_crystal_shard(accent, radius=0.24, shaft_height=h_s * 0.58, tip_height=h_s * 0.68, base_center=(side * 0.64, -0.06, 3.96), euler_deg=(-8.0, side * 16.0, 0.0), sides=4)
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_cometowl() -> dict[str, bmesh.types.BMesh]:
-    """CometOwl (~348 tris, ~3.4 x 3.0 x 3.9 studs): plump owl body + talons + tail fan + beak + wings + ear tufts."""
+    """
+    CometOwl (<= 400 tris: plump rounded owl dome, soft cream belly shield, 2 grounded
+    talon feet on Z=0, giant 10-sided stargazer eyes + beak + swept comet wings):
+    """
     body = bmesh.new()
-    owl_verts = add_beveled_box(body, (2.28, 2.16, 2.76), (0.0, 0.06, 1.72), bevel_offset=0.28, bevel_segments=2)
-    for v in owl_verts:
-        z_norm = max(0.0, min(1.0, (v.co.z - 0.34) / 2.76))
-        if z_norm > 0.70:
-            taper = 1.0 - 0.12 * ((z_norm - 0.70) / 0.30)
-            v.co.x *= taper
-            v.co.y *= taper
+    owl_rings = [
+        (0.36, 0.92, 0.88, 0.06, 0.0, 0.0),
+        (0.95, 1.24, 1.18, 0.06, 0.0, 0.0),
+        (1.75, 1.18, 1.14, 0.06, 0.0, 0.0),
+        (2.55, 1.00, 0.98, 0.06, 0.0, 0.0),
+        (2.96, 0.58, 0.56, 0.06, 0.0, 0.0),
+    ]
+    add_lathe_shape(body, 10, owl_rings, bottom_cap_z=0.30, top_cap_z=3.08)
     for side in (-1, 1):
-        add_tapered_prism(body, sides=4, radius_bottom=0.40, radius_top=0.30, height=0.48, center=(side * 0.56, -0.14, 0.24), euler_deg=(0.0, 0.0, 45.0), scale_xy=(0.85, 1.25), snap_min_z=0.0)
-    # Layered rear tail fan
+        add_rounded_ellipsoid(body, radial_segments=4, radii=(0.36, 0.58, 0.24), center=(side * 0.28, 1.24, 0.78), euler_deg=(-35.0, 0.0, side * 14.0), ring_count=2)
+
+    secondary = bmesh.new()
+    add_rounded_ellipsoid(secondary, radial_segments=6, radii=(0.84, 0.34, 0.78), center=(0.0, -0.96, 1.22), ring_count=2)
     for side in (-1, 1):
-        add_tapered_prism(body, sides=4, radius_bottom=0.42, radius_top=0.18, height=0.92, center=(side * 0.28, 1.18, 0.88), euler_deg=(-58.0, side * 14.0, 45.0), scale_xy=(0.9, 0.45))
+        add_rounded_ellipsoid(secondary, radial_segments=5, radii=(0.34, 0.44, 0.22), center=(side * 0.54, -0.18, 0.22), ring_count=2, snap_min_z=0.0)
 
     eyes = bmesh.new()
-    add_eye_pair(eyes, half_sep_x=0.52, pos_y=-1.04, pos_z=2.36, radii=(0.30, 0.14, 0.32), yaw_deg=12.0)
-
     accent = bmesh.new()
-    # Curved golden beak
-    add_crystal_shard(accent, radius=0.24, shaft_height=0.18, tip_height=0.42, base_center=(0.0, -1.06, 2.08), euler_deg=(112.0, 0.0, 0.0), sides=4)
-    # Sweeping cosmic wings
+    add_eye_pair_with_catchlights(
+        eyes,
+        accent,
+        half_sep_x=0.50,
+        pos_y=-0.98,
+        pos_z=2.34,
+        radii=(0.32, 0.14, 0.35),
+        pitch_x_deg=-16.0,
+        yaw_z_deg=20.0,
+        radial_segs=10,
+        catch_scale=1.1,
+    )
+    add_crystal_shard(accent, radius=0.24, shaft_height=0.16, tip_height=0.38, base_center=(0.0, -1.04, 2.08), euler_deg=(114.0, 0.0, 0.0), sides=4)
     for side in (-1, 1):
-        add_beveled_box(accent, (0.52, 1.38, 1.72), (side * 1.24, 0.16, 1.66), bevel_offset=0.10, bevel_segments=1, euler_deg=(16.0, side * -18.0, side * 10.0))
-        add_crystal_shard(accent, radius=0.24, shaft_height=0.42, tip_height=0.56, base_center=(side * 0.74, -0.12, 2.94), euler_deg=(10.0, side * 26.0, 0.0), sides=4)
+        s = float(side)
+        add_curved_tube(
+            accent,
+            [
+                ((s * 1.06, -0.06, 2.08), 0.24),
+                ((s * 1.42, 0.24, 1.56), 0.34),
+                ((s * 1.38, 0.62, 0.96), 0.22),
+            ],
+            sides=4,
+            capped_tips=False,
+        )
+        add_curved_tube(
+            accent,
+            [
+                ((s * 0.66, -0.10, 2.86), 0.20),
+                ((s * 0.98, 0.06, 3.52), 0.10),
+            ],
+            sides=4,
+            capped_tips=False,
+        )
 
-    return {"Body": body, "Eyes": eyes, "Accent": accent}
+    return {"Body": body, "Secondary": secondary, "Eyes": eyes, "Accent": accent}
 
 
 def build_bisected_rock(seed: int, scale_xyz: tuple[float, float, float]) -> bmesh.types.BMesh:
-    """Builds a seeded jagged low-poly boulder cleanly sliced flat at `Z = 0.0`."""
+    """Builds a seeded jagged angular low-poly boulder cleanly sliced flat at `Z = 0.0`."""
     rng = random.Random(seed)
     bm = bmesh.new()
     bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
@@ -595,8 +984,8 @@ def build_bisected_rock(seed: int, scale_xyz: tuple[float, float, float]) -> bme
 
 def build_meteor(trait_id: str, seed: int) -> dict[str, bmesh.types.BMesh]:
     """
-    Generates one low-poly Crater Meteor (`RockBody`, `CoreShards`, `TraitCrest`)
-    with embedded glowing crystal shards and color-independent silhouette.
+    Generates one angular low-poly Crater Meteor (`RockBody`, `CoreShards`, `TraitCrest`)
+    with embedded glowing crystal shards and color-independent silhouettes (unchanged from S4-01).
     """
     is_astral = trait_id == "Astral"
     rock_scale = (2.45, 2.45, 2.20) if is_astral else (1.85, 1.85, 1.75)
@@ -621,18 +1010,15 @@ def build_meteor(trait_id: str, seed: int) -> dict[str, bmesh.types.BMesh]:
 
     crest = bmesh.new()
     if trait_id == "Ember":
-        # Twin flame-horn crests flanking top ridge
         for side in (-1, 1):
             add_crystal_shard(crest, radius=0.40, shaft_height=0.95, tip_height=0.85, base_center=(side * 0.92, 0.0, rock_max_z * 0.68), euler_deg=(-10.0, side * 24.0, 0.0), sides=4)
             add_crystal_shard(crest, radius=0.26, shaft_height=0.60, tip_height=0.65, base_center=(side * 1.18, -0.35, rock_max_z * 0.52), euler_deg=(18.0, side * 36.0, 0.0), sides=4)
     elif trait_id == "Frost":
-        # Crown spike + 3 jagged radial ice-crystal spikes
         add_crystal_shard(crest, radius=0.42, shaft_height=1.15, tip_height=0.95, base_center=(0.0, 0.0, rock_max_z * 0.72), euler_deg=(4.0, -6.0, 0.0), sides=6)
         for idx in range(3):
             ang = math.radians(idx * 120.0 + 30.0)
             add_crystal_shard(crest, radius=0.30, shaft_height=0.90, tip_height=0.75, base_center=(math.cos(ang) * 1.08, math.sin(ang) * 1.08, rock_max_z * 0.60), euler_deg=(math.sin(ang) * 28.0, -math.cos(ang) * 28.0, 0.0), sides=6)
     else:
-        # Astral: tilted orbiting low-poly diamond star-ring + 4 cardinal star nodes
         ring_center = (0.0, 0.0, rock_max_z * 0.60)
         ring_euler = (16.0, -10.0, 0.0)
         add_orbiting_ring(crest, major_r=2.95, tube_rx=0.22, tube_rz=0.16, major_segments=16, minor_segments=4, center=ring_center, euler_deg=ring_euler)
@@ -675,7 +1061,6 @@ def finalize_and_validate_submeshes(
         tris = len(mesh_data.loop_triangles)
         mesh_data.materials.append(mat_by_name[sub_name])
 
-        # Exact Studio sub-mesh name (`Body`/`Eyes`/`Accent` or `RockBody`/`CoreShards`/`TraitCrest`)
         obj = bpy.data.objects.new(sub_name, mesh_data)
         obj.matrix_world = Matrix.Identity(4)
         obj.location = (0.0, 0.0, 0.0)
@@ -723,7 +1108,7 @@ def finalize_and_validate_submeshes(
 
 
 def export_selected_fbx(objs: list[bpy.types.Object], out_path: str) -> int:
-    """Exports flat top-level sub-meshes using the Place1-validated Roblox FBX settings."""
+    """Exports flat top-level sub-meshes using the Studio-validated Roblox FBX settings."""
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objs:
         obj.select_set(True)
@@ -747,7 +1132,14 @@ def export_selected_fbx(objs: list[bpy.types.Object], out_path: str) -> int:
     return os.path.getsize(out_path)
 
 
-def stage_in_viewport_row(objs: list[bpy.types.Object], prefix: str, asset_name: str, row_idx: int, total_count: int, row_y: float) -> None:
+def stage_in_viewport_row(
+    objs: list[bpy.types.Object],
+    prefix: str,
+    asset_name: str,
+    row_idx: int,
+    total_count: int,
+    row_y: float,
+) -> None:
     """Renames exported objects uniquely and positions them neatly in a Blender showcase row."""
     offset_x = (row_idx - (total_count - 1) * 0.5) * SHOWCASE_SPACING_X
     for obj in objs:
@@ -756,7 +1148,7 @@ def stage_in_viewport_row(objs: list[bpy.types.Object], prefix: str, asset_name:
 
 
 def generate_catalog(allow_force: bool = False) -> list[dict]:
-    """Builds, validates, exports, and logs all 6 hero critters + 3 crater meteors."""
+    """Builds, validates, exports, and logs all 6 soft hero critters + 3 angular meteors."""
     critters_col, meteors_col = guard_and_prepare_scene(allow_force)
     critters_dir, meteors_dir, manifest_path = get_export_roots()
 
@@ -775,6 +1167,7 @@ def generate_catalog(allow_force: bool = False) -> list[dict]:
         pal = CRITTER_PALETTES[species_id]
         mats = {
             "Body": create_material(f"Mat_{species_id}_Body", pal["body"], roughness=0.30),
+            "Secondary": create_material(f"Mat_{species_id}_Secondary", pal["secondary"], roughness=0.35),
             "Eyes": create_material(f"Mat_{species_id}_Eyes", COLOR_EYES_SRGB, roughness=0.15),
             "Accent": create_material(f"Mat_{species_id}_Accent", pal["accent"], roughness=0.22, emission_strength=0.45),
         }
@@ -806,7 +1199,7 @@ def generate_catalog(allow_force: bool = False) -> list[dict]:
         json.dump({"assets": manifest_entries}, f, indent=2)
         f.write("\n")
 
-    print("=== Starfall Ranch S4-01 Hero Catalog Export Summary ===")
+    print("=== Starfall Ranch Soft-Critter + Angular-Meteor Catalog Export Summary ===")
     for entry in manifest_entries:
         w, d, h = entry["studs_wdh"]
         print(
