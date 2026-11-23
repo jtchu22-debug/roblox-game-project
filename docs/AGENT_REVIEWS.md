@@ -488,3 +488,13 @@ Round 3 player results and the product decision remain pending. [Round 3 workshe
 
 1. **High — The full six-client runtime check is still open.** The startup suite uses simulated assignments and tests permission and state logic. Section 5 of the checklist has no completed multi-client results. Run the six-client test and record unique assignment, late join and plot reuse, plus cross-client claim release. [Checklist](https://github.com/jtchu22-debug/roblox-game-project/blob/cb25e4247840ca0fe1252f75d2a72b4262ac4f03/docs/S3_04_VERIFICATION_CHECKLIST.md#5-manual-6-client-live-server-verification-checklist)
 2. **High — Live two-server ownership contention is still unverified.** The lock-loss suite injects a force-load marker in `ProfileStore.Mock`. The API-backed test writes and reloads in sequential sessions. Verify ownership handoff and profile consistency in two overlapping test servers using an isolated test record. [Mock ownership and flush tests](https://github.com/jtchu22-debug/roblox-game-project/blob/cb25e4247840ca0fe1252f75d2a72b4262ac4f03/src/Server/Services/Stage3VerificationSuite.luau#L246-L299)
+
+---
+
+### Review #028 — S3-04 technical sign-off
+
+**APPROVE S3-04 technical verification on the build reported as `v0.3.6-s3-04-verification` for [cb25e42](https://github.com/jtchu22-debug/roblox-game-project/commit/cb25e4247840ca0fe1252f75d2a72b4262ac4f03).** Stage 4 can proceed technically. Round 3 product approval remains pending.
+
+- I inspected local Studio logs showing six unique ranch assignments. After Player2 left, five observers saw Plot 2 clear. Player10 joined the same session and took Plot 2, with zero leftover visuals on all six clients. The logs also show a second client rescuing the same meteor after the first traveled to Hub.
+- Two overlapping API-backed Studio servers handed off the disposable profile. Server A logged one session-end kick, confirmed its final save of 892 Coins at revision 3, and reported its save path unavailable after handoff. Server B loaded the matching balance, revision and timer, then confirmed its own save at 992 Coins and revision 4.
+- Review #027 records the passing exact-SHA Rojo build, whitespace check, 55 startup suites and absent CI results. I inspected the new runtime evidence and did not rerun the sessions. Excess admission and lure saturation remain covered by the automated suites.
