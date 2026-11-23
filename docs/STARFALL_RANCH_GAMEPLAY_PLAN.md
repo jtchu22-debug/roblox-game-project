@@ -59,6 +59,28 @@ A workable starting map has three ranches on each side of the shared plaza, Embe
 
 **Stage 3** uses the roomier plot footprint and hub paths when the six-plot map is greyboxed. Represent hub destinations with signs or simple stalls and test the starter loop, plot assignment, routes, and prompt readability. **Stages 4–5** refine the visual design, mobile HUD, station interactions, and meteor-event visibility. **Stage 6** completes the Observatory contracts and scanner, the shared meteor experience, and the public shop described below.
 
+## Hatch odds and Observatory leaderboards
+
+Add this during Stage 6 alongside the expanded roster, before the public launch. The Observatory gets two global boards. The Field Guide and critter cards show the same odds and income labels so players can see what each board measures.
+
+| Board | What counts |
+| --- | --- |
+| **Rarest Hatch** | Highest lifetime rarity among the player's eligible species-and-finish hatches. Show the critter, its finish, meteor pool, and `1 in N` hatch odds. Keep the record if the critter is sold. Use standard earnable pod rolls at published, unboosted odds. Exclude premium, boosted-odds, granted, and legacy critters without a verifiable roll record. |
+| **Ranch Coins/s** | Combined steady Coins per second from the player's currently placed critters, including weight, mutation, and feeding. A player's latest saved lineup stands while offline. Update after a lineup or income change and publish on a bounded refresh interval. Exclude one-time rewards and offline payouts. |
+
+### Rarity and finishes
+
+- Each standard meteor pool publishes a species probability as `1 in N` (label rounded display values as approximate). Keep Common through Secret as readable species tiers. A species available from multiple pools shows its odds by pool in the Field Guide, and each eligible hatch is ranked using the pool it actually came from.
+- Roll one finish after the species. Start tuning at **89% Standard, 10% Gold, and 1% Rainbow**. Gold is one-tenth as likely as the species by itself, and Rainbow is one-hundredth as likely. A species with **1 in 500** pool odds is **about 1 in 562 Standard**, **1 in 5,000 Gold**, and **1 in 50,000 Rainbow**. These are proposed tuning values. Gold and Rainbow are collectible finishes with no direct Coins/s bonus in this baseline.
+- The server determines the record using the unrounded joint probability of the species and finish. Save the original odds and pool revision so future balancing changes leave existing records intact. Display the leading record on the board and keep numerical ordering independent of display rounding.
+
+### Weight, size, and mutations
+
+- Use **1.0 kg = 1.0× base income**. Each **0.1 kg** adds or subtracts **10 percentage points** from that multiplier. Start testing with **0.8–1.5 kg** in 0.1 kg steps. At a base rate of **100 Coins/s**, a **0.8 kg** critter earns **80**, a **1.2 kg** critter earns **120**, and a **1.5 kg** critter earns **150** before other bonuses. Let displayed size follow weight within the pen and device performance budgets, with no separate size bonus.
+- A hatch can independently roll one rare mutation. Also test an earnable natural mutation path through ranch play after hatching. Use Radiant as the starting mutation and preserve the existing Radiant appearance and earned value in migration. Mutation raises Coins/s and has no effect on the Rarest Hatch record. Balance mutation and weight together against ranch income caps and show the final rate on the card.
+- Settle accrual at the old rate before a placement, feed, or mutation changes it. Reuse the server economy rate for pens, offline settlement, cards, and the Coins/s board. Freeze the species, finish, weight, and initial mutation outcome once per pod and persist it across rejoin and retry. Existing critters default to 1.0 kg and Standard finish while preserving existing progression. Keep the opening loop accessible before introducing the boards or income modifiers to new players.
+- Before public launch, verify the pool and finish math, rate bounds, legacy saves, rejoin and duplicate-reward handling, and both boards across servers. Check that selling a record critter preserves the rarity entry, while moving a producer out of a pen lowers the income entry. Verify that changing weight or mutation leaves the rarity entry intact.
+
 ## Day-one shop and economy
 
 Ship the verified shop alongside the full launch build. The launch lineup from [PR #9](https://github.com/jtchu22-debug/roblox-game-project/pull/9) includes gameplay passes for faster incubation, 2× capped offline Coins, Ranch VIP with extra bag room, and eligible non-Secret paid luck. Include Instant Hatch credits, a guaranteed Robux companion, cosmetics, and an eligible Premium Meteor product. Keep the advertised searchable Field Guide focused on the 24 earnable critters. Put exclusive shop companions in a separate guide category.
@@ -72,7 +94,7 @@ Keep hunt-lure Coins earnable through play. Price exclusive guaranteed pets insi
 | **Stage 2B — Expanded playable loop** | Stay on MockStore. Use the existing Crater with two distinct paths, two purchasable Cracker tiers, a distinct Astral arrival and crack, one named Frost lure, one capped feeding upgrade, and 2–3 new critters for 5–6 total. Show one follow-up goal after the first ranch pads. | Play through roughly 10–15 minutes of purposeful progression before inviting live testers. Run 3–5 new uncoached testers and log anonymous outcomes. |
 | **Stage 3 — Persistence and multiplayer** | Persist the tool, ranch, critter and collection state. Support offline hatching, migrate old/default state, and verify larger servers. | Rejoin, overlapping sessions, server failures, inventory capacity and meteor claim cleanup behave consistently. |
 | **Stages 4–5 — Art pipeline and private baseline** | Validate a Blender import end to end, build representative assets and the Field Guide, and test field readability, input and multiplayer performance. Prototype one public fall on a private server. | Clean mobile and desktop runs, working accessibility, and stable claims and per-player rewards. |
-| **Stage 6 — Content-complete private candidate, then public launch** | Ship-ready 24-species roster, three exploration fields, Field Guide and records, Observatory contracts and scanner, public meteor falls, tool and ranch progression, feeding, lures, capped offline Coins, and the day-one shop. | Privately verify the whole build, including all species’ earnable paths, mobile play, save and offline recovery, late-game balance, and real purchase delivery and eligibility. Open publicly with those systems complete. |
+| **Stage 6 — Content-complete private candidate, then public launch** | Ship-ready 24-species roster, three exploration fields, Field Guide and records, Observatory contracts and scanner, Rarest Hatch and Ranch Coins/s leaderboards, collectible finishes, weight and mutations, public meteor falls, tool and ranch progression, feeding, lures, capped offline Coins, and the day-one shop. | Privately verify the whole build, including all species’ earnable paths, leaderboard odds and cross-server updates, mobile play, save and offline recovery, late-game balance, and real purchase delivery and eligibility. Open publicly with those systems complete. |
 
 ### Stage 2B decision
 
