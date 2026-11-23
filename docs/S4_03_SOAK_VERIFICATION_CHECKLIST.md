@@ -56,6 +56,13 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 | Checkpoint | `T+20m` | | | | | | |
 | Final End | `T+30m` | | | | | | |
 
+### Run #1 Log (Initial Mobile Check — `iPhone 17`, `2026-11-23`)
+- **Reported Reading (`T+15:00+`):** `FPS 60 (Avg 60 / Min 58) | 16.7ms | Mem 818MB (Lua 254.8MB) | Vis 0 | Met 0`
+- **Notes & Gaps Remaining for Final `S4-03` Sign-Off:**
+  1. `Met 0` in Run #1 was caused by `UIController` checking `workspace.StarfallActiveMeteors` instead of `#CollectionService:GetTagged("StarfallActiveMeteor")` (fixed in `UIController.luau` with live `Mem (Δ)` delta tracking).
+  2. `Vis 0` indicates no critters were placed in habitat pens during that capture — Run #2 must exercise active gameplay (`Vis > 0`, `Met > 0`, Ember/Frost/Astral cracks, Bag/Field Guide/Settings toggles, Hub/Ranch travel).
+  3. Capture both a `T+2m` baseline and `T+15m+` end reading (or `ΔMB` / `/console` `[SoakTelemetry]` lines), confirm `0` console script errors & clean touch controls, and test on a lower-end phone/tablet if available (or note transparently if `iPhone 17` is the only physical test device).
+
 ### Pass / Fail Thresholds
 - [ ] **Sustained Frame Rate:** Average & steady-state FPS remains **$\ge 30$ FPS** throughout the 15–30 minute run with active critters (`<= 30`), incubators, and meteors visible.
 - [ ] **Memory Stability (Zero Leak):** Total Memory and `LuaHeap` plateau after initial warmup (no continuous monotonic climb across `T+10m -> T+30m`; destroyed pods/meteors/drawers release cleanly).

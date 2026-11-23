@@ -9,6 +9,7 @@
 	                       focus & scroll survive passive Coin updates, and test Keep-vs-Sell & Settings toggles.
 ]]
 
+local CollectionService = game:GetService("CollectionService")
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -158,6 +159,7 @@ local perfTotalFrames = 0
 local perfTotalDt = 0
 local perfMinFps = math.huge
 local perfLastLogMinute = -1
+local perfBaselineMemMb = 0
 
 local bagOpen = false
 local guideOpen = false
@@ -527,14 +529,15 @@ local function readPerfStatsSnapshot(): (number, number, number, number)
 
 	local visualsFolder = workspace:FindFirstChild("StarfallClientVisuals")
 	local visCount = if visualsFolder ~= nil then #visualsFolder:GetChildren() else 0
-	local meteorsFolder = workspace:FindFirstChild("StarfallActiveMeteors")
-	local metCount = if meteorsFolder ~= nil then #meteorsFolder:GetChildren() else 0
+	local metCount = #CollectionService:GetTagged(Constants.TAG_ACTIVE_METEOR)
 
 	return totalMem, luaMem, visCount, metCount
 end
 
 local function updatePerfReadout(fps: number, avgFps: number, minFps: number, frameMs: number, elapsedSec: number, emitLog: boolean): ()
 	local totalMem, luaMem, visCount, metCount = readPerfStatsSnapshot()
+	local deltaMem = totalMem - perfBaselineMemMb
+	local deltaSign = if deltaMem >= 0 then "+" else ""
 	local elapsedStr = FormatUtil.FormatTimer(math.floor(elapsedSec))
 
 	if perfLine1Label ~= nil then
@@ -558,26 +561,28 @@ local function updatePerfReadout(fps: number, avgFps: number, minFps: number, fr
 	end
 
 	if perfLine2Label ~= nil then
-		perfLine2Label.Text = string.format("Mem: %.0fMB (Lua %.1fMB) | Vis: %d | Met: %d", totalMem, luaMem, visCount, metCount)
+		perfLine2Label.Text = string.format("Mem: %.0fMB (%s%.0f) | Vis: %d | Met: %d", totalMem, deltaSign, deltaMem, visCount, metCount)
 	end
 
 	if emitLog then
 		if fps > 0 then
 			print(string.format(
-				"[SoakTelemetry] Elapsed=%s | FPS=%.1f (Avg=%.1f Min=%.1f) | FrameMs=%.1f | TotalMemMB=%.1f | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
+				"[SoakTelemetry] Elapsed=%s | FPS=%.1f (Avg=%.1f Min=%.1f) | FrameMs=%.1f | TotalMemMB=%.1f | DeltaMemMB=%s%.1f | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
 				elapsedStr,
 				fps,
 				avgFps,
 				minFps,
 				frameMs,
 				totalMem,
+				deltaSign,
+				deltaMem,
 				luaMem,
 				visCount,
 				metCount
 			))
 		else
 			print(string.format(
-				"[SoakTelemetry] Elapsed=%s | BaselineTotalMemMB=%.1f | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
+				"[SoakTelemetry] Elapsed=%s | BaselineTotalMemMB=%.1f | DeltaMemMB=+0.0 | LuaHeapMB=%.1f | Visuals=%d | Meteors=%d",
 				elapsedStr,
 				totalMem,
 				luaMem,
@@ -620,6 +625,8 @@ local function setPerfOverlayEnabled(enabled: boolean): ()
 	perfTotalDt = 0
 	perfMinFps = math.huge
 	perfLastLogMinute = 0
+	local baseTotal = readPerfStatsSnapshot()
+	perfBaselineMemMb = baseTotal
 	updatePerfReadout(0, 0, 0, 0, 0, true)
 
 	perfRenderConn = RunService.RenderStepped:Connect(function(dt: number)
@@ -3166,6 +3173,7 @@ function UIController.RunSelfTest(): number
 		-- S4-03 Soak Perf Stats overlay toggles cleanly with zero leftover RenderStepped listener when OFF
 		assert(UIController.TogglePerfOverlay() == true and UIController.IsPerfOverlayOpen() == true, "TogglePerfOverlay opens Soak Perf Stats")
 		assert(perfOverlayFrame ~= nil and perfOverlayFrame.Visible == true and perfRenderConn ~= nil, "PerfOverlay visible and sampling when ON")
+		assert(perfLine2Label ~= nil and string.find(perfLine2Label.Text, "Vis:", 1, true) ~= nil and string.find(perfLine2Label.Text, "Met:", 1, true) ~= nil, "PerfOverlay Line2 renders Vis and Met counters")
 		assert(perfToggleButton ~= nil and perfToggleButton.Text == "Soak Perf Stats: ON", "PerfToggleButton text updates to ON")
 		assert(UIController.TogglePerfOverlay() == false and UIController.IsPerfOverlayOpen() == false, "TogglePerfOverlay closes cleanly")
 		assert(perfOverlayFrame ~= nil and perfOverlayFrame.Visible == false and perfRenderConn == nil, "PerfOverlay disconnects RenderStepped cleanly when OFF")
