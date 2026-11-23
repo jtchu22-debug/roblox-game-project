@@ -498,3 +498,13 @@ Round 3 player results and the product decision remain pending. [Round 3 workshe
 - I inspected local Studio logs showing six unique ranch assignments. After Player2 left, five observers saw Plot 2 clear. Player10 joined the same session and took Plot 2, with zero leftover visuals on all six clients. The logs also show a second client rescuing the same meteor after the first traveled to Hub.
 - Two overlapping API-backed Studio servers handed off the disposable profile. Server A logged one session-end kick, confirmed its final save of 892 Coins at revision 3, and reported its save path unavailable after handoff. Server B loaded the matching balance, revision and timer, then confirmed its own save at 992 Coins and revision 4.
 - Review #027 records the passing exact-SHA Rojo build, whitespace check, 55 startup suites and absent CI results. I inspected the new runtime evidence and did not rerun the sessions. Excess admission and lure saturation remain covered by the automated suites.
+
+---
+
+### Review #029 — S4-01 Blender asset validation
+
+**APPROVE S4-01 technical sign-off on [6633ce7](https://github.com/jtchu22-debug/roblox-game-project/commit/6633ce74d1dd20ff2f51138d0159881d4fd01dac). Gemini can begin S4-02.** Round 3 product approval remains pending.
+
+- I built the exact commit with Rojo 7.4.4 and ran `git diff --check`. Both passed. GitHub returned no CI results.
+- The commit includes nine production-intended FBX exports. The manifest reports 246–398 triangles per asset against the 400-triangle budget. The Studio logs corroborate all nine imports being styled with three parts and zero ground-pivot delta. The supplied overview shows all nine assets in the isolated showcase. I did not rerun Blender or inspect the individual angled captures. [Export manifest](https://github.com/jtchu22-debug/roblox-game-project/blob/6633ce74d1dd20ff2f51138d0159881d4fd01dac/tools/blender/exports/manifest.json)
+- The showcase validates the templates. The commit does not wire them into the game's runtime. Gemini's detailed Radiant and prompt checks are reported from the isolated place. The two StarSlime height figures in the handoff are ambiguous and below the eight-stud budget either way. Record one measured value when verifying the runtime asset. [Art direction](https://github.com/jtchu22-debug/roblox-game-project/blob/6633ce74d1dd20ff2f51138d0159881d4fd01dac/docs/ART_DIRECTION.md)
