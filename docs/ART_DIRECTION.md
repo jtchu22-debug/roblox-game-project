@@ -3,11 +3,11 @@
 > **Last Updated:** November 15, 2026 (Revised per Phase 0 Technical Director Audit — `R-006` / `R-010`)  
 > **Author:** Gemini (Primary Art & Technical Planner)  
 > **Auditor:** ChatGPT (Independent Technical Director)  
-> **Visual Pillar:** *"Toy-Box Cosmic Pastel"* — Chunky, high-saturation low-poly shapes with readable silhouettes, accessible contrast, and strict mobile performance budgets.
+> **Visual Pillar:** *"Toy-Box Cosmic Pastel"* — Sculpted, high-saturation toy forms with readable silhouettes, accessible contrast, and measured mobile performance budgets.
 
 ---
 
-The [Stage 6 critter roster and concept sheet](./CRITTER_ROSTER.md#visual-reference) guide production of the 108-species launch collection. Use the approved soft-stylized v2 meshes as the technical baseline and the concept art for silhouettes, expressive faces, and restrained accent colors.
+The [Stage 6 critter roster and concept sheet](./CRITTER_ROSTER.md#visual-reference) guide production of the 108-species launch collection. Use the soft-stylized v2 meshes as the technical baseline and the concept art for silhouettes, expressive faces, and restrained accent colors. The [Stage 6 launch model detail pass](#stage-6-launch-model-detail-pass) sets the visual target for the next Blender iteration.
 
 The [Starfall Valley world brief and concept](./WORLD_ART_DIRECTION.md) cover the environment, terrain, lighting, locations, and production order for replacing the greybox art.
 
@@ -57,6 +57,25 @@ The earlier Phase 0 caveats in [`tools/blender/generate_lowpoly_assets.py`](../t
    - **Safe Rerun Protection:** Interactive runs refuse to delete non-default scene objects or prior `SR_Critters` / `SR_Meteors` collections unless `--force` (`ALLOW_DESTRUCTIVE_CLEAR = True`) is explicitly passed.
    - **Studio Styling Helper:** [`tools/studio/ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau) applies `CritterConfig` / `MeteorConfig` + `SecondaryColor` `SmoothPlastic` & `Neon` defaults, disables collision/query/touch on child meshes, assigns `PrimaryPart`, and asserts `<= 8` BaseParts / `<= 8` stud height budgets.
    - **Full 9-Asset + Approved v2 Critter Studio Verification (`Place1` & `StarfallRanch_Dev.rbxl` — Verified Nov 22, 2026):** Verified the initial 9 `.fbx` models in `Place1` (`RescuePrompt`, `MeteorLabel`, and `StarfallActiveMeteor` on angular meteors), then imported and approved the revised **v2 soft-stylized critter roster** inside `StarfallRanch_Dev.rbxl` (`Plot_1.HabitatPen` phone `667×375` zoom, close 3/4, rear, Radiant, and charcoal silhouette checks): `4/8` flat `MeshPart`s (`5/8` Radiant with `RadiantHalo`), `0.0000` ground pivot delta, `-Z` forward, exact `1:1` stud scale, and `<= 6.415` studs max height at Fed `1.15×` Radiant scale.
+
+## Stage 6 launch model detail pass
+
+Use the [Steal an Egg gameplay gallery](https://bo3.gg/games/articles/steal-an-egg-pets-guide) as a reference for how different creature silhouettes and body landmarks read in a crowded pen. Starfall Ranch's own [critter concepts](./CRITTER_ROSTER.md#visual-reference) and [Starfall Valley](./WORLD_ART_DIRECTION.md) set the anatomy, colors, and materials. Aim for sculpted toy figures, shaped rock, and crafted Observatory machinery. A flat-sided torso, straight limbs, and flat colored inserts can still read as a block assembly after the corners are rounded. Shape the profile and transitions first, then add detail that survives normal gameplay zoom.
+
+| Asset group | What to change |
+| --- | --- |
+| **Critters** | Sculpt the head, cheeks, muzzle, body and paws as rounded, tapered volumes. Blend transitions, then separate a few large landmarks such as wings, ears, shell plates, or a tail. Give each species its own proportions, pose and facial expression. Use clean highlights and a restrained detail pass for eyes, spots, fur tufts or seams. Keep Star-Slime smooth and squishy. Keep Solar Golem heavy, with offset armor plates, bevels and readable gaps. Give chase critters such as Eclipse Dragon a distinctive outline and visible secondary forms that read with effects turned down. |
+| **Meteors and pods** | Give each rock an asymmetric mass with broad facets, chips, exposed strata and crystal or core shapes embedded in the surface. Round the edges on manufactured pod shells and add a readable seam and clasp. Keep Ember, Frost, and Astral identifiable by shape. |
+| **Crackers and handheld gear** | Add tapered handles, visible grip wraps, fitted collars and believable striking faces. Give Starter a capped mallet, Frost a shaped fork around its crystal, and Astral a layered brass ring with a visible core. Concentrate detail on the face visible when held and leave enough clearance for the hand and camera. |
+| **Stations and world props** | Shape the incubator cradle, glass canopy and hinges. Give the Tool Workbench fitted drawers, beveled edges and recessed cradles. Use timber joins and curved rails around the ranch. Group smaller details near interaction points and keep walkways and signs clear. |
+| **Prestige rides and suits** | Carry the same warm metal, enamel and Observatory fittings into shaped body panels, wheel arches and articulated mech joints. Give each ride or suit a silhouette recognizable from across the plaza. Use the existing [garage concepts](./OBSERVATORY_GEAR_SHOP.md#prestige-garage) to guide the forms. |
+
+### First review in Studio
+
+1. Create a before/after pilot for **Cinder Pup, Solar Golem, Ember Meteor, and the Starter Cracker**. Include the S6-ART-02 **incubator prototype** when it is ready. Cinder Pup tests soft anatomy and expression, while Solar Golem tests shaped hard surfaces on a heavy creature. Review the pilot before batch remodeling the six heroes or producing the wider roster.
+2. Match the camera, light and size for each before/after. Capture normal ranch gameplay and phone framing at `667×375`, plus front, three-quarter and rear views. Show the Cracker in a real crack and the incubator with a pod. Review critters on the pen floor and in a small Index thumbnail. Check that standard, Gold, Rainbow and mutation treatments remain distinct wherever those variants are implemented.
+3. Keep shipped part counts, placement pivots, grip offsets, clearance, interaction anchors, and the eight-stud critter height cap. Preserve the Stage 4 triangle target as the shipped baseline until the pilot is measured. For the two pilot critters, try up to **800–1,200 triangles per displayed model** where the silhouette needs them. Record the counts and compare frame time and memory with six plots and up to 30 displayed critters, active meteors, and the same view and device in each run. Record whether the run used physical hardware or Studio emulation. Use flat, material-grouped meshes and baked detail where it improves the final read. Apply a higher launch budget only after a measured review.
+4. Reuse stable IDs and template names. Save editable Blender sources and Studio-ready exports with the comparison captures. Use approved front three-quarter renders to drive Index portraits and shop artwork. The narrow pilot can run alongside Cracker fixes and the first station prototype.
 
 ## Launch tool models
 

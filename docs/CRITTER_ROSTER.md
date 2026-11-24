@@ -20,7 +20,7 @@
 **Top row, left to right** — Star-Slime, Cinder Pup, Frost Beetle, Moss Bun, Static Jay.  
 **Bottom row, left to right** — Nebula Fox, Comet Owl, Solar Golem, Canopy Leviathan, Eclipse Dragon.
 
-Use the original concept sheet for silhouette, proportions, and the overall soft-toy look. Round faces and big eyes carry the expression. Give each species one identifying feature that survives a small thumbnail. Keep the six approved v2 meshes as the implementation baseline, then simplify the concept's small details for production. Check readability under actual ranch lighting and camera distance. Follow the existing [art pipeline and mesh budgets](./ART_DIRECTION.md). A rarity tier can change silhouette complexity while weight determines the bounded in-world scale. Standard, Gold, and Rainbow are finishes of the same species.
+Use the original concept sheet for silhouette, proportions, and the overall soft-toy look. Round faces and big eyes carry the expression. Give each species one identifying feature that survives a small thumbnail. Keep the six v2 meshes as the implementation baseline. Prove the sculpted silhouette and detail standard on two existing critters before producing the wider roster. Check readability under actual ranch lighting, normal camera distance, and a small Index thumbnail. Follow the [Stage 6 launch model detail pass](./ART_DIRECTION.md#stage-6-launch-model-detail-pass). A rarity tier can change silhouette complexity while weight determines the bounded in-world scale. Standard, Gold, and Rainbow are finishes of the same species.
 
 ## Common (24)
 
