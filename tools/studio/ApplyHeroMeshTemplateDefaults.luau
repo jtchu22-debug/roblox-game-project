@@ -345,6 +345,56 @@ local function applyWorkbenchPrototypeDefaults(model: Model): boolean
 	return true
 end
 
+local function applySellStandDefaults(model: Model): boolean
+	local timber = model:FindFirstChild("TimberBase", true)
+	local top = model:FindFirstChild("CounterTop", true)
+	local scales = model:FindFirstChild("BrassScales", true)
+	local pans = model:FindFirstChild("ScalePans", true)
+	local ledger = model:FindFirstChild("LedgerBox", true)
+	local gem = model:FindFirstChild("AccentGem", true)
+	if not (timber and top and scales and pans and ledger and gem) then
+		return false
+	end
+	local partCount = 0
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then partCount += 1 end
+	end
+	assert(partCount <= 8, string.format("%s exceeds 8-BasePart budget (%d)", model:GetFullName(), partCount))
+	configurePartDefaults(timber :: BasePart, Color3.fromRGB(118, 76, 48), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(top :: BasePart, Color3.fromRGB(245, 235, 220), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(scales :: BasePart, Color3.fromRGB(210, 164, 82), Enum.Material.Metal, true)
+	configurePartDefaults(pans :: BasePart, Color3.fromRGB(230, 194, 118), Enum.Material.Metal, true)
+	configurePartDefaults(ledger :: BasePart, Color3.fromRGB(46, 44, 66), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(gem :: BasePart, Color3.fromRGB(255, 205, 45), Enum.Material.Neon, false)
+	model.PrimaryPart = timber :: BasePart
+	print(string.format("[ApplyHeroMeshTemplateDefaults] Styled Station %s | Parts=%d/8", model:GetFullName(), partCount))
+	return true
+end
+
+local function applyHabitatPenDefaults(model: Model): boolean
+	local posts = model:FindFirstChild("TimberPosts", true)
+	local rails = model:FindFirstChild("TimberRails", true)
+	local caps = model:FindFirstChild("BrassCaps", true)
+	local trough = model:FindFirstChild("FeedTrough", true)
+	local fill = model:FindFirstChild("TroughFill", true)
+	if not (posts and rails and caps and trough and fill) then
+		return false
+	end
+	local partCount = 0
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then partCount += 1 end
+	end
+	assert(partCount <= 8, string.format("%s exceeds 8-BasePart budget (%d)", model:GetFullName(), partCount))
+	configurePartDefaults(posts :: BasePart, Color3.fromRGB(134, 88, 56), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(rails :: BasePart, Color3.fromRGB(236, 224, 202), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(caps :: BasePart, Color3.fromRGB(210, 164, 82), Enum.Material.Metal, true)
+	configurePartDefaults(trough :: BasePart, Color3.fromRGB(118, 76, 48), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(fill :: BasePart, Color3.fromRGB(95, 215, 145), Enum.Material.Neon, false)
+	model.PrimaryPart = posts :: BasePart
+	print(string.format("[ApplyHeroMeshTemplateDefaults] Styled Station %s | Parts=%d/8", model:GetFullName(), partCount))
+	return true
+end
+
 local critterPalettes, meteorPalettes, toolPalettes = loadPalettes()
 local containers: { Instance } = { workspace }
 local assetTemplates = ReplicatedStorage:FindFirstChild("AssetTemplates")
@@ -368,6 +418,14 @@ for _, container in ipairs(containers) do
 				end
 			elseif child.Name == "ToolWorkbench_Prototype" or child.Name == "ToolWorkbench" then
 				if applyWorkbenchPrototypeDefaults(child) then
+					styledCount += 1
+				end
+			elseif child.Name == "SellStand_Prototype" or child.Name == "SellStand" then
+				if applySellStandDefaults(child) then
+					styledCount += 1
+				end
+			elseif child.Name == "HabitatPen_Prototype" or child.Name == "HabitatPen" then
+				if applyHabitatPenDefaults(child) then
 					styledCount += 1
 				end
 			elseif pilotInfo ~= nil then

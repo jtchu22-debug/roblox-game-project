@@ -76,5 +76,31 @@
     "pivot": "ground",
     "blend_path": "tools/blender/sources/pilot/ToolWorkbench_Prototype.blend",
     "fbx_path": "tools/blender/exports/pilot/ToolWorkbench_Prototype.fbx"
+  },
+  "HabitatPen_Prototype": {
+    "name": "HabitatPen_Prototype",
+    "parts": 5,
+    "triangles": 620,
+    "size_studs": [
+      26.66,
+      34.66,
+      2.24
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/HabitatPen_Prototype.blend",
+    "fbx_path": "tools/blender/exports/pilot/HabitatPen_Prototype.fbx"
+  },
+  "SellStand_Prototype": {
+    "name": "SellStand_Prototype",
+    "parts": 6,
+    "triangles": 522,
+    "size_studs": [
+      6.2,
+      4.2,
+      5.06
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/SellStand_Prototype.blend",
+    "fbx_path": "tools/blender/exports/pilot/SellStand_Prototype.fbx"
   }
 }

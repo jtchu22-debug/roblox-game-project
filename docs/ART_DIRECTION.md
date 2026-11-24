@@ -127,6 +127,14 @@ Give each interactable launch location a finished original low-poly model or mod
 
 Keep interactive surfaces and walkways open, especially around fences, incubator doors, and displays. Verify prompts, camera and character clearance, mobile visibility, and legibility of locked, ready, and occupied states. Test the completed kit across all six plots.
 
+- **S6-ART-02 Six-Ranch Station Integration & Review #040 Ownership Fix (`StarfallRanch_Dev.rbxl` — Nov 23, 2026):**
+  - **Modeled Station Kit (`<= 8` parts, `<= 1,100` tris, `0.0000` ground pivot delta; sources in [`generate_s6_pilot_assets.py`](../tools/blender/generate_s6_pilot_assets.py) & `tools/blender/exports/pilot/manifest.json`):**
+    - `Incubator_Prototype`: `6/8` parts, `766` tris, `6.700 × 5.180 × 6.700` studs (`12` mounted across `Plot_1..6`, cradling incubated Star-Pods at `+2.95` studs).
+    - `ToolWorkbench_Prototype`: `6/8` parts, `1,076` tris, `22.200 × 3.660 × 4.285` studs (`1` mounted at `CentralHub.ToolWorkbench`).
+    - `SellStand_Prototype`: `6/8` parts, `522` tris, `6.200 × 5.060 × 4.200` studs (`6` mounted across `Plot_1..6`, brass scales + ledger + gold gem).
+    - `HabitatPen_Prototype`: `5/8` parts, `620` tris, `26.660 × 2.240 × 34.660` studs (`6` mounted across `Plot_1..6`, preserving the 12-stud open aisle gate + feeding trough).
+  - **Per-Plot Ownership Isolation & Live Verification:** [`StationVisualController.luau`](../src/Client/Controllers/StationVisualController.luau) mounts all `25` station models (`StarfallStationVisuals`) using each plot's `plotRot` and resolves Incubator `Locked`/`Idle`/`Incubating`/`Ready` states strictly from each plot's `PublicPlotDTO` (`3/3` self-tests passing, including two-player `Incubator_2` isolation & plot reassignment). Live Studio Play Solo verified `Idle (85,195,185) → Incubating (65,210,255) → Ready (255,205,45)` on `Plot_1.Incubator_1` with `P1_Incubator_1_Pod` cradled inside the glass canopy.
+
 ## Launch item and interface artwork
 
 Give every launch catalog entry displayed to players its own original icon, thumbnail, or render. Use the same artwork whenever that entry is shown. Let related screens share typography, card spacing, touch controls, and state treatments. Vary the screen layout for what the player is doing, such as comparing an inventory grid, checking a collection, previewing a tool, or buying an offer.

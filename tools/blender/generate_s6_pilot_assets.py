@@ -31,6 +31,8 @@ PILOT_CONFIGS = {
     "StarterCracker_Pilot": {"max_parts": 8, "max_tris": 850, "max_height": 4.0, "pivot": "grip"},
     "Incubator_Prototype": {"max_parts": 8, "max_tris": 1200, "max_height": 8.0, "pivot": "ground"},
     "ToolWorkbench_Prototype": {"max_parts": 8, "max_tris": 1200, "max_height": 8.0, "pivot": "ground"},
+    "SellStand_Prototype": {"max_parts": 8, "max_tris": 1100, "max_height": 8.0, "pivot": "ground"},
+    "HabitatPen_Prototype": {"max_parts": 8, "max_tris": 1100, "max_height": 8.0, "pivot": "ground"},
 }
 
 
@@ -681,6 +683,128 @@ def build_toolworkbench_prototype() -> list[bpy.types.Object]:
     return [timber_obj, stone_obj, brass_obj, drawer_obj, cradle_obj, acc_obj]
 
 
+# ==============================================================================
+# 7. SELL STAND PROTOTYPE (S6-ART-02 — Timber Counter, Cream Top, Brass Scales)
+# ==============================================================================
+def build_sellstand_prototype() -> list[bpy.types.Object]:
+    m_timber = make_mat("SellStand_Timber", (118, 76, 48))
+    m_top = make_mat("SellStand_CounterTop", (245, 235, 220))
+    m_brass = make_mat("SellStand_Brass", (210, 164, 82))
+    m_pans = make_mat("SellStand_ScalePans", (230, 194, 118))
+    m_ledger = make_mat("SellStand_Ledger", (46, 44, 66))
+    m_gem = make_mat("SellStand_AccentGem", (255, 205, 45), emission=1.0)
+
+    # Timber counter base (6.0 x 4.0 x 3.25)
+    bm_timber = bmesh.new()
+    add_beveled_box(bm_timber, (0.0, 0.0, 1.60), (5.7, 3.7, 3.05), (0, 0, 0), bevel=0.07)
+    for sx in (-2.75, 2.75):
+        for sy in (-1.75, 1.75):
+            add_beveled_box(bm_timber, (sx, sy, 1.55), (0.48, 0.48, 3.10), (0, 0, 0), bevel=0.05)
+    timber_obj = finalize_obj("TimberBase", bm_timber, m_timber, smooth=False)
+
+    # Cream stone countertop (top at exact 3.60 above Y=0.5 -> 4.10)
+    bm_top = bmesh.new()
+    add_beveled_box(bm_top, (0.0, 0.0, 3.38), (6.2, 4.2, 0.44), (0, 0, 0), bevel=0.08)
+    top_obj = finalize_obj("CounterTop", bm_top, m_top, smooth=False)
+
+    # Brass scale pillar + crossbeam on right side of counter
+    bm_brass = bmesh.new()
+    add_lofted_tube(
+        bm_brass,
+        [
+            ((1.45, 0.0, 3.60), 0.42, 0.42, (0, 0, 0)),
+            ((1.45, 0.0, 3.76), 0.14, 0.14, (0, 0, 0)),
+            ((1.45, 0.0, 4.88), 0.11, 0.11, (0, 0, 0)),
+            ((1.45, 0.0, 5.06), 0.18, 0.18, (0, 0, 0)),
+        ],
+        segments=8,
+    )
+    add_beveled_box(bm_brass, (1.45, 0.0, 4.86), (1.85, 0.14, 0.14), (0, 0, 0), bevel=0.03)
+    brass_obj = finalize_obj("BrassScales", bm_brass, m_brass, smooth=True)
+
+    # Twin suspended weighing dishes
+    bm_pans = bmesh.new()
+    for px in (0.68, 2.22):
+        add_lofted_tube(
+            bm_pans,
+            [
+                ((px, 0.0, 4.18), 0.16, 0.16, (0, 0, 0)),
+                ((px, 0.0, 4.28), 0.42, 0.42, (0, 0, 0)),
+                ((px, 0.0, 4.34), 0.36, 0.36, (0, 0, 0)),
+            ],
+            segments=8,
+        )
+    pans_obj = finalize_obj("ScalePans", bm_pans, m_pans, smooth=True)
+
+    # Ledger/coin box angled neatly on left side of counter
+    bm_ledger = bmesh.new()
+    add_beveled_box(bm_ledger, (-1.45, -0.15, 3.78), (1.45, 1.15, 0.34), (0, 0, 14), bevel=0.05)
+    ledger_obj = finalize_obj("LedgerBox", bm_ledger, m_ledger, smooth=False)
+
+    # Starlight Gold Observatory emblem medallion on front apron (-Y)
+    bm_gem = bmesh.new()
+    add_crystal_prism(bm_gem, (0.0, -1.92, 1.95), 0.46, 0.18, (90, 0, 0), sides=6)
+    gem_obj = finalize_obj("AccentGem", bm_gem, m_gem, smooth=False)
+
+    return [timber_obj, top_obj, brass_obj, pans_obj, ledger_obj, gem_obj]
+
+
+# ==============================================================================
+# 8. HABITAT PEN PROTOTYPE (S6-ART-02 — 26x34 Timber Rails + Feeding Trough)
+# ==============================================================================
+def build_habitatpen_prototype() -> list[bpy.types.Object]:
+    m_posts = make_mat("Pen_TimberPosts", (134, 88, 56))
+    m_rails = make_mat("Pen_TimberRails", (236, 224, 202))
+    m_caps = make_mat("Pen_BrassCaps", (210, 164, 82))
+    m_trough = make_mat("Pen_FeedTrough", (118, 76, 48))
+    m_fill = make_mat("Pen_TroughFill", (95, 215, 145), emission=0.6)
+
+    # Exact 26x34 perimeter around PenFloor center (0,0), with open 12-stud gate at X=-13, Y=-6..+6
+    # Wait: GreyboxBuilder PenFloor is at local (24, 0.65, 2) with Size (26, 0.3, 34).
+    # Fence_1..5 sit at offsets relative to PenFloor center:
+    # Back (+X = +13, Y=-17..+17), North (Y=-17, X=-13..+13), South (Y=+17, X=-13..+13),
+    # Front-North (X=-13, Y=-17..-6), Front-South (X=-13, Y=+6..+17).
+    post_coords = [
+        (-13.0, -17.0), (-6.5, -17.0), (0.0, -17.0), (6.5, -17.0), (13.0, -17.0),
+        (13.0, -8.5), (13.0, 0.0), (13.0, 8.5), (13.0, 17.0),
+        (6.5, 17.0), (0.0, 17.0), (-6.5, 17.0), (-13.0, 17.0),
+        (-13.0, 11.5), (-13.0, 6.0),
+        (-13.0, -6.0), (-13.0, -11.5),
+    ]
+    bm_posts = bmesh.new()
+    bm_caps = bmesh.new()
+    for px, py in post_coords:
+        add_beveled_box(bm_posts, (px, py, 1.05), (0.56, 0.56, 2.10), (0, 0, 0), bevel=0.0)
+        add_beveled_box(bm_caps, (px, py, 2.16), (0.66, 0.66, 0.16), (0, 0, 0), bevel=0.0)
+    posts_obj = finalize_obj("TimberPosts", bm_posts, m_posts, smooth=False)
+    caps_obj = finalize_obj("BrassCaps", bm_caps, m_caps, smooth=False)
+
+    # Double horizontal rails along all 5 fence segments (leaving X=-13, Y=-6..+6 open!)
+    bm_rails = bmesh.new()
+    rail_segs = [
+        ((0.0, -17.0), (26.0, 0.28)),
+        ((0.0, 17.0), (26.0, 0.28)),
+        ((13.0, 0.0), (0.28, 34.0)),
+        ((-13.0, -11.5), (0.28, 11.0)),
+        ((-13.0, 11.5), (0.28, 11.0)),
+    ]
+    for (rx, ry), (sx, sy) in rail_segs:
+        for rz in (0.72, 1.58):
+            add_beveled_box(bm_rails, (rx, ry, rz), (sx, sy, 0.26), (0, 0, 0), bevel=0.0)
+    rails_obj = finalize_obj("TimberRails", bm_rails, m_rails, smooth=False)
+
+    # Compact feeding trough tucked cleanly inside front-left corner (-10.8, -13.5), clear of Pen_1..5
+    bm_trough = bmesh.new()
+    add_beveled_box(bm_trough, (-10.6, -13.8, 0.42), (1.8, 3.6, 0.84), (0, 0, 0), bevel=0.06)
+    trough_obj = finalize_obj("FeedTrough", bm_trough, m_trough, smooth=False)
+
+    bm_fill = bmesh.new()
+    add_ellipsoid(bm_fill, (-10.6, -13.8, 0.82), (0.65, 1.45, 0.22), (0, 0, 0), u_seg=8, v_seg=4)
+    fill_obj = finalize_obj("TroughFill", bm_fill, m_fill, smooth=True)
+
+    return [posts_obj, rails_obj, caps_obj, trough_obj, fill_obj]
+
+
 BUILDERS = {
     "CinderPup_Pilot": build_cinderpup_pilot,
     "SolarGolem_Pilot": build_solargolem_pilot,
@@ -688,6 +812,8 @@ BUILDERS = {
     "StarterCracker_Pilot": build_startercracker_pilot,
     "Incubator_Prototype": build_incubator_prototype,
     "ToolWorkbench_Prototype": build_toolworkbench_prototype,
+    "SellStand_Prototype": build_sellstand_prototype,
+    "HabitatPen_Prototype": build_habitatpen_prototype,
 }
 
 
