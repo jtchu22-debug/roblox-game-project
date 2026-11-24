@@ -54,7 +54,7 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 | Midpoint 1 | `T+10m` | | | | | | |
 | Min Gate | `T+15m` | | | | | | |
 | Checkpoint | `T+20m` | | | | | | |
-| Final End | `T+30m` | | | | | | |
+| Final End | `T+30:00+` | `60 (Avg 60 / Min 58)` | `16.7` | `839 (+2 vs baseline)` | `Not captured separately` | `Pending confirmation` | `Run #2 (iPhone 17, build c8a99d9): Vis 5 (client visuals folder children incl. effects), Met 6; occupied plots & exact placed critter count pending confirmation` |
 
 ### Run #1 Log (Initial Mobile Check — `iPhone 17`, `2026-11-23`)
 - **Reported Reading (`T+15:00+`):** `FPS 60 (Avg 60 / Min 58) | 16.7ms | Mem 818MB (Lua 254.8MB) | Vis 0 | Met 0`
@@ -62,6 +62,19 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
   1. `Met 0` in Run #1 was caused by `UIController` checking `workspace.StarfallActiveMeteors` instead of `#CollectionService:GetTagged("StarfallActiveMeteor")` (fixed in `UIController.luau` with live `Mem (Δ)` delta tracking).
   2. `Vis 0` indicates no critters were placed in habitat pens during that capture — Run #2 must exercise active gameplay (`Vis > 0`, `Met > 0`, Ember/Frost/Astral cracks, Bag/Field Guide/Settings toggles, Hub/Ranch travel).
   3. Capture both a `T+2m` baseline and `T+15m+` end reading (or `ΔMB` / `/console` `[SoakTelemetry]` lines), confirm `0` console script errors & clean touch controls, and test on a lower-end phone/tablet if available (or note transparently if `iPhone 17` is the only physical test device).
+
+### Run #2 Log (Active Mobile Soak — `iPhone 17`, `2026-11-23`)
+- **Reported Reading (`T+30:00+`):** `FPS 60 (AVG 60 / Min 58) | 16.7 ms | T+ 30:00+ | Mem: 839mb (+2) | Vis 5 | Met 6`
+- **Build / Hardware Notes:**
+  - Overlay format (`+2` delta and `Met 6`) confirms the `c8a99d9` overlay/meteor-counter build is active; local `StarfallRanch_Dev.rbxl` (`PlaceId=0`) also passed `VerifyS403SoakPreflight` (`Status=ASSETS_READY_FOR_PUBLISH | Greybox=PASS | Critters=6/6 | Meteors=3/3`) and `57/57` live Studio Play startup suites (with `UIController` synced and `[SoakTelemetry]` reporting `Meteors=6`).
+  - **Device Availability:** Tester confirmed **`iPhone 17` is the only physical mobile device available** — the low-end phone/tablet check remains explicitly open per Review #031.
+  - **Metric Scope Note (Review #031):** `Vis 5` counts children in the shared client visuals folder (including effects), not exclusively placed critters.
+- **Remaining Review #031 Items Pending Before Sign-Off:**
+  1. Published private place (`106917003014718`) `PlaceVersion` + `VerifyS403SoakPreflight.luau` confirmation of `Status=READY_FOR_SOAK` (`6/6` critters + `3/3` meteors on the published place).
+  2. Actual occupancy (player/plot count) and placed critter count during Run #2 (and whether multi-player/6-player load was tested or solo only).
+  3. Warmup/midpoint checkpoints if recorded (Run #2 captured the `T+30:00+` end reading and `+2 MB` baseline delta).
+  4. Confirmation of `0` `/console` script errors, at least one working **Ember**, **Frost**, and **Astral** crack, and Section 5 touch & safe-area ergonomics checks.
+  5. Low-end phone/tablet hardware check remains open (`iPhone 17` only).
 
 ### Pass / Fail Thresholds
 - [ ] **Sustained Frame Rate:** Average & steady-state FPS remains **$\ge 30$ FPS** throughout the 15–30 minute run with active critters (`<= 30`), incubators, and meteors visible.
@@ -83,8 +96,8 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 
 ## 6. Sign-Off Record
 
-- **Tested Device & OS:** `__________________________`
-- **Tester / Date:** `__________________________`
-- **Duration (`15–30 min`):** `__________ min`
-- **Outcome:** `[ ] PASS` / `[ ] CHANGES REQUIRED`
+- **Tested Device & OS:** `iPhone 17 (only physical test device available; low-end device check left open per Review #031)`
+- **Tester / Date:** `Human Lead / 2026-11-23`
+- **Duration (`15–30 min`):** `30+ min (Run #2; Run #1 was 15+ min)`
+- **Outcome:** `[ ] PASS` / `[ ] CHANGES REQUIRED` *(HOLD pending Review #031 evidence items & ChatGPT sign-off)*
 - **Record Results:** Summarize checkpoint metrics above and log sign-off in `docs/AGENT_REVIEWS.md` / [`docs/AGENT_TASKS.md`](./AGENT_TASKS.md) before proceeding to **Stage 5 (`S5-01`)**.
