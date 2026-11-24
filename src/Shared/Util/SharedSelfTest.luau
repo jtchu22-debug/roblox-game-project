@@ -10,6 +10,7 @@ local Shared = script.Parent.Parent
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local ConfigFolder = Shared:WaitForChild("Config")
+local ArtAssetConfig = require(ConfigFolder:WaitForChild("ArtAssetConfig"))
 local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
 local MeteorConfig = require(ConfigFolder:WaitForChild("MeteorConfig"))
 local ToolConfig = require(ConfigFolder:WaitForChild("ToolConfig"))
@@ -432,6 +433,19 @@ function SharedSelfTest.RunAll(): number
 		assert(ToolConfig.ResolveHeldCrackerId(nil) == "StarterCracker", "Default held cracker is StarterCracker")
 		assert(ToolConfig.ResolveHeldCrackerId({ FrostCracker = true }) == "FrostCracker", "FrostCracker upgrade equips FrostCracker")
 		assert(ToolConfig.ResolveHeldCrackerId({ FrostCracker = true, StarCracker = true }) == "AstralCracker", "StarCracker upgrade equips AstralCracker")
+	end)
+	passedCount += 1
+
+	runTest("ArtAssetConfig_Full_Catalog_Coverage", function()
+		local totalEntries = ArtAssetConfig.ValidateCatalogCoverage()
+		assert(totalEntries == 27, string.format("Expected 27 ArtAssetConfig entries, got %d", totalEntries))
+		assert(ArtAssetConfig.GetNavArt("Bag") ~= nil and ArtAssetConfig.GetNavArt("Shop") ~= nil, "Nav art entries present")
+		assert(ArtAssetConfig.GetSpeciesArt("SolarGolem") ~= nil and ArtAssetConfig.GetMeteorArt("Astral") ~= nil, "Hero art entries present")
+		assert(ArtAssetConfig.GetToolArt("StarterCracker") ~= nil and ArtAssetConfig.GetUpgradeArt("FrostLure") ~= nil, "Tool & upgrade art entries present")
+		local mutateOk = pcall(function()
+			(ArtAssetConfig.Nav :: any).Hub = nil
+		end)
+		assert(not mutateOk, "ArtAssetConfig tables must be frozen")
 	end)
 	passedCount += 1
 

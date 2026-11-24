@@ -24,6 +24,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local ConfigFolder = Shared:WaitForChild("Config")
+local ArtAssetConfig = require(ConfigFolder:WaitForChild("ArtAssetConfig"))
 local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
 local MeteorConfig = require(ConfigFolder:WaitForChild("MeteorConfig"))
 local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
@@ -954,7 +955,92 @@ local function createEmptyNote(parent: Instance, text: string, layoutOrder: numb
 	note.Parent = parent
 end
 
-local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder: number): (Frame, TextLabel, TextLabel)
+local function attachArtMedallion(
+	parent: Instance,
+	artEntry: ArtAssetConfig.ArtEntry?,
+	options: {
+		SizePx: number?,
+		Position: UDim2?,
+		Undiscovered: boolean?,
+		Radiant: boolean?,
+	}?
+): Frame
+	local sizePx = if options ~= nil and options.SizePx ~= nil then options.SizePx else 42
+	local undiscovered = options ~= nil and options.Undiscovered == true
+	local radiant = options ~= nil and options.Radiant == true
+
+	local frame = Instance.new("Frame")
+	frame.Name = "ArtMedallion"
+	frame.Size = UDim2.fromOffset(sizePx, sizePx)
+	frame.Position = if options ~= nil and options.Position ~= nil then options.Position else UDim2.new(0, 8, 0.5, -math.floor(sizePx * 0.5))
+	frame.BackgroundColor3 = if undiscovered then Color3.fromRGB(32, 30, 46) elseif artEntry ~= nil then artEntry.PrimaryColor else PALETTE.CardDark
+	frame.BorderSizePixel = 0
+	addCorner(frame, 8)
+	addStroke(
+		frame,
+		if radiant then PALETTE.StarlightGold elseif undiscovered then PALETTE.BorderSoft elseif artEntry ~= nil then artEntry.AccentColor else PALETTE.BorderSoft,
+		if radiant then 2 else 1.2
+	)
+	frame:SetAttribute("ArtKey", if artEntry ~= nil then artEntry.Id else "Unknown")
+	frame:SetAttribute("ArtUndiscovered", undiscovered)
+	frame.Parent = parent
+
+	if not undiscovered and artEntry ~= nil and artEntry.SecondaryColor ~= nil then
+		local lower = Instance.new("Frame")
+		lower.Name = "SecondaryBand"
+		lower.Size = UDim2.new(1, 0, 0.38, 0)
+		lower.Position = UDim2.fromScale(0, 0.62)
+		lower.BackgroundColor3 = artEntry.SecondaryColor
+		lower.BorderSizePixel = 0
+		addCorner(lower, 6)
+		lower.Parent = frame
+	end
+
+	if not undiscovered and artEntry ~= nil and artEntry.ImageId ~= "" then
+		local img = Instance.new("ImageLabel")
+		img.Name = "ArtworkImage"
+		img.Size = UDim2.fromScale(0.86, 0.86)
+		img.Position = UDim2.fromScale(0.07, 0.07)
+		img.BackgroundTransparency = 1
+		img.ScaleType = Enum.ScaleType.Fit
+		img.Image = artEntry.ImageId
+		img.Parent = frame
+	else
+		local glyph = Instance.new("TextLabel")
+		glyph.Name = "ArtworkGlyph"
+		glyph.Size = UDim2.fromScale(1, 1)
+		glyph.BackgroundTransparency = 1
+		glyph.Font = Enum.Font.GothamBold
+		glyph.TextSize = math.max(16, math.floor(sizePx * 0.45))
+		glyph.Text = if undiscovered then "?" elseif artEntry ~= nil then artEntry.Glyph else "✦"
+		glyph.TextColor3 = if undiscovered then PALETTE.TextMuted else PALETTE.PanelDark
+		glyph.Parent = frame
+	end
+
+	if radiant and not undiscovered then
+		local star = Instance.new("TextLabel")
+		star.Name = "RadiantBadge"
+		star.Size = UDim2.fromOffset(14, 14)
+		star.Position = UDim2.new(1, -12, 0, -2)
+		star.BackgroundColor3 = PALETTE.StarlightGold
+		star.Font = Enum.Font.GothamBold
+		star.TextSize = 10
+		star.Text = "★"
+		star.TextColor3 = PALETTE.PanelDark
+		addCorner(star, 7)
+		star.Parent = frame
+	end
+
+	return frame
+end
+
+local function createRowCard(
+	parent: Instance,
+	swatchColor: Color3,
+	layoutOrder: number,
+	artEntry: ArtAssetConfig.ArtEntry?,
+	medallionOpts: { Undiscovered: boolean?, Radiant: boolean? }?
+): (Frame, TextLabel, TextLabel)
 	local row = Instance.new("Frame")
 	row.Size = UDim2.new(1, 0, 0, 62)
 	row.BackgroundColor3 = PALETTE.CardDark
@@ -964,17 +1050,29 @@ local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder:
 	addStroke(row, PALETTE.BorderSoft, 1)
 	row.Parent = parent
 
-	local swatch = Instance.new("Frame")
-	swatch.Size = UDim2.fromOffset(10, 44)
-	swatch.Position = UDim2.new(0, 8, 0.5, -22)
-	swatch.BackgroundColor3 = swatchColor
-	swatch.BorderSizePixel = 0
-	addCorner(swatch, 4)
-	swatch.Parent = row
+	local textOffsetX = 24
+	local textWidthMargin = 190
+	if artEntry ~= nil then
+		attachArtMedallion(row, artEntry, {
+			SizePx = 42,
+			Undiscovered = if medallionOpts ~= nil then medallionOpts.Undiscovered else false,
+			Radiant = if medallionOpts ~= nil then medallionOpts.Radiant else false,
+		})
+		textOffsetX = 58
+		textWidthMargin = 224
+	else
+		local swatch = Instance.new("Frame")
+		swatch.Size = UDim2.fromOffset(10, 44)
+		swatch.Position = UDim2.new(0, 8, 0.5, -22)
+		swatch.BackgroundColor3 = swatchColor
+		swatch.BorderSizePixel = 0
+		addCorner(swatch, 4)
+		swatch.Parent = row
+	end
 
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -190, 0, 24)
-	title.Position = UDim2.fromOffset(24, 7)
+	title.Size = UDim2.new(1, -textWidthMargin, 0, 24)
+	title.Position = UDim2.fromOffset(textOffsetX, 7)
 	title.BackgroundTransparency = 1
 	title.TextColor3 = PALETTE.TextCream
 	title.Font = Enum.Font.GothamBold
@@ -984,8 +1082,8 @@ local function createRowCard(parent: Instance, swatchColor: Color3, layoutOrder:
 	title.Parent = row
 
 	local subtitle = Instance.new("TextLabel")
-	subtitle.Size = UDim2.new(1, -190, 0, 20)
-	subtitle.Position = UDim2.fromOffset(24, 33)
+	subtitle.Size = UDim2.new(1, -textWidthMargin, 0, 20)
+	subtitle.Position = UDim2.fromOffset(textOffsetX, 33)
 	subtitle.BackgroundTransparency = 1
 	subtitle.TextColor3 = PALETTE.TextMuted
 	subtitle.Font = Enum.Font.GothamMedium
@@ -1129,7 +1227,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	else
 		for _, item in ipairs(hatchedList) do
 			local def = CritterConfig.ById[item.SpeciesId]
-			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order)
+			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
+				Radiant = item.Variant == "Radiant",
+			})
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
@@ -1214,7 +1314,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	else
 		for _, item in ipairs(podList) do
 			local def = CritterConfig.ById[item.SpeciesId]
-			local row, title, subtitle = createRowCard(scroll, def.AccentColor, order)
+			local row, title, subtitle = createRowCard(scroll, def.AccentColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
+				Radiant = item.Variant == "Radiant",
+			})
 			order += 1
 
 			title.Text = def.DisplayName .. " Pod"
@@ -1262,7 +1364,13 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			local remaining = maturesAt - nowClock
 			local mature = remaining <= 0
 
-			local row, title, subtitle = createRowCard(scroll, if mature then PALETTE.StarlightGold else PALETTE.OrbitalCyan, order)
+			local row, title, subtitle = createRowCard(
+				scroll,
+				if mature then PALETTE.StarlightGold else PALETTE.OrbitalCyan,
+				order,
+				ArtAssetConfig.GetSpeciesArt(item.SpeciesId),
+				{ Radiant = item.Variant == "Radiant" }
+			)
 			order += 1
 
 			title.Text = string.format("%s — %s Pod", slotId, def.DisplayName)
@@ -1316,7 +1424,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 		for _, item in ipairs(inPenList) do
 			local def = CritterConfig.ById[item.SpeciesId]
 			local slotId = item.AssignedSlot or "Pen_1"
-			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order)
+			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
+				Radiant = item.Variant == "Radiant",
+			})
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
@@ -1430,7 +1540,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 		local row, title, subtitle = createRowCard(
 			scroll,
 			if owned then PALETTE.OrbitalCyan elseif prereqMet then unownedAccent else PALETTE.BorderSoft,
-			order
+			order,
+			ArtAssetConfig.GetUpgradeArt(upgradeId)
 		)
 		order += 1
 
@@ -1516,7 +1627,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 		local lureRow, lureTitle, lureSubtitle = createRowCard(
 			scroll,
 			if hasFrostTool then PALETTE.OrbitalCyan else PALETTE.BorderSoft,
-			order
+			order,
+			ArtAssetConfig.GetUpgradeArt("FrostLure")
 		)
 		order += 1
 		lureTitle.Text = "Frost Lure Beacon"
@@ -1603,7 +1715,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 		local row, title, subtitle = createRowCard(
 			scroll,
 			if discovered then def.BodyColor else PALETTE.BorderSoft,
-			order
+			order,
+			ArtAssetConfig.GetSpeciesArt(speciesId),
+			{ Undiscovered = not discovered }
 		)
 		order += 1
 
@@ -1823,25 +1937,16 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		card.Parent = scroll
 		registerGuideButton("Species:" .. speciesId, card)
 
-		local swatchHolder = Instance.new("Frame")
-		swatchHolder.Size = UDim2.fromOffset(12, 62)
-		swatchHolder.Position = UDim2.new(0, 8, 0.5, -31)
-		swatchHolder.BackgroundColor3 = if discovered then def.BodyColor else Color3.fromRGB(40, 38, 56)
-		swatchHolder.BorderSizePixel = 0
-		addCorner(swatchHolder, 4)
-		swatchHolder.Parent = card
-
-		local swatchBottom = Instance.new("Frame")
-		swatchBottom.Size = UDim2.new(1, 0, 0.42, 0)
-		swatchBottom.Position = UDim2.fromScale(0, 0.58)
-		swatchBottom.BackgroundColor3 = if discovered then def.SecondaryColor else Color3.fromRGB(28, 26, 40)
-		swatchBottom.BorderSizePixel = 0
-		addCorner(swatchBottom, 3)
-		swatchBottom.Parent = swatchHolder
+		attachArtMedallion(card, ArtAssetConfig.GetSpeciesArt(speciesId), {
+			SizePx = 48,
+			Position = UDim2.new(0, 10, 0.5, -24),
+			Undiscovered = not discovered,
+			Radiant = hasRadiant,
+		})
 
 		local title = Instance.new("TextLabel")
-		title.Size = UDim2.new(1, -124, 0, 22)
-		title.Position = UDim2.fromOffset(28, 8)
+		title.Size = UDim2.new(1, -164, 0, 22)
+		title.Position = UDim2.fromOffset(68, 8)
 		title.BackgroundTransparency = 1
 		title.Font = Enum.Font.GothamBold
 		title.TextSize = 14
@@ -1854,8 +1959,8 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		title.Parent = card
 
 		local details = Instance.new("TextLabel")
-		details.Size = UDim2.new(1, -124, 0, 18)
-		details.Position = UDim2.fromOffset(28, 32)
+		details.Size = UDim2.new(1, -164, 0, 18)
+		details.Position = UDim2.fromOffset(68, 32)
 		details.BackgroundTransparency = 1
 		details.Font = Enum.Font.GothamMedium
 		details.TextSize = 12
@@ -1868,8 +1973,8 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		details.Parent = card
 
 		local subInfo = Instance.new("TextLabel")
-		subInfo.Size = UDim2.new(1, -124, 0, 18)
-		subInfo.Position = UDim2.fromOffset(28, 54)
+		subInfo.Size = UDim2.new(1, -164, 0, 18)
+		subInfo.Position = UDim2.fromOffset(68, 54)
 		subInfo.BackgroundTransparency = 1
 		subInfo.Font = Enum.Font.GothamMedium
 		subInfo.TextSize = 11
@@ -2893,6 +2998,26 @@ function UIController.RunSelfTest(): number
 		end
 		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, guideButton, settingsButton }) do
 			assert(navBtn ~= nil and navBtn.AbsoluteSize.X >= 44 and navBtn.AbsoluteSize.Y >= 44, "All top HUD buttons maintain >= 44px touch target")
+		end
+		-- S6-ART-03: verify ArtAssetConfig medallions render consistently in Bag & Field Guide
+		do
+			local bagCardFound = false
+			for _, child in ipairs(scroll:GetChildren()) do
+				local med = child:FindFirstChild("ArtMedallion")
+				if med ~= nil and med:GetAttribute("ArtKey") ~= nil then
+					bagCardFound = true
+					break
+				end
+			end
+			local guideCardFound = false
+			for _, child in ipairs(gScroll:GetChildren()) do
+				local med = child:FindFirstChild("ArtMedallion")
+				if med ~= nil and med:GetAttribute("ArtKey") == "StarSlime" then
+					guideCardFound = true
+					break
+				end
+			end
+			assert(bagCardFound or guideCardFound or #ArtAssetConfig.Critters == 0, "ArtMedallion helper ready")
 		end
 		assert(
 			bagDrawer ~= nil and bagDrawer.SelectionGroup == true

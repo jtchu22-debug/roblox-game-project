@@ -136,8 +136,9 @@ function StationVisualController.ResolveIncubatorState(
 	serverNow: number
 ): IncubatorVisualState
 	-- Authoritative per-plot state MUST come strictly from that plot's PublicPlotDTO,
-	-- never from the viewing player's local OwnerStateDTO.
-	local isOccupied = plotDto ~= nil and plotDto.OwnerUserId > 0
+	-- never from the viewing player's local OwnerStateDTO. Studio Local Server
+	-- test clients use negative UserIds (-1..-6), so 0 is the only vacant ID.
+	local isOccupied = plotDto ~= nil and plotDto.OwnerUserId ~= 0
 	if slotId ~= "Incubator_1" then
 		local unlocked = isOccupied and plotDto ~= nil and plotDto.UnlockedUpgrades["Incubator_2"] == true
 		if not unlocked then
@@ -481,20 +482,22 @@ function StationVisualController.RunSelfTest(): number
 	assert(StationVisualController.ResolveIncubatorState("Incubator_1", singlePlot, 150) == "Ready", "Incubator_1 Ready at MaturesAt")
 	passed += 1
 
-	-- Suite 2 (Review #040): Two-player ownership isolation & plot reassignment
+	-- Suite 2 (Review #040 + #041): Two-player ownership isolation with negative Studio IDs & plot reassignment
 	local plot1OwnerA: Types.PublicPlotDTO = {
 		PlotId = 1,
-		OwnerUserId = 101,
-		OwnerDisplayName = "PlayerA",
+		OwnerUserId = -1,
+		OwnerDisplayName = "Player1",
 		PlotRevision = 1,
 		UnlockedUpgrades = {},
 		ActivePenVisuals = {},
-		IncubatorVisuals = {},
+		IncubatorVisuals = {
+			Incubator_1 = { MaturesAt = 200 },
+		},
 	}
 	local plot2OwnerB: Types.PublicPlotDTO = {
 		PlotId = 2,
-		OwnerUserId = 202,
-		OwnerDisplayName = "PlayerB",
+		OwnerUserId = -2,
+		OwnerDisplayName = "Player2",
 		PlotRevision = 4,
 		UnlockedUpgrades = { Incubator_2 = true },
 		ActivePenVisuals = {},
@@ -502,9 +505,12 @@ function StationVisualController.RunSelfTest(): number
 			Incubator_1 = { MaturesAt = 200 },
 		},
 	}
-	-- Even when viewing Plot 1 as Player B (who has Incubator_2 unlocked), Plot 1's Incubator_2 stays Locked.
-	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot1OwnerA, 150) == "Locked", "Plot 1 Incubator_2 must stay Locked for Player B visitor")
-	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot2OwnerB, 150) == "Idle", "Plot 2 Incubator_2 Idle for Player B")
+	-- Even when viewing Plot 1 as Player 2 (who has Incubator_2 unlocked), Plot 1's Incubator_2 stays Locked,
+	-- and negative Studio test IDs (-1, -2) must still show Incubating/Ready and unlocked states.
+	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot1OwnerA, 150) == "Locked", "Plot 1 Incubator_2 must stay Locked for Player 2 visitor")
+	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot1OwnerA, 150) == "Incubating", "Plot 1 negative-ID occupant Incubator_1 Incubating")
+	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot1OwnerA, 200) == "Ready", "Plot 1 negative-ID occupant Incubator_1 Ready")
+	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot2OwnerB, 150) == "Idle", "Plot 2 negative-ID occupant Incubator_2 Idle")
 	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot2OwnerB, 150) == "Incubating", "Plot 2 Incubator_1 Incubating")
 	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot2OwnerB, 200) == "Ready", "Plot 2 Incubator_1 Ready")
 	-- Plot release / reassignment resets Incubator_2 to Locked and Incubator_1 to Idle
@@ -519,6 +525,17 @@ function StationVisualController.RunSelfTest(): number
 	}
 	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot2Released, 250) == "Locked", "Released plot resets Incubator_2 to Locked")
 	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot2Released, 250) == "Idle", "Released plot resets Incubator_1 to Idle")
+	local plot2Reassigned: Types.PublicPlotDTO = {
+		PlotId = 2,
+		OwnerUserId = -3,
+		OwnerDisplayName = "Player3",
+		PlotRevision = 6,
+		UnlockedUpgrades = {},
+		ActivePenVisuals = {},
+		IncubatorVisuals = {},
+	}
+	assert(StationVisualController.ResolveIncubatorState("Incubator_2", plot2Reassigned, 260) == "Locked", "Replacement negative-ID owner without unlock keeps Incubator_2 Locked")
+	assert(StationVisualController.ResolveIncubatorState("Incubator_1", plot2Reassigned, 260) == "Idle", "Replacement negative-ID owner Incubator_1 starts Idle")
 	passed += 1
 
 	-- Suite 3: Invalid/non-archivable station template validation rejects cleanly without throwing
