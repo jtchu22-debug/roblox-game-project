@@ -88,6 +88,17 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
   1. Published cloud place (`106917003014718`) `PlaceVersion` + direct `VerifyS403SoakPreflight.luau` (`Status=READY_FOR_SOAK`) check has not been executed in Studio on the cloud place yet (local `StarfallRanch_Dev.rbxl` passed `ASSETS_READY_FOR_PUBLISH` + `57/57` Play suites).
   2. Scope caveats left transparently open: solo `1/6` plot (`5` placed critters) rather than 6-player server load, `T+30:00+` end reading + `+2 MB` baseline delta without separate intermediate `T+2m`/`T+15m` checkpoint rows, gamepad not tested, and low-end phone/tablet hardware check left open (`iPhone 17` only per Review #031).
 
+### 6-Client Studio Local Server Verification (`PlaceId=106917003014718`, `PlaceVersion=24` — `2026-11-23`)
+- **Environment:** Roblox Studio **Server & 6 Clients (F7)** on cloud place `106917003014718` (`PlaceVersion=24`, `GAME_VERSION=0.5.1-s5-01-telemetry-fix`, `LiveProfileStore` / `DataStoreState=Access`; Studio Local Server reports `Players.MaxPlayers=60` while published server `MaxPlayers=6` was confirmed in `S5-01`).
+- **Startup & Occupancy:** **`67/67`** server self-test suites passed; `6/6` concurrent clients (`Player1..Player6`, `UserId -1..-6`) received unique plots (`Plot_1=Player1's Ranch` through `Plot_6=Player6's Ranch`).
+- **End-to-End Multiplayer Actions (Real Remotes):**
+  - All `6/6` clients cracked meteors via `RequestStartCrack` / `RequestFinishCrack` (each starter `StarSlime`, plus `Player1` and `Player3` also cracked concurrent Wild `Ember` meteors).
+  - All `6/6` clients ran `StartIncubate` -> `Hatch` -> `PlaceInPen` (`Pen_1`) via `RequestPlotAction`.
+- **Cross-Client Replication & Runtime Cleanliness:**
+  - Every client (`Player1..Player6`) replicated all `6/6` populated ranches in `workspace.StarfallClientVisuals`: `[P1_Pen_1_StarSlime, P2_Pen_1_StarSlime, P3_Pen_1_StarSlime, P4_Pen_1_StarSlime, P5_Pen_1_StarSlime, P6_Pen_1_StarSlime]` (`6/6` plots visible per client) and accrued passive Coins cleanly.
+  - **`0`** server or client runtime script errors across the Server and all `6` Clients.
+- **Scope Note (Review #034):** This satisfies the **6-player multiplayer functionality check** alongside solo `iPhone 17` Run #2; private development continues, and **real low-end phone/tablet hardware performance with 6 populated ranches in a live server remains deferred** until testers are available for a wider playtest (`S4-03` stays `[~]`).
+
 ### Pass / Fail Thresholds
 - [ ] **Sustained Frame Rate:** Average & steady-state FPS remains **$\ge 30$ FPS** throughout the 15–30 minute run with active critters (`<= 30`), incubators, and meteors visible. *(Solo `iPhone 17` Run #2 passed `60 FPS` avg / `58 FPS` min, `16.7 ms` on `1/6` plot, `5/5` pens, `Met 6`; 6-player server load + low-end device coverage remain open per Review #032.)*
 - [ ] **Memory Stability (Zero Leak):** Total Memory and `LuaHeap` plateau after initial warmup (no continuous monotonic climb across `T+10m -> T+30m`; destroyed pods/meteors/drawers release cleanly). *(Solo `iPhone 17` Run #2 ended at `839 MB (+2 MB vs baseline)` at `T+30:00+`; intermediate total & `LuaHeap` checkpoints remain open per Review #032.)*
