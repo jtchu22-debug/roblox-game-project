@@ -249,11 +249,63 @@ local function applyToModel(
 	return true
 end
 
+local pilotNameMap: { [string]: { Kind: string, Key: string } } = {
+	CinderPup_Pilot = { Kind = "Critter", Key = "CinderPup" },
+	SolarGolem_Pilot = { Kind = "Critter", Key = "SolarGolem" },
+	Ember_Pilot = { Kind = "Meteor", Key = "Ember" },
+	StarterCracker_Pilot = { Kind = "Tool", Key = "StarterCracker" },
+}
+
+local function applyIncubatorPrototypeDefaults(model: Model): boolean
+	local base = model:FindFirstChild("Base", true)
+	local trim = model:FindFirstChild("Trim", true)
+	local cradle = model:FindFirstChild("Cradle", true)
+	local canopy = model:FindFirstChild("Canopy", true)
+	local hinge = model:FindFirstChild("Hinge", true)
+	local status = model:FindFirstChild("StatusRing", true)
+	if not (base and trim and cradle and canopy and hinge and status) then
+		return false
+	end
+
+	local partCount = 0
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			partCount += 1
+		end
+	end
+	assert(partCount <= 8, string.format("%s exceeds 8-BasePart budget (%d)", model:GetFullName(), partCount))
+
+	configurePartDefaults(base :: BasePart, Color3.fromRGB(245, 235, 220), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(trim :: BasePart, Color3.fromRGB(210, 164, 82), Enum.Material.Metal, true)
+	configurePartDefaults(cradle :: BasePart, Color3.fromRGB(52, 50, 72), Enum.Material.SmoothPlastic, true)
+	configurePartDefaults(canopy :: BasePart, Color3.fromRGB(185, 235, 255), Enum.Material.Glass, false)
+	(canopy :: BasePart).Transparency = 0.65
+	configurePartDefaults(hinge :: BasePart, Color3.fromRGB(196, 146, 64), Enum.Material.Metal, true)
+	configurePartDefaults(status :: BasePart, Color3.fromRGB(65, 210, 255), Enum.Material.Neon, false)
+	model.PrimaryPart = base :: BasePart
+
+	local _, bboxSize = model:GetBoundingBox()
+	assert(bboxSize.Y <= 8.0, string.format("%s height %.3f exceeds 8.0 stud budget", model:GetFullName(), bboxSize.Y))
+	local minY = measureMinWorldY(model)
+	local pivotDelta = math.abs(model:GetPivot().Position.Y - minY)
+	assert(pivotDelta <= 0.05, string.format("%s ground pivot offset %.4f > 0.05", model:GetFullName(), pivotDelta))
+	print(string.format(
+		"[ApplyHeroMeshTemplateDefaults] Styled Station %s | Parts=%d/8 | Size=(%.3f, %.3f, %.3f) | PivotDeltaY=%.4f",
+		model:GetFullName(),
+		partCount,
+		bboxSize.X,
+		bboxSize.Y,
+		bboxSize.Z,
+		pivotDelta
+	))
+	return true
+end
+
 local critterPalettes, meteorPalettes, toolPalettes = loadPalettes()
 local containers: { Instance } = { workspace }
 local assetTemplates = ReplicatedStorage:FindFirstChild("AssetTemplates")
 if assetTemplates ~= nil then
-	for _, folderName in ipairs({ "Critters", "Meteors", "Tools" }) do
+	for _, folderName in ipairs({ "Critters", "Meteors", "Tools", "Pilot" }) do
 		local sub = assetTemplates:FindFirstChild(folderName)
 		if sub ~= nil then
 			table.insert(containers, sub)
@@ -265,7 +317,19 @@ local styledCount = 0
 for _, container in ipairs(containers) do
 	for _, child in ipairs(container:GetChildren()) do
 		if child:IsA("Model") then
-			if applyToModel(child, critterPalettes[child.Name], meteorPalettes[child.Name], toolPalettes[child.Name]) then
+			local pilotInfo = pilotNameMap[child.Name]
+			if child.Name == "Incubator_Prototype" then
+				if applyIncubatorPrototypeDefaults(child) then
+					styledCount += 1
+				end
+			elseif pilotInfo ~= nil then
+				local cPal = if pilotInfo.Kind == "Critter" then critterPalettes[pilotInfo.Key] else nil
+				local mPal = if pilotInfo.Kind == "Meteor" then meteorPalettes[pilotInfo.Key] else nil
+				local tPal = if pilotInfo.Kind == "Tool" then toolPalettes[pilotInfo.Key] else nil
+				if applyToModel(child, cPal, mPal, tPal) then
+					styledCount += 1
+				end
+			elseif applyToModel(child, critterPalettes[child.Name], meteorPalettes[child.Name], toolPalettes[child.Name]) then
 				styledCount += 1
 			end
 		end

@@ -77,6 +77,18 @@ Use the [Steal an Egg gameplay gallery](https://bo3.gg/games/articles/steal-an-e
 3. Keep shipped part counts, placement pivots, grip offsets, clearance, interaction anchors, and the eight-stud critter height cap. Preserve the Stage 4 triangle target as the shipped baseline until the pilot is measured. For the two pilot critters, try up to **800–1,200 triangles per displayed model** where the silhouette needs them. Record the counts and compare frame time and memory with six plots and up to 30 displayed critters, active meteors, and the same view and device in each run. Record whether the run used physical hardware or Studio emulation. Use flat, material-grouped meshes and baked detail where it improves the final read. Apply a higher launch budget only after a measured review.
 4. Reuse stable IDs and template names. Save editable Blender sources and Studio-ready exports with the comparison captures. Use approved front three-quarter renders to drive Index portraits and shop artwork. The narrow pilot can run alongside Cracker fixes and the first station prototype.
 
+- **S6-ART-04 Pilot & First S6-ART-02 Incubator Prototype (`StarfallRanch_Dev.rbxl` — Nov 23, 2026):**
+  - **Generator, Sources & Exports:** [`tools/blender/generate_s6_pilot_assets.py`](../tools/blender/generate_s6_pilot_assets.py), `.blend` sources in `tools/blender/sources/pilot/`, Studio-ready `.fbx` exports + `manifest.json` in `tools/blender/exports/pilot/`, imported under isolated `ReplicatedStorage.AssetTemplates.Pilot` (Stage 4 shipped baselines remain untouched pending review). Workflow documented in [`tools/studio/ASSET_IMPORT_WORKFLOW.md`](../tools/studio/ASSET_IMPORT_WORKFLOW.md).
+  - **Pilot Budgets & Dimensions (`<= 8` parts, `<= 1,200` tris critters/station, `<= 850` tris meteor/tool):**
+    - `CinderPup_Pilot`: `4/8` parts, `1,018` tris (`328` baseline), `2.118 × 3.011 × 2.675` studs, `0.0000` ground pivot delta.
+    - `SolarGolem_Pilot`: `4/8` parts, `1,098` tris (`352` baseline), `3.875 × 4.803 × 1.652` studs, `0.0000` ground pivot delta.
+    - `Ember_Pilot`: `3/8` parts, `388` tris (`246` baseline), `3.476 × 3.309 × 3.471` studs, `0.0000` ground pivot delta.
+    - `StarterCracker_Pilot`: `5/8` parts, `552` tris (`344` baseline), `0.820 × 2.880 × 1.160` studs, `(0, 0, 0)` grip pivot.
+    - `Incubator_Prototype` *(S6-ART-02)*: `6/8` parts, `766` tris, `6.700 × 5.180 × 6.700` studs, `0.0000` ground pivot delta.
+  - **Populated-Map Studio A/B Benchmark (Studio Play Solo, 6 plots × 5 critters = 30 critters + 5 meteors, identical locked overview camera, 5.0s `RenderStepped` window):**
+    - **Run A (Stage 4 Baseline, `11,430` tris):** `75` frames, `15.0` avg / `14.8` min FPS (unfocused Studio cap), `66.66 ms` avg frame, `2591.0 MB` TotalMem, `1094.3 MB` LuaHeap.
+    - **Run B (Pilot + 12 Incubators, `42,872` tris):** `75` frames, `15.0` avg / `14.7` min FPS, `66.66 ms` avg frame, `2591.3 MB` TotalMem (`+0.3 MB`), `1094.3 MB` LuaHeap (`+0.0 MB`). Physical low-end mobile soak remains gated on `S4-03`.
+
 ## Launch tool models
 
 Create one original low-poly Blender model for each launch Cracker tier. Give them a shared rounded handle, visible grip, and a head shape readable at avatar scale. Use the Observatory's brass, cream stone, and teal color accents alongside each meteor family's visual cues.

@@ -213,6 +213,29 @@ local function applyCrackerStyling(model: Model, toolId: Types.CrackerToolId, op
 	end
 end
 
+local function isValidCrackerTemplate(template: Instance?): (boolean, string?)
+	if template == nil or not template:IsA("Model") then
+		return false, "template is not a Model"
+	end
+
+	local gripPart = template:FindFirstChild("Grip", true)
+	if gripPart == nil or not gripPart:IsA("BasePart") then
+		return false, "missing Grip BasePart"
+	end
+
+	local partCount = 0
+	for _, desc in ipairs(template:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			partCount += 1
+		end
+	end
+	if partCount == 0 or partCount > ToolConfig.MAX_TOOL_PARTS then
+		return false, string.format("part count %d outside 1..%d", partCount, ToolConfig.MAX_TOOL_PARTS)
+	end
+
+	return true, nil
+end
+
 function ToolVisualController.BuildCrackerModel(toolId: Types.CrackerToolId, options: BuildOptions?): (Model, string, number)
 	local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
 	local toolsFolder = if templatesRoot ~= nil then templatesRoot:FindFirstChild("Tools") else nil
@@ -220,10 +243,21 @@ function ToolVisualController.BuildCrackerModel(toolId: Types.CrackerToolId, opt
 
 	local model: Model
 	local sourceTag: string
-	if template ~= nil and template:IsA("Model") and template:FindFirstChild("Grip") ~= nil then
-		model = template:Clone()
-		model.Name = toolId
-		sourceTag = "MeshTemplate"
+	if template ~= nil then
+		local okTemplate, badReason = isValidCrackerTemplate(template)
+		if okTemplate then
+			model = (template :: Model):Clone()
+			model.Name = toolId
+			sourceTag = "MeshTemplate"
+		else
+			warn(string.format(
+				"[ToolVisualController] Rejected malformed tool template '%s': %s. Using procedural fallback.",
+				toolId,
+				tostring(badReason)
+			))
+			model = buildProceduralCracker(toolId)
+			sourceTag = "ProceduralFallback"
+		end
 	else
 		model = buildProceduralCracker(toolId)
 		sourceTag = "ProceduralFallback"
@@ -732,6 +766,64 @@ function ToolVisualController.RunSelfTest(): number
 	mockChar:Destroy()
 
 	ToolVisualController.ReconcileWorkbenchDisplays({})
+	passed += 1
+
+	-- Suite 4: Malformed optional tool template falls back cleanly without interrupting startup
+	local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
+	local createdRoot = false
+	if templatesRoot == nil then
+		local r = Instance.new("Folder")
+		r.Name = Constants.ASSET_TEMPLATES_FOLDER_NAME
+		r.Parent = ReplicatedStorage
+		templatesRoot = r
+		createdRoot = true
+	end
+	local toolsFolder = (templatesRoot :: Instance):FindFirstChild("Tools")
+	local createdTools = false
+	if toolsFolder == nil then
+		local t = Instance.new("Folder")
+		t.Name = "Tools"
+		t.Parent = templatesRoot
+		toolsFolder = t
+		createdTools = true
+	end
+
+	local origStarter = (toolsFolder :: Instance):FindFirstChild("StarterCracker")
+	if origStarter ~= nil then
+		origStarter.Parent = nil
+	end
+
+	local badModel = Instance.new("Model")
+	badModel.Name = "StarterCracker"
+	local badGripFolder = Instance.new("Folder")
+	badGripFolder.Name = "Grip"
+	badGripFolder.Parent = badModel
+	for idx = 1, ToolConfig.MAX_TOOL_PARTS + 1 do
+		local p = Instance.new("Part")
+		p.Name = "Extra_" .. tostring(idx)
+		p.Parent = badModel
+	end
+	badModel.Parent = toolsFolder
+
+	local okMalformed, malformedErr = pcall(function()
+		local fallbackModel, sourceTag, partCount = ToolVisualController.BuildCrackerModel("StarterCracker", { Owned = true })
+		assert(sourceTag == "ProceduralFallback", "Malformed template must fall back to ProceduralFallback")
+		assert(partCount <= ToolConfig.MAX_TOOL_PARTS, "Fallback model must respect part budget")
+		fallbackModel:Destroy()
+		ToolVisualController.ReconcileWorkbenchDisplays({})
+	end)
+
+	badModel:Destroy()
+	if origStarter ~= nil then
+		origStarter.Parent = toolsFolder
+	end
+	if createdTools and toolsFolder ~= nil then
+		toolsFolder:Destroy()
+	end
+	if createdRoot and templatesRoot ~= nil then
+		templatesRoot:Destroy()
+	end
+	assert(okMalformed, "Malformed tool template regression failed: " .. tostring(malformedErr))
 	passed += 1
 
 	return passed

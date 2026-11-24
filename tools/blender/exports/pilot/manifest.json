@@ -1,0 +1,15 @@
+{
+  "Ember_Pilot": {
+    "name": "Ember_Pilot",
+    "parts": 3,
+    "triangles": 388,
+    "size_studs": [
+      3.477,
+      3.471,
+      3.309
+    ],
+    "pivot": "ground",
+    "blend_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\sources\\pilot\\Ember_Pilot.blend",
+    "fbx_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\exports\\pilot\\Ember_Pilot.fbx"
+  }
+}
