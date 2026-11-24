@@ -57,3 +57,15 @@ The earlier Phase 0 caveats in [`tools/blender/generate_lowpoly_assets.py`](../t
    - **Safe Rerun Protection:** Interactive runs refuse to delete non-default scene objects or prior `SR_Critters` / `SR_Meteors` collections unless `--force` (`ALLOW_DESTRUCTIVE_CLEAR = True`) is explicitly passed.
    - **Studio Styling Helper:** [`tools/studio/ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau) applies `CritterConfig` / `MeteorConfig` + `SecondaryColor` `SmoothPlastic` & `Neon` defaults, disables collision/query/touch on child meshes, assigns `PrimaryPart`, and asserts `<= 8` BaseParts / `<= 8` stud height budgets.
    - **Full 9-Asset + Approved v2 Critter Studio Verification (`Place1` & `StarfallRanch_Dev.rbxl` — Verified Nov 22, 2026):** Verified the initial 9 `.fbx` models in `Place1` (`RescuePrompt`, `MeteorLabel`, and `StarfallActiveMeteor` on angular meteors), then imported and approved the revised **v2 soft-stylized critter roster** inside `StarfallRanch_Dev.rbxl` (`Plot_1.HabitatPen` phone `667×375` zoom, close 3/4, rear, Radiant, and charcoal silhouette checks): `4/8` flat `MeshPart`s (`5/8` Radiant with `RadiantHalo`), `0.0000` ground pivot delta, `-Z` forward, exact `1:1` stud scale, and `<= 6.415` studs max height at Fed `1.15×` Radiant scale.
+
+## Launch tool models
+
+Create one original low-poly Blender model for each launch Cracker tier. Give them a shared rounded handle, visible grip, and a head shape readable at avatar scale. Use the Observatory's brass, cream stone, and teal color accents alongside each meteor family's visual cues.
+
+| Tool | Shape and material direction |
+| --- | --- |
+| **Starter Cracker** | Short rounded quarry mallet with a wood handle, copper band, and cream striking face. |
+| **Frost Cracker** | Compact two-prong head with a cyan wedge and dark navy wrapped grip. |
+| **Astral Cracker** | Curved brass head with a broken ring profile, compact violet core, and visible dark grip. Maps to the existing `StarCracker` upgrade. |
+
+Export editable sources and Studio-ready meshes with consistent scale and grip alignment. Add locked and owned previews at the Observatory Tool Workbench, and show the currently eligible Cracker in hand during the existing meteor crack interaction. The existing server upgrade rules determine which tool tier the player may use. Verify grip alignment, tool cleanup after a cancelled crack or respawn, prompt readability, and first- and third-person visibility on desktop and touch. Use the same mesh optimization and restrained effects principles as the hero assets.
