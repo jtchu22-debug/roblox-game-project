@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
 > **Last Updated:** November 22, 2026
-> **Current Active Milestone** — **S5-01 private telemetry passed.** The S4-03 published six-player low-end soak remains open before the S5-02 wider playtest. Round 3 product approval remains pending. [Review #036](./AGENT_REVIEWS.md#review-036--s5-01-telemetry-sign-off)
+> **Current Active Milestone** — **S6-ART-01 is ready for private implementation.** S5-01 telemetry passed, and all six clients passed the Studio multiplayer functionality check. The S4-03 published six-player low-end soak remains open before the S5-02 wider playtest. Round 3 product approval remains pending. [Review #037](./AGENT_REVIEWS.md#review-037--six-client-studio-check-and-cracker-art-handoff)
 
 ---
 
