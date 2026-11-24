@@ -48,6 +48,12 @@ footer { margin-top:19px; padding-top:14px; border-top:1px solid var(--line); di
 footer p { margin:0; color:var(--dim); font-size:.86rem }
 @media(max-width:800px) { main {padding:22px 16px 30px} .intro {align-items:start; flex-direction:column; gap:14px} .card-body {padding:12px} }
 @media(max-width:620px) { #cards {grid-template-columns:1fr} .card {display:grid; grid-template-columns: minmax(0,36%) minmax(0,1fr)} .gear-art {aspect-ratio:auto; border-right:1px solid var(--rim); border-bottom:0;} .card p {min-height:0} .wallet {gap:7px;padding:6px 8px} .wallet span {display:none} .buy {font-size:.81rem} header {gap:8px} }
+.shop-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px }
+.shop-tabs button[aria-pressed=true] { color:#24192a; background:var(--gold); border-color:var(--gold) }
+.prestige-art { background-image:url('../art/observatory-prestige-concepts.png'); background-size:500% auto; background-position:var(--art) 52% }
+#cards[data-view=prestige] .stats { display:block }
+#cards[data-view=prestige] .stats strong { display:block; padding-top:3px }
+@media(max-width:620px) { .prestige-art { background-position:var(--art) 48% } }
 </style>
 </head>
 <body>
@@ -63,6 +69,10 @@ footer p { margin:0; color:var(--dim); font-size:.86rem }
       <button type="button" class="secondary" id="collect">Collect 1 minute</button>
     </div>
   </section>
+  <nav class="shop-tabs" aria-label="Shop catalog">
+    <button type="button" class="secondary" id="gear-tab" aria-pressed="true">Gear</button>
+    <button type="button" class="secondary" id="prestige-tab" aria-pressed="false">Prestige garage</button>
+  </nav>
   <p id="message" role="status">Choose an upgrade or preview a later ranch stage.</p>
   <section id="cards" aria-label="Gear upgrades"></section>
   <footer>
@@ -74,6 +84,7 @@ footer p { margin:0; color:var(--dim); font-size:.86rem }
 <script>
 const gear = [{"id":"lens","title":"Star Lens","category":"Hatch luck","art":"left","tone":"teal","description":"Improve eligible Rare through Mythic hatch odds.","stats":[5,10,15,22,30],"prices":[300,2400,15000,85000,450000]},{"id":"boots","title":"Trail Boots","category":"Travel speed","art":"center","tone":"lilac","description":"Walk faster between your ranch and meteor fields.","stats":[4,8,12,16,20],"prices":[240,2000,12000,70000,360000]},{"id":"charm","title":"Bond Charm","category":"Expedition damage","art":"right","tone":"amber","description":"Increase your squad’s damage in PvE expeditions.","stats":[8,15,25,38,50],"prices":[360,3000,18000,100000,540000]}];
 const stages = [{"name":"Ember","rate":4,"description":"Place your first critter"},{"name":"Frost","rate":16,"description":"Unlock the Frost Cracker"},{"name":"Verdant","rate":50,"description":"Rescue your first Verdant meteor"},{"name":"Storm","rate":140,"description":"Rescue your first Storm meteor"},{"name":"Astral","rate":350,"description":"Rescue your first Astral meteor"}];
+const prestige = [{"id":"cometboard","title":"Cometboard","track":"boots","prereq":"Trail Boots V","bonus":"+28% overworld speed","price":1200000,"art":"0%","tone":"teal","description":"A brass-finned hoverboard for quick trips between ranches."},{"id":"rover","title":"Crater Rover","track":"boots","prereq":"Trail Boots V","bonus":"+40% overworld speed","price":2500000,"art":"25%","tone":"amber","description":"A cream moon buggy with oversized tires and a star flag."},{"id":"speeder","title":"Nova Speeder","track":"boots","prereq":"Trail Boots V","bonus":"+55% overworld speed","price":4800000,"art":"50%","tone":"lilac","description":"A violet hoverbike built for the fastest ground routes."},{"id":"surveyor","title":"Astral Surveyor","track":"lens","prereq":"Star Lens V","bonus":"+55% eligible hatch weight","price":7500000,"art":"75%","tone":"teal","description":"A telescope exosuit that improves eligible rare hatches."},{"id":"starwarden","title":"Starwarden Mech","track":"charm","prereq":"Bond Charm V","bonus":"+90% squad damage","price":12000000,"art":"100%","tone":"lilac","description":"A rounded ranch guardian with an amber paw-print core."}];
 const tiers = ["I","II","III","IV","V"];
 const number = new Intl.NumberFormat("en-US");
 const stageSelect = document.querySelector("#stage");
@@ -81,13 +92,42 @@ const cards = document.querySelector("#cards");
 const message = document.querySelector("#message");
 const rollMode = document.querySelector("#roll-mode");
 const rollStatus = document.querySelector("#roll-status");
+const gearTab = document.querySelector("#gear-tab");
+const prestigeTab = document.querySelector("#prestige-tab");
+const collect = document.querySelector("#collect");
+let view = "gear";
+let equippedPrestige = "";
+const prestigeOwned = new Set();
 let stage = 0;
 let coins = 360;
 let luckOn = false;
 const owned = new Map(gear.map((item) => [item.id, 0]));
-stageSelect.innerHTML = stages.map((entry,index) => '<option value="'+index+'">'+entry.name+'</option>').join("");
+stageSelect.innerHTML = stages.map((entry,index) => '<option value="'+index+'">'+entry.name+'</option>').join("")
+  + '<option value="showroom">Astral showroom</option>';
+
+function renderPrestigeCard(item) {
+  const purchased = prestigeOwned.has(item.id);
+  const equipped = equippedPrestige === item.id;
+  const locked = !purchased && (stage < stages.length - 1 || owned.get(item.track) < tiers.length);
+  const affordable = !purchased && !locked && coins >= item.price;
+  const status = equipped ? "Equipped" : purchased ? "Owned" : locked ? (stage < stages.length - 1 ? "Reach Astral first" : "Requires " + item.prereq) : affordable ? "Available now" : number.format(item.price - coins) + " Coins to go";
+  const action = equipped ? "Unequip" : purchased ? "Equip" : locked ? "Locked" : "Buy";
+  const label = purchased ? action + " " + item.title : action + " " + item.title + " for " + item.price + " Coins";
+  const fill = purchased || affordable ? 100 : locked ? 0 : Math.round(100 * coins / item.price);
+  return '<article class="card '+item.tone+'"><div aria-hidden="true" class="gear-art prestige-art" style="--art:'+item.art+'"><span>'
+    + (purchased ? (equipped ? "Equipped" : "Owned") : "Prestige") + '</span></div><div class="card-body"><h2>'+item.title
+    + '</h2><p>'+item.description+'</p><div class="stats"><strong>'+item.bonus+'</strong></div><div class="track" aria-hidden="true"><i style="--fill:'+fill
+    + '%"></i></div><div class="requirement">'+status+'</div><button type="button" class="buy" data-gear="'+item.id+'" aria-label="'+label
+    + '" aria-disabled="'+(!purchased && !affordable)+'"><span>'+action+'</span><span>'+(purchased ? "" : number.format(item.price)+" Coins")
+    + '</span></button></div></article>';
+}
 
 function redraw() {
+  gearTab.setAttribute("aria-pressed", String(view === "gear"));
+  prestigeTab.setAttribute("aria-pressed", String(view === "prestige"));
+  cards.setAttribute("data-view", view);
+  cards.setAttribute("aria-label", view === "prestige" ? "Prestige garage" : "Gear upgrades");
+  collect.textContent = view === "prestige" ? "Collect 1 hour" : "Collect 1 minute";
   document.querySelector("#coins").textContent = number.format(coins) + " Coins";
   document.querySelector("#rate").textContent = "+" + number.format(stages[stage].rate) + "/s";
   rollMode.setAttribute("aria-pressed", String(luckOn));
@@ -96,7 +136,7 @@ function redraw() {
     ? "Eligible boosted rolls improve non-Secret odds. Boosted rolls stay outside the Rarest Hatch board."
     : "Standard rolls qualify for Rarest Hatch records.";
   const previousId = document.activeElement?.dataset?.gear;
-  cards.innerHTML = gear.map((item) => {
+  cards.innerHTML = view === "prestige" ? prestige.map(renderPrestigeCard).join("") : gear.map((item) => {
     const rank = owned.get(item.id);
     const complete = rank === tiers.length;
     const price = complete ? 0 : item.prices[rank];
@@ -119,7 +159,23 @@ function redraw() {
 cards.addEventListener("click", (event) => {
   const button = event.target.closest("[data-gear]");
   if (!button || button.getAttribute("aria-disabled") === "true") return;
+  if (view === "prestige") {
+    const item = prestige.find((entry) => entry.id === button.dataset.gear);
+    if (!item) return;
+    if (prestigeOwned.has(item.id)) {
+      equippedPrestige = equippedPrestige === item.id ? "" : item.id;
+      message.textContent = equippedPrestige ? item.title + " equipped." : item.title + " unequipped.";
+    } else {
+      coins -= item.price;
+      prestigeOwned.add(item.id);
+      equippedPrestige = item.id;
+      message.textContent = item.title + " purchased and equipped.";
+    }
+    redraw();
+    return;
+  }
   const item = gear.find((entry) => entry.id === button.dataset.gear);
+  if (!item) return;
   const rank = owned.get(item.id);
   coins -= item.prices[rank];
   owned.set(item.id, rank+1);
@@ -127,15 +183,29 @@ cards.addEventListener("click", (event) => {
   redraw();
 });
 stageSelect.addEventListener("change", () => {
-  stage = Number(stageSelect.value);
-  gear.forEach((item) => owned.set(item.id, stage));
-  coins = gear[0].prices[stage];
+  const showroom = stageSelect.value === "showroom";
+  stage = showroom ? stages.length - 1 : Number(stageSelect.value);
+  gear.forEach((item) => owned.set(item.id, showroom ? tiers.length : stage));
+  coins = showroom ? 3_000_000 : gear[0].prices[stage];
+  prestigeOwned.clear();
+  equippedPrestige = "";
   luckOn = false;
-  message.textContent = stages[stage].name + " example loaded with the previous tiers unlocked.";
+  if (showroom) view = "prestige";
+  message.textContent = showroom ? "Astral showroom loaded with all five base tiers." : stages[stage].name + " example loaded with the previous tiers unlocked.";
   redraw();
 });
-document.querySelector("#collect").addEventListener("click", () => {
-  const earned = stages[stage].rate * 60;
+gearTab.addEventListener("click", () => {
+  view = "gear";
+  message.textContent = "Spend earned Coins on the next gear tier.";
+  redraw();
+});
+prestigeTab.addEventListener("click", () => {
+  view = "prestige";
+  message.textContent = "Pick Astral showroom to try buying and equipping a prestige item.";
+  redraw();
+});
+collect.addEventListener("click", () => {
+  const earned = stages[stage].rate * (view === "prestige" ? 3_600 : 60);
   coins += earned;
   message.textContent = "+" + number.format(earned) + " Coins from your ranch.";
   redraw();
@@ -155,6 +225,9 @@ document.querySelector("#reset").addEventListener("click", () => {
   gear.forEach((item) => owned.set(item.id, 0));
   coins = 360;
   luckOn = false;
+  prestigeOwned.clear();
+  equippedPrestige = "";
+  view = "gear";
   message.textContent = "Preview reset.";
   redraw();
 });

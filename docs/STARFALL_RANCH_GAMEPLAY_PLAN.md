@@ -158,7 +158,7 @@ Add this during Stage 6 alongside the expanded roster, before the public launch.
 
 ## Day-one shop and economy
 
-The [Observatory Gear Shop](./OBSERVATORY_GEAR_SHOP.md) is the main Coin sink for the launch progression loop. Players earn through placed critters and spend on Star Lens hatch luck, Trail Boots travel speed, or Bond Charm PvE damage. Five fixed price tiers scale against ordinary ranch earnings as players move into rarer pools. The Coin catalog has its own cards, progression, and visual gear.
+The [Observatory Gear Shop](./OBSERVATORY_GEAR_SHOP.md) is the main Coin sink for the launch progression loop. Players earn through placed critters and spend on Star Lens hatch luck, Trail Boots travel speed, or Bond Charm PvE damage. Five fixed price tiers scale against ordinary ranch earnings as players move into rarer pools. The Coin catalog has its own cards, progression, and visual gear. At Astral progression, the earned-Coin [prestige garage](./OBSERVATORY_GEAR_SHOP.md#prestige-garage) adds three rides and two suits as high-price showcase goals.
 
 Ship the verified shop alongside the full launch build. The launch lineup from [PR #9](https://github.com/jtchu22-debug/roblox-game-project/pull/9) includes gameplay passes for faster incubation, 2× capped offline Coins, Ranch VIP with extra bag room, and eligible non-Secret paid luck. Include Instant Hatch credits, a guaranteed Robux companion, cosmetics, and an eligible Premium Meteor product. Keep the advertised searchable Field Guide focused on the 108 earnable species. Put exclusive shop companions in a separate guide category.
 
