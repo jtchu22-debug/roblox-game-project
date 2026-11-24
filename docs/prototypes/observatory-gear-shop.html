@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Observatory Gear Shop | Starfall Ranch</title>
+<style>
+:root { color-scheme:dark; --ink:#f7e4c1; --dim:#c1b9cc; --paper:#151424; --panel:#211d32; --line:#484158; --gold:#f2c382; --green:#a7ead7; font:16px/1.5 "Trebuchet MS",Arial,sans-serif }
+* { box-sizing:border-box }
+body { margin:0; background:radial-gradient(ellipse at 75% -15%,#42324f 0%,transparent 52%),linear-gradient(165deg,#211b35,#101220 58%); min-height:100vh; color:var(--ink) }
+main { max-width:1160px; margin:auto; padding:36px clamp(16px,5vw,48px) 50px }
+header { border-bottom:1px solid var(--line); padding-bottom:14px; display:flex; justify-content:space-between; gap:12px; align-items:center }
+.brand { font-size:.77rem; text-transform:uppercase; letter-spacing:.23em; font-weight:bold; display:flex; align-items:center; gap:9px }
+.star { color:var(--gold); font-size:1.3rem }
+.wallet { display:flex; align-items:center; gap:12px; padding:7px 13px; background:#212438; border:1px solid #5e5363; border-radius:10px; white-space:nowrap }
+.wallet strong { color:var(--gold); font-variant-numeric:tabular-nums }
+.wallet span { color:var(--green); font-size:.8rem }
+.intro { display:flex; justify-content:space-between; align-items:end; gap:24px; padding:30px 0 19px }
+.intro p { margin:6px 0 0; color:var(--dim); max-width:45ch }
+h1,h2 { font-family:Georgia,serif; letter-spacing:-.03em; margin:0; font-weight:normal }
+h1 { font-size:clamp(2.4rem,5.8vw,4.6rem); line-height:1 }
+h2 { font-size:1.7rem; line-height:1.03 }
+.controls { display:flex; gap:9px; align-items:end; flex-wrap:wrap }
+.controls label { font-size:.75rem; color:var(--dim); display:grid; gap:2px }
+button,select { font:inherit; cursor:pointer; min-height:44px }
+select,.secondary { background:#242039; color:var(--ink); border:1px solid #6e627c; border-radius:8px; padding:8px 12px; font-size:.86rem }
+button:hover:not([aria-disabled=true]), select:hover { filter:brightness(1.14) }
+button:focus-visible, select:focus-visible { outline:3px solid var(--green); outline-offset:3px }
+#message { min-height:28px; color:var(--green); font-size:.86rem; margin:0 0 8px }
+#cards { display:grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap:16px }
+.card { border:1px solid var(--rim); border-radius:16px; overflow:hidden; background:linear-gradient(155deg,var(--wash),#231e34 70%); display:flex; flex-direction:column }
+.teal { --rim:#518c88; --accent:#a7ead7; --wash:#244a49 }
+.lilac { --rim:#8c73a5; --accent:#e4c8ff; --wash:#493259 }
+.amber { --rim:#a77953; --accent:#ffce94; --wash:#573a32 }
+.gear-art { aspect-ratio:1/0.93; position:relative; background:#151529 url('../art/observatory-gear-concept.png') no-repeat; background-size:300% auto; background-position:var(--art) 49%; border-bottom:1px solid var(--rim); }
+.gear-art span { position:absolute; bottom:10px; left:12px; font-size:.72rem; border:1px solid var(--rim); padding:3px 8px; background:#1e1b2f; border-radius:6px; color:var(--accent) }
+.card-body { display:flex; flex-direction:column; gap:9px; padding:16px; flex:1 }
+.category { color:var(--accent); font-size:.72rem; text-transform:uppercase; letter-spacing:.13em; font-weight:bold }
+.card p { margin:0; color:var(--dim); font-size:.90rem; min-height:3em }
+.stats { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--rim); padding-top:11px; margin-top:2px; color:var(--dim); font-size:.82rem }
+.stats strong { color:var(--accent); white-space:nowrap }
+.track { background:#161427; border-radius:20px; height:5px; overflow:hidden; margin:2px 0; }
+.track i { display:block; width:var(--fill); height:100%; background:var(--accent) }
+.requirement { color:var(--dim); font-size:.76rem; min-height:1.5em }
+.buy { margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px; border:1px solid var(--gold); border-radius:8px; font-weight:bold; font-size:.87rem; background:var(--gold); color:#24192a; text-align:left }
+.buy[aria-disabled=true] { background:#282137; border-color:var(--rim); color:var(--dim); cursor:default }
+footer { margin-top:19px; padding-top:14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap }
+footer p { margin:0; color:var(--dim); font-size:.86rem }
+@media(max-width:800px) { main {padding:22px 16px 30px} .intro {align-items:start; flex-direction:column; gap:14px} .card-body {padding:12px} }
+@media(max-width:620px) { #cards {grid-template-columns:1fr} .card {display:grid; grid-template-columns: minmax(0,36%) minmax(0,1fr)} .gear-art {aspect-ratio:auto; border-right:1px solid var(--rim); border-bottom:0;} .card p {min-height:0} .wallet {gap:7px;padding:6px 8px} .wallet span {display:none} .buy {font-size:.81rem} header {gap:8px} }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand"><span class="star" aria-hidden="true">✦</span> Starfall Ranch</div>
+    <div class="wallet"><strong id="coins"></strong><span id="rate"></span></div>
+  </header>
+  <section class="intro" aria-labelledby="title">
+    <div><h1 id="title">Observatory Gear</h1><p>Spend the Coins your critters earn on better hatches, faster travel, and stronger squads.</p></div>
+    <div class="controls">
+      <label>Preview ranch stage<select id="stage"></select></label>
+      <button type="button" class="secondary" id="collect">Collect 1 minute</button>
+    </div>
+  </section>
+  <p id="message" role="status">Choose an upgrade or preview a later ranch stage.</p>
+  <section id="cards" aria-label="Gear upgrades"></section>
+  <footer>
+    <p id="roll-status">Standard rolls qualify for Rarest Hatch records.</p>
+    <button type="button" class="secondary" id="roll-mode" aria-pressed="false">Use luck gear: Off</button>
+    <button type="button" class="secondary" id="reset">Reset preview</button>
+  </footer>
+</main>
+<script>
+const gear = [{"id":"lens","title":"Star Lens","category":"Hatch luck","art":"left","tone":"teal","description":"Improve eligible Rare through Mythic hatch odds.","stats":[5,10,15,22,30],"prices":[300,2400,15000,85000,450000]},{"id":"boots","title":"Trail Boots","category":"Travel speed","art":"center","tone":"lilac","description":"Walk faster between your ranch and meteor fields.","stats":[4,8,12,16,20],"prices":[240,2000,12000,70000,360000]},{"id":"charm","title":"Bond Charm","category":"Expedition damage","art":"right","tone":"amber","description":"Increase your squad’s damage in PvE expeditions.","stats":[8,15,25,38,50],"prices":[360,3000,18000,100000,540000]}];
+const stages = [{"name":"Ember","rate":4,"description":"Place your first critter"},{"name":"Frost","rate":16,"description":"Unlock the Frost Cracker"},{"name":"Verdant","rate":50,"description":"Rescue your first Verdant meteor"},{"name":"Storm","rate":140,"description":"Rescue your first Storm meteor"},{"name":"Astral","rate":350,"description":"Rescue your first Astral meteor"}];
+const tiers = ["I","II","III","IV","V"];
+const number = new Intl.NumberFormat("en-US");
+const stageSelect = document.querySelector("#stage");
+const cards = document.querySelector("#cards");
+const message = document.querySelector("#message");
+const rollMode = document.querySelector("#roll-mode");
+const rollStatus = document.querySelector("#roll-status");
+let stage = 0;
+let coins = 360;
+let luckOn = false;
+const owned = new Map(gear.map((item) => [item.id, 0]));
+stageSelect.innerHTML = stages.map((entry,index) => '<option value="'+index+'">'+entry.name+'</option>').join("");
+
+function redraw() {
+  document.querySelector("#coins").textContent = number.format(coins) + " Coins";
+  document.querySelector("#rate").textContent = "+" + number.format(stages[stage].rate) + "/s";
+  rollMode.setAttribute("aria-pressed", String(luckOn));
+  rollMode.textContent = "Use luck gear: " + (luckOn ? "On" : "Off");
+  rollStatus.textContent = luckOn
+    ? "Eligible boosted rolls improve non-Secret odds. Boosted rolls stay outside the Rarest Hatch board."
+    : "Standard rolls qualify for Rarest Hatch records.";
+  const previousId = document.activeElement?.dataset?.gear;
+  cards.innerHTML = gear.map((item) => {
+    const rank = owned.get(item.id);
+    const complete = rank === tiers.length;
+    const price = complete ? 0 : item.prices[rank];
+    const locked = !complete && rank > stage;
+    const affordable = !complete && !locked && coins >= price;
+    const current = rank > 0 ? item.stats[rank-1] : 0;
+    const stats = complete ? "+"+current+"%" : "+"+current+"% → +"+item.stats[rank]+"%";
+    const hint = complete ? "All five tiers owned" : locked ? stages[rank].description : affordable ? "Available now" : number.format(price-coins)+" Coins to go";
+    const fill = complete || affordable ? 100 : locked ? 0 : Math.round(100*coins/price);
+    return '<article class="card '+item.tone+'"><div aria-hidden="true" class="gear-art" style="--art:'+item.art+'"><span>'
+      + (rank ? "Owned "+tiers[rank-1] : "First upgrade") + '</span></div><div class="card-body"><div class="category">'+item.category
+      + '</div><h2>'+item.title+'</h2><p>'+item.description+'</p><div class="stats">Current → next <strong>'+stats
+      + '</strong></div><div class="track" aria-hidden="true"><i style="--fill:'+fill+'%"></i></div><div class="requirement">'+hint
+      + '</div><button type="button" class="buy" data-gear="'+item.id+'" aria-label="'+(complete ? item.title+" fully upgraded" : "Buy "+item.title+" "+tiers[rank]+" for "+price+" Coins")
+      + '" aria-disabled="'+(!affordable)+'"><span>'+(complete ? "Fully upgraded" : locked ? "Locked "+tiers[rank] : "Buy tier "+tiers[rank])
+      + '</span><span>'+(complete ? "" : number.format(price)+" Coins")+'</span></button></div></article>';
+  }).join("");
+  if(previousId) cards.querySelector('[data-gear="'+previousId+'"]')?.focus();
+}
+cards.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-gear]");
+  if (!button || button.getAttribute("aria-disabled") === "true") return;
+  const item = gear.find((entry) => entry.id === button.dataset.gear);
+  const rank = owned.get(item.id);
+  coins -= item.prices[rank];
+  owned.set(item.id, rank+1);
+  message.textContent = item.title + " " + tiers[rank] + " purchased.";
+  redraw();
+});
+stageSelect.addEventListener("change", () => {
+  stage = Number(stageSelect.value);
+  gear.forEach((item) => owned.set(item.id, stage));
+  coins = gear[0].prices[stage];
+  luckOn = false;
+  message.textContent = stages[stage].name + " example loaded with the previous tiers unlocked.";
+  redraw();
+});
+document.querySelector("#collect").addEventListener("click", () => {
+  const earned = stages[stage].rate * 60;
+  coins += earned;
+  message.textContent = "+" + number.format(earned) + " Coins from your ranch.";
+  redraw();
+});
+rollMode.addEventListener("click", () => {
+  if (!owned.get("lens")) {
+    message.textContent = "Buy a Star Lens to turn on luck gear.";
+    return;
+  }
+  luckOn = !luckOn;
+  message.textContent = luckOn ? "Luck gear equipped." : "Standard rolls restored.";
+  redraw();
+});
+document.querySelector("#reset").addEventListener("click", () => {
+  stage = 0;
+  stageSelect.value = "0";
+  gear.forEach((item) => owned.set(item.id, 0));
+  coins = 360;
+  luckOn = false;
+  message.textContent = "Preview reset.";
+  redraw();
+});
+redraw();
+</script>
+</body>
+</html>
