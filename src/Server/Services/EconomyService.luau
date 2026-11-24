@@ -445,14 +445,14 @@ function EconomyService.PlaceInPenOnProfile(
 	end
 
 	-- Settle elapsed coins using fractional clock at the OLD pen rate before adding critter.
-	EconomyService.SettleProfileCoins(profile, nowClock)
+	local _, settledCoins = EconomyService.SettleProfileCoins(profile, nowClock)
 
 	item.State = "InPen"
 	item.AssignedSlot = slotId
 	profile.Slots[slotId] = itemUID
 	profile.Revision += 1
 
-	return { Ok = true, ItemUID = itemUID }
+	return { Ok = true, ItemUID = itemUID, SettledCoins = settledCoins }
 end
 
 function EconomyService.RemoveFromPenOnProfile(

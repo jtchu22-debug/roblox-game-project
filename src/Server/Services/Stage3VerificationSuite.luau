@@ -1108,6 +1108,7 @@ local function runS501GameplayTelemetrySuite(rng: Random): ()
 
 	local function cleanupTelem()
 		AnalyticsService.SetEventSinkForTest(nil)
+		AnalyticsService.SetPlatformAdapterForTest(nil)
 		local pId = PlotService.GetAssignedPlotId(uTelem)
 		if pId ~= nil then
 			MeteorService.HandlePlotReleased(pId, uTelem)
@@ -1120,6 +1121,13 @@ local function runS501GameplayTelemetrySuite(rng: Random): ()
 
 	cleanupTelem()
 	local ok, err = pcall(function()
+		AnalyticsService.SetPlatformAdapterForTest({
+			IsPublishedLiveServer = function()
+				return true
+			end,
+			LogOnboardingFunnelStepEvent = function() end,
+			LogEconomyEvent = function() end,
+		})
 		AnalyticsService.SetEventSinkForTest(function(ev: AnalyticsService.TelemetryEventRecord)
 			if ev.UserId == uTelem then
 				table.insert(captured, ev)
@@ -1245,6 +1253,39 @@ local function runS501GameplayTelemetrySuite(rng: Random): ()
 		assert(lureRes.Ok, "S501 use Frost lure")
 		local lureEv = captured[#captured]
 		assert(lureEv.Kind == "Economy" and lureEv.FlowType == Enum.AnalyticsEconomyFlowType.Sink and lureEv.ItemSku == "Lure_Frost", "Lure_Frost Sink emitted")
+
+		-- Review #035 Finding #3: Placing a second critter into Pen_2 must report settled Coins from Pen_1
+		AnalyticsService.FlushPendingAccrual(nil, uTelem, profile.Coins)
+		local grantExtra = EconomyService.GrantPodToProfile(profile, "StarSlime", matureAt2 + 3, "s501-pen2-pod")
+		assert(grantExtra.Ok, "S501 grant extra StarSlime pod")
+		local incExtra = EconomyService.StartIncubateOnProfile(profile, "Incubator_1", "s501-pen2-pod", matureAt2 + 3)
+		assert(incExtra.Ok, "S501 incubate extra pod")
+		local matureExtra = profile.Items["s501-pen2-pod"].MaturesAt :: number
+		local hatchExtra = EconomyService.HatchFromSlotOnProfile(profile, "Incubator_1", matureExtra, rng)
+		assert(hatchExtra.Ok, "S501 hatch extra pod")
+
+		-- Advance clock 20s from profile.LastAccrualTimestamp so Pen_1 accrues >= 25 Coins, then place into Pen_2
+		local tBeforePlace2 = profile.LastAccrualTimestamp + 20
+		local prePlaceCoins = profile.Coins
+		captured = {}
+		local placeExtra = EconomyService.PlaceInPenOnProfile(profile, "Pen_2", "s501-pen2-pod", tBeforePlace2)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "PlaceInPen", "Pen_2", placeExtra, 0, tBeforePlace2)
+		local expectedSettled = profile.Coins - prePlaceCoins
+		assert(placeExtra.Ok and expectedSettled >= 25 and placeExtra.SettledCoins == expectedSettled, "PlaceInPenOnProfile returns settled Coins")
+		local penAccrualCount = 0
+		local penAccrualAmount = 0
+		local penAccrualBal = -1
+		for _, ev in ipairs(captured) do
+			if ev.Kind == "Economy" and ev.FlowType == Enum.AnalyticsEconomyFlowType.Source and ev.ItemSku == "PenAccrual" then
+				penAccrualCount += 1
+				penAccrualAmount = ev.Amount or 0
+				penAccrualBal = ev.EndingBalance or -1
+			end
+		end
+		assert(
+			penAccrualCount == 1 and penAccrualAmount == expectedSettled and penAccrualBal == profile.Coins,
+			"PlaceInPen logs PenAccrual once with exact amount & endingBalance"
+		)
 
 		-- Reconnect deduplication: EndSession -> reload -> repeat rescue/hatch/pen/upgrade emits 0 funnel events
 		MeteorService.HandlePlotReleased(plotId :: number, uTelem)

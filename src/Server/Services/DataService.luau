@@ -106,7 +106,9 @@ local PROFILE_TEMPLATE: Types.PlayerProfileData = {
 	Slots = {},
 	Upgrades = {},
 	DiscoveredSpecies = {},
-	OnboardingFunnelSteps = {},
+	OnboardingFunnelCohort = "Fresh",
+	OnboardingFunnelAchieved = {},
+	OnboardingFunnelSubmitted = {},
 }
 
 local LOAD_FAILED_KICK_MESSAGE = "Unable to load your Starfall Ranch save right now. Please rejoin in a moment."
@@ -515,15 +517,33 @@ function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: numb
 		data.StarterMeteorCompleted = hasStarterEvidence
 	end
 
-	local cleanFunnel: { [Types.OnboardingFunnelStep]: boolean } = {}
-	if typeof(data.OnboardingFunnelSteps) == "table" then
-		for k, v in pairs(data.OnboardingFunnelSteps :: { [any]: any }) do
+	local cleanAchieved: { [Types.OnboardingFunnelStep]: boolean } = {}
+	if typeof(data.OnboardingFunnelAchieved) == "table" then
+		for k, v in pairs(data.OnboardingFunnelAchieved :: { [any]: any }) do
 			if typeof(k) == "string" and VALID_FUNNEL_STEPS[k] and v == true then
-				cleanFunnel[k :: Types.OnboardingFunnelStep] = true
+				cleanAchieved[k :: Types.OnboardingFunnelStep] = true
 			end
 		end
 	end
-	if rawSchemaVersion < 3 then
+	if typeof(data.OnboardingFunnelSteps) == "table" then
+		for k, v in pairs(data.OnboardingFunnelSteps :: { [any]: any }) do
+			if typeof(k) == "string" and VALID_FUNNEL_STEPS[k] and v == true then
+				cleanAchieved[k :: Types.OnboardingFunnelStep] = true
+			end
+		end
+	end
+
+	local cleanSubmitted: { [Types.OnboardingFunnelStep]: boolean } = {}
+	if typeof(data.OnboardingFunnelSubmitted) == "table" then
+		for k, v in pairs(data.OnboardingFunnelSubmitted :: { [any]: any }) do
+			if typeof(k) == "string" and VALID_FUNNEL_STEPS[k] and v == true then
+				cleanSubmitted[k :: Types.OnboardingFunnelStep] = true
+			end
+		end
+	end
+
+	local cohort: Types.OnboardingFunnelCohort
+	if rawSchemaVersion < 4 then
 		local itemCount = 0
 		local hasInPen = false
 		for _, item in pairs(cleanItems) do
@@ -538,27 +558,47 @@ function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: numb
 		end
 		local hasAnyUpgrade = next(cleanUpgrades) ~= nil
 		local starterDone = data.StarterMeteorCompleted == true
+		local hasPriorProgress = starterDone
+			or itemCount > 0
+			or discoveredCount > 0
+			or hasAnyUpgrade
+			or data.Coins > 0
+			or next(cleanAchieved) ~= nil
+			or next(cleanSubmitted) ~= nil
 
-		if starterDone or itemCount > 0 or discoveredCount > 0 or hasAnyUpgrade or data.Coins > 0 then
-			cleanFunnel["Spawn"] = true
+		if hasPriorProgress then
+			-- Keep legacy progress estimates isolated from the fresh-player onboarding funnel cohort.
+			cohort = "Legacy"
+			if starterDone or itemCount > 0 or discoveredCount > 0 or hasAnyUpgrade or data.Coins > 0 then
+				cleanAchieved["Spawn"] = true
+			end
+			if starterDone or itemCount > 0 or discoveredCount > 0 then
+				cleanAchieved["FirstMeteor"] = true
+			end
+			if discoveredCount > 0 then
+				cleanAchieved["FirstHatch"] = true
+			end
+			if hasInPen or hasAnyUpgrade then
+				cleanAchieved["FirstPen"] = true
+			end
+			if hasAnyUpgrade then
+				cleanAchieved["FirstUpgrade"] = true
+			end
+			if itemCount >= 2 or discoveredCount >= 2 then
+				cleanAchieved["SecondRescue"] = true
+			end
+			cleanSubmitted = {}
+		else
+			cohort = "Fresh"
 		end
-		if starterDone or itemCount > 0 or discoveredCount > 0 then
-			cleanFunnel["FirstMeteor"] = true
-		end
-		if discoveredCount > 0 then
-			cleanFunnel["FirstHatch"] = true
-		end
-		if hasInPen or hasAnyUpgrade then
-			cleanFunnel["FirstPen"] = true
-		end
-		if hasAnyUpgrade then
-			cleanFunnel["FirstUpgrade"] = true
-		end
-		if itemCount >= 2 or discoveredCount >= 2 then
-			cleanFunnel["SecondRescue"] = true
-		end
+	else
+		cohort = if data.OnboardingFunnelCohort == "Legacy" then "Legacy" else "Fresh"
 	end
-	data.OnboardingFunnelSteps = cleanFunnel
+
+	data.OnboardingFunnelCohort = cohort
+	data.OnboardingFunnelAchieved = cleanAchieved
+	data.OnboardingFunnelSubmitted = cleanSubmitted
+	data.OnboardingFunnelSteps = nil
 
 	return data :: Types.PlayerProfileData
 end
@@ -576,7 +616,9 @@ function DataService.CreateDefaultProfile(nowClock: number?): Types.PlayerProfil
 		Slots = {},
 		Upgrades = {},
 		DiscoveredSpecies = {},
-		OnboardingFunnelSteps = {},
+		OnboardingFunnelCohort = "Fresh",
+		OnboardingFunnelAchieved = {},
+		OnboardingFunnelSubmitted = {},
 	}
 end
 
@@ -1620,7 +1662,9 @@ function DataService.RunSelfTest(): number
 	assert((dtoA :: any).SchemaVersion == nil, "DTO must strip SchemaVersion")
 	assert((dtoA :: any).PendingFraction == nil, "DTO must strip PendingFraction")
 	assert((dtoA :: any).LastAccrualTimestamp == nil, "DTO must strip LastAccrualTimestamp")
-	assert((dtoA :: any).OnboardingFunnelSteps == nil, "DTO must strip OnboardingFunnelSteps")
+	assert((dtoA :: any).OnboardingFunnelCohort == nil, "DTO must strip OnboardingFunnelCohort")
+	assert((dtoA :: any).OnboardingFunnelAchieved == nil, "DTO must strip OnboardingFunnelAchieved")
+	assert((dtoA :: any).OnboardingFunnelSubmitted == nil, "DTO must strip OnboardingFunnelSubmitted")
 
 	profileA.StarterMeteorCompleted = true
 	local dtoAStarterDone = DataService.BuildOwnerStateDTO(profileA)
@@ -2404,9 +2448,32 @@ function DataService.RunSelfTest(): number
 	DataService.ClearTestTrackingForUserIds({ uMigPod, uMigDisc, uMigAmbig })
 	passed += 1
 
-	-- 14. S5-01 OnboardingFunnelSteps schema & v2 -> v3 migration + ProfileStore.Mock round-trip
-	assert(freshDefault.SchemaVersion == 3 and next(freshDefault.OnboardingFunnelSteps) == nil, "Fresh profile initializes SchemaVersion=3 with empty OnboardingFunnelSteps")
-	assert((DataService.BuildOwnerStateDTO(freshDefault) :: any).OnboardingFunnelSteps == nil, "OwnerStateDTO strips OnboardingFunnelSteps")
+	-- 14. S5-01 v4 OnboardingFunnelCohort / Achieved / Submitted schema & migration + ProfileStore.Mock round-trip
+	assert(
+		freshDefault.SchemaVersion == 4
+			and freshDefault.OnboardingFunnelCohort == "Fresh"
+			and next(freshDefault.OnboardingFunnelAchieved) == nil
+			and next(freshDefault.OnboardingFunnelSubmitted) == nil,
+		"Fresh profile initializes SchemaVersion=4, Fresh cohort, and empty Achieved/Submitted maps"
+	)
+	local freshDto = DataService.BuildOwnerStateDTO(freshDefault) :: any
+	assert(
+		freshDto.OnboardingFunnelCohort == nil
+			and freshDto.OnboardingFunnelAchieved == nil
+			and freshDto.OnboardingFunnelSubmitted == nil,
+		"OwnerStateDTO strips all server-only onboarding funnel fields"
+	)
+
+	local migV2Empty = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 2,
+		Coins = 0,
+	}, tFutureGuard)
+	assert(
+		migV2Empty.SchemaVersion == 4
+			and migV2Empty.OnboardingFunnelCohort == "Fresh"
+			and next(migV2Empty.OnboardingFunnelAchieved) == nil,
+		"Zero-progress legacy v2 profile stays in Fresh cohort"
+	)
 
 	local migV2Prog = DataService.ReconcileAndMigrateProfileData({
 		SchemaVersion = 2,
@@ -2426,50 +2493,69 @@ function DataService.RunSelfTest(): number
 		},
 	}, tFutureGuard)
 	assert(
-		migV2Prog.SchemaVersion == 3
-			and migV2Prog.OnboardingFunnelSteps["Spawn"] == true
-			and migV2Prog.OnboardingFunnelSteps["FirstMeteor"] == true
-			and migV2Prog.OnboardingFunnelSteps["FirstHatch"] == true
-			and migV2Prog.OnboardingFunnelSteps["FirstPen"] == true
-			and migV2Prog.OnboardingFunnelSteps["FirstUpgrade"] == true
-			and migV2Prog.OnboardingFunnelSteps["SecondRescue"] == nil,
-		"v2 -> v3 migration backfills Spawn..FirstUpgrade from positive evidence without SecondRescue"
+		migV2Prog.SchemaVersion == 4
+			and migV2Prog.OnboardingFunnelCohort == "Legacy"
+			and migV2Prog.OnboardingFunnelAchieved["Spawn"] == true
+			and migV2Prog.OnboardingFunnelAchieved["FirstMeteor"] == true
+			and migV2Prog.OnboardingFunnelAchieved["FirstHatch"] == true
+			and migV2Prog.OnboardingFunnelAchieved["FirstPen"] == true
+			and migV2Prog.OnboardingFunnelAchieved["FirstUpgrade"] == true
+			and migV2Prog.OnboardingFunnelAchieved["SecondRescue"] == nil
+			and next(migV2Prog.OnboardingFunnelSubmitted) == nil,
+		"v2 -> v4 migration marks prior-progress profile Legacy and backfills Achieved without Submitted"
 	)
 
-	local migV2Second = DataService.ReconcileAndMigrateProfileData({
-		SchemaVersion = 2,
+	local migV3Prior = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 3,
 		StarterMeteorCompleted = true,
 		DiscoveredSpecies = { StarSlime = true, CinderPup = true },
+		OnboardingFunnelSteps = { Spawn = true, FirstMeteor = true },
 		Items = {
 			["i1"] = { UID = "i1", SpeciesId = "StarSlime", Variant = "Normal", State = "PodInBag", CreatedAt = 1000 },
 			["i2"] = { UID = "i2", SpeciesId = "CinderPup", Variant = "Normal", State = "PodInBag", CreatedAt = 1001 },
 		},
 	}, tFutureGuard)
-	assert(migV2Second.OnboardingFunnelSteps["SecondRescue"] == true, "v2 -> v3 migration backfills SecondRescue on >= 2 items/species")
+	assert(
+		migV3Prior.OnboardingFunnelCohort == "Legacy"
+			and migV3Prior.OnboardingFunnelAchieved["SecondRescue"] == true
+			and (migV3Prior :: any).OnboardingFunnelSteps == nil,
+		"v3 -> v4 migration marks prior-progress profile Legacy, preserves/backfills Achieved, and clears deprecated field"
+	)
 
-	local explicitV3 = DataService.ReconcileAndMigrateProfileData({
-		SchemaVersion = 3,
+	local explicitV4 = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 4,
 		StarterMeteorCompleted = true,
 		Coins = 500,
-		OnboardingFunnelSteps = {
+		OnboardingFunnelCohort = "Fresh",
+		OnboardingFunnelAchieved = {
 			Spawn = true,
+			SecondRescue = true,
 			BogusStep = true,
-			FirstMeteor = false,
+		},
+		OnboardingFunnelSubmitted = {
+			Spawn = true,
+			BogusSubmitted = true,
 		},
 	}, tFutureGuard)
 	assert(
-		explicitV3.OnboardingFunnelSteps["Spawn"] == true
-			and explicitV3.OnboardingFunnelSteps["FirstMeteor"] == nil
-			and (explicitV3.OnboardingFunnelSteps :: any)["BogusStep"] == nil,
-		"Explicit v3 OnboardingFunnelSteps stays authoritative and strips invalid keys"
+		explicitV4.OnboardingFunnelCohort == "Fresh"
+			and explicitV4.OnboardingFunnelAchieved["Spawn"] == true
+			and explicitV4.OnboardingFunnelAchieved["SecondRescue"] == true
+			and explicitV4.OnboardingFunnelSubmitted["Spawn"] == true
+			and explicitV4.OnboardingFunnelSubmitted["SecondRescue"] == nil
+			and (explicitV4.OnboardingFunnelAchieved :: any)["BogusStep"] == nil
+			and (explicitV4.OnboardingFunnelSubmitted :: any)["BogusSubmitted"] == nil,
+		"Explicit v4 Cohort, Achieved, and Submitted stay authoritative and strip invalid keys"
 	)
 
 	local s501Store = DataService.CreateIsolatedMockStoreForTest("S501Mig")
 	local uFunnelPersist = -910501
 	assert(DataService.StartProfileSessionForUserId(uFunnelPersist, nil, { Store = s501Store, NowClock = tFutureGuard }), "Join S501 persistence test")
 	local pFunnel = DataService.GetProfileByUserId(uFunnelPersist) :: Types.PlayerProfileData
-	pFunnel.OnboardingFunnelSteps["Spawn"] = true
-	pFunnel.OnboardingFunnelSteps["FirstMeteor"] = true
+	pFunnel.OnboardingFunnelCohort = "Fresh"
+	pFunnel.OnboardingFunnelAchieved["Spawn"] = true
+	pFunnel.OnboardingFunnelAchieved["FirstMeteor"] = true
+	pFunnel.OnboardingFunnelSubmitted["Spawn"] = true
 	DataService.EndSession(uFunnelPersist)
 	assert(DataService.WaitForUserFinalSave(uFunnelPersist, 2), "Save uFunnelPersist")
 	DataService.ClearTestTrackingForUserIds({ uFunnelPersist })
@@ -2477,11 +2563,13 @@ function DataService.RunSelfTest(): number
 	assert(DataService.StartProfileSessionForUserId(uFunnelPersist, nil, { Store = s501Store, NowClock = tFutureGuard + 10 }), "Reload uFunnelPersist")
 	local pFunnelReloaded = DataService.GetProfileByUserId(uFunnelPersist) :: Types.PlayerProfileData
 	assert(
-		pFunnelReloaded.SchemaVersion == 3
-			and pFunnelReloaded.OnboardingFunnelSteps["Spawn"] == true
-			and pFunnelReloaded.OnboardingFunnelSteps["FirstMeteor"] == true
-			and pFunnelReloaded.OnboardingFunnelSteps["FirstHatch"] == nil,
-		"ProfileStore.Mock reload preserves persisted OnboardingFunnelSteps"
+		pFunnelReloaded.SchemaVersion == 4
+			and pFunnelReloaded.OnboardingFunnelCohort == "Fresh"
+			and pFunnelReloaded.OnboardingFunnelAchieved["Spawn"] == true
+			and pFunnelReloaded.OnboardingFunnelAchieved["FirstMeteor"] == true
+			and pFunnelReloaded.OnboardingFunnelSubmitted["Spawn"] == true
+			and pFunnelReloaded.OnboardingFunnelSubmitted["FirstMeteor"] == nil,
+		"ProfileStore.Mock reload preserves Cohort, Achieved, and Submitted independently"
 	)
 	DataService.EndSession(uFunnelPersist)
 	assert(DataService.WaitForUserFinalSave(uFunnelPersist, 2), "Cleanup uFunnelPersist")
