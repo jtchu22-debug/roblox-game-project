@@ -69,3 +69,34 @@ Create one original low-poly Blender model for each launch Cracker tier. Give th
 | **Astral Cracker** | Curved brass head with a broken ring profile, compact violet core, and visible dark grip. Maps to the existing `StarCracker` upgrade. |
 
 Export editable sources and Studio-ready meshes with consistent scale and grip alignment. Add locked and owned previews at the Observatory Tool Workbench, and show the currently eligible Cracker in hand during the existing meteor crack interaction. The existing server upgrade rules determine which tool tier the player may use. Verify grip alignment, tool cleanup after a cancelled crack or respawn, prompt readability, and first- and third-person visibility on desktop and touch. Use the same mesh optimization and restrained effects principles as the hero assets.
+
+## Launch station models
+
+Give each interactable launch location a finished original low-poly model or modular prop assembly. Use the [Starfall Valley world art direction](./WORLD_ART_DIRECTION.md) for materials and placement. Dress one ranch and the Tool Workbench first, then repeat the approved kit across all six plots. Use the existing plot anchors, upgrade IDs, prompt reach, and server rules to connect the models to gameplay.
+
+| Location or station | Visual direction and states |
+| --- | --- |
+| Incubators | Rounded cream-and-brass hatchery with a glass canopy, visible pod cradle, and legible idle, incubating, and ready states. Show the remaining time without obscuring the pod. |
+| Habitat pens | Low timber rails, grass pad and feeding area, with clean avatar access to each slot. Give empty, occupied, and locked or purchasable slots clear visual cues and keep the critter as the focal point. |
+| Ranch selling station and upgrade pads | Compact scales and counter for selling, with small, readable signs on upgrade pads and visible locked or owned states. |
+| Observatory Tool Workbench | Original timber-and-brass bench with a cradle or stand for each Cracker preview. Keep the price and upgrade prompt visible from the approach. |
+| Hub fixtures | A labeled lure kiosk, contracts board, scanner and Critter Index exhibit. Give the brewing station and expedition entry their own recognizable props when those features come online. |
+
+Keep interactive surfaces and walkways open, especially around fences, incubator doors, and displays. Verify prompts, camera and character clearance, mobile visibility, and legibility of locked, ready, and occupied states. Test the completed kit across all six plots.
+
+## Launch item and interface artwork
+
+Give every launch catalog entry displayed to players its own original icon, thumbnail, or render. Use the same artwork whenever that entry is shown. Let related screens share typography, card spacing, touch controls, and state treatments. Vary the screen layout for what the player is doing, such as comparing an inventory grid, checking a collection, previewing a tool, or buying an offer.
+
+| Catalog or screen | Required artwork |
+| --- | --- |
+| Meteors and pods | One recognizable thumbnail for each of the five meteor families and each distinct player-visible stored pod type. Use these in inventory, meteor help, or source details wherever those entries appear. Show an unopened pod's visible identity and reveal the species artwork when the game reveals the outcome. |
+| Critters | A rendered portrait for every launch species. Use consistent camera and lighting, and reuse the portrait in Bag, Field Guide, Critter Index, and applicable reward cards. Show discovery silhouettes and use a finish border or badge for Gold or Rainbow and separate marks for mutations. Show weight and income as text. |
+| Tools and upgrades | A distinct thumbnail for each Cracker tier plus images for the displayed ranch upgrades. Use the Cracker model for static thumbnails and reuse it for Workbench previews. Display costs, requirements, and owned state in the UI. |
+| Potions, lures, materials, and rewards | Give every distinct entry a recognizable shape and icon. Use different silhouettes and symbols for Field Luck and Coin Boost potions, and match lure artwork to its meteor family. Keep stack count and status readable next to the artwork. |
+| Game passes, cosmetics, and shop offers | Give every approved game pass and product a dedicated cover, and every featured bundle cover art composed from its actual contents. Show the exact entitlement, price, and owned status in live UI text. Keep the original illustrated Shop style rooted in Starfall Ranch's warm brass, teal, lilac, and constellation motifs. |
+| Navigation and stations | Draw original, distinct icons for primary destinations such as Bag, Guide, Hub, Ranch, Shop, and Settings, plus in-world signs for important stations. Pair icons with readable labels wherever the action or destination would otherwise be ambiguous. |
+
+The supplied Shop screenshot is a visual reference for prominent item art, strong card hierarchy, and prices readable at a glance. Use the existing Starfall Valley visual language and original illustrations, layouts, and icons. Use bolder illustrated offer cards in the Shop and quieter, scalable grids in frequently used inventory screens.
+
+Keep one reusable asset mapping keyed by stable species, meteor, tool, or item ID. Keep editable artwork or render sources alongside the project's art assets and check that uploaded images display in the private published game. Use lightweight cached thumbnails for lists and load the visible page as needed. Reserve live 3D previews for selected details or the Workbench. Verify every visible launch entry has the expected artwork, price and status text stay legible on phone screens, and cards remain operable with touch, keyboard, and gamepad. Derive artwork choice from public item metadata. Purchases, inventory and undisclosed outcomes remain server-authoritative.

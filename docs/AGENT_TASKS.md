@@ -103,8 +103,10 @@ The starter meteor currently checks a server-local `starterClaimedByUserId` tabl
 
 ---
 
-## Stage 6: Launch Tool Art
+## Stage 6: Launch Tools, Station Models & UI Art
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
 | **S6-ART-01** | **P2** | `S4-02` | Gemini | Model and integrate the Starter, Frost, and Astral Crackers. Verify each Workbench preview, the current tier's held model during a crack, mobile readability, and the existing server tool requirements. Finish before the launch candidate. | [Launch tool models](./ART_DIRECTION.md#launch-tool-models) | `[ ]` |
+| **S6-ART-02** | **P2** | `S4-02` | Gemini | Replace station placeholders with modeled incubators, habitat pens, selling station, Tool Workbench, and other launch interaction fixtures. Review one ranch and the Workbench first. Verify state readability, prompts, ownership, camera clearance, and six-plot placement. | [Launch station models](./ART_DIRECTION.md#launch-station-models) | `[ ]` |
+| **S6-ART-03** | **P2** | `S4-02` | Gemini | Create distinct item thumbnails, original screen and navigation artwork, and illustrated cards for every approved shop offer. Verify catalog coverage and published image loading across Bag, Field Guide, Critter Index, Workbench and Shop on touch, keyboard, and gamepad. Reuse approved model renders where useful and finish before the launch candidate. | [Launch item and interface artwork](./ART_DIRECTION.md#launch-item-and-interface-artwork) | `[ ]` |
