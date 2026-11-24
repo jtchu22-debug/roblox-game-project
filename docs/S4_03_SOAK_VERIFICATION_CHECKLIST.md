@@ -15,7 +15,17 @@ Because Rojo (`default.project.json`) syncs `src/` code and does **not** seriali
 - [x] **Rojo Connected & Build Synced:** Confirm `ReplicatedStorage.Shared.Constants.GAME_VERSION` equals `"0.4.1-s4-03-soak"` and `USE_MOCK_STORE == false`.
 - [x] **Read-Only Preflight Audit PASS:** Run [`tools/studio/VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) in the Studio Command Bar -> confirm **`Critters=6/6`**, **`Meteors=3/3`**, **`Greybox=PASS`**, and `Status=ASSETS_READY_FOR_PUBLISH`.
 - [x] **Live Play Startup Verification (`57/57`):** Press **Play (F5)** in Studio -> confirm all `57` Server/Client self-test suites pass, `[PlotVisualController] Runtime Template Verified` prints all `6` species, and `[MeteorService] Runtime Template Verified` prints real **`Ember`**, **`Frost`**, and **`Astral`** (all with `PromptOk=true | ClaimOk=true`, zero mock fallback!).
-- [ ] **Publish & Re-Verify on `106917003014718`:** Save `StarfallRanch_Dev.rbxl`, publish to `106917003014718` (`serverSize: 6`), run [`VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) on the cloud place and record `Status=READY_FOR_SOAK`, `PlaceId`, `PlaceVersion`, `MaxPlayers=6`, runtime build/source SHA, and `6/6` critters + `3/3` meteors (per Review #032). *(Pending opening `106917003014718` in Studio.)*
+- [ ] **Publish & Re-Verify on `106917003014718`:** Save `StarfallRanch_Dev.rbxl`, publish to `106917003014718` (`serverSize: 6`), run [`VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) on the cloud place and record `Status=READY_FOR_SOAK`, `PlaceId`, `PlaceVersion`, `MaxPlayers=6`, runtime build/source SHA, and `6/6` critters + `3/3` meteors (per Review #032). *(Cloud place `PlaceVersion=21` passed `READY_FOR_SOAK`, `6/6` critters, `3/3` meteors, and `59/59` Play suites, but remains unchecked because `MaxPlayers=60` instead of `6` — set Place Max Players to `6` and publish `0.4.2-s4-04-starter-save` before the 6-player soak.)*
+
+### Cloud-Place Preflight Record (`PlaceId=106917003014718`, `PlaceVersion=21` — `2026-11-23`)
+- **Build & Source Identity:** `GAME_VERSION=0.4.2-s4-04-starter-save | SCHEMA_VERSION=2 | USE_MOCK_STORE=false | PlaceId=106917003014718 | PlaceVersion=21 | GameId=10778558732 | MaxPlayers=60` (Edit & Server `Players.MaxPlayers=60`; `SourceFingerprint: hasTagActiveMeteor=true | hasPerfBaselineMemMb=true | hasStarterCompletedHint=true`, matching `f12f3a4` + `Stage3VerificationSuite` Command-Bar init guard).
+- **Preflight Summary:** `Status=READY_FOR_SOAK | Greybox=PASS | Critters=6/6 | Meteors=3/3`
+  - `Critters=6/6`: `StarSlime`, `CinderPup`, `FrostBeetle`, `NebulaFox`, `SolarGolem`, `CometOwl` (all 4 MeshParts, `PivotDelta=0.0000`, `EyesZ < 0`).
+  - `Meteors=3/3`: `Ember`, `Frost`, `Astral` (all 3 MeshParts, `PivotDelta=0.0000`).
+- **Cloud Studio Play (`59/59`):** `59/59` startup suites passed on `106917003014718` (`Mode=LiveProfileStore`, `Store=StarfallRanch_StudioDev_v1`, `DataStoreState=Access`).
+- **Build & Cap Notes (Review #032):**
+  1. `MaxPlayers=60` (not `6`) on `PlaceVersion=21` — update **Game Settings -> Places -> Max Players = `6`** before running the 6-player soak.
+  2. Solo Run #2 (`iPhone 17`) ran on `c8a99d9` (`0.4.1-s4-03-soak`), whereas the open cloud place (`PlaceVersion=21`) now has `0.4.2-s4-04-starter-save` (`f12f3a4`) synced via Rojo; publish to Roblox before launching the 6-player mobile soak.
 
 ---
 

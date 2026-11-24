@@ -941,6 +941,10 @@ end
 
 function Stage3VerificationSuite.RunS404StarterPersistenceCheck(phase: DataService.SmokeTestPhase?, baseTestUserId: number?): (boolean, string)
 	EconomyService:Init()
+	if not pcall(PlotService.GetGreyboxRoot) then
+		PlotService:Init()
+		MeteorService:Init()
+	end
 
 	local runPhase: DataService.SmokeTestPhase = if phase ~= nil then phase else "RoundTrip"
 	local uCompleted = if baseTestUserId ~= nil then baseTestUserId else -960401

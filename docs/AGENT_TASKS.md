@@ -80,6 +80,9 @@ The starter meteor currently checks a server-local `starterClaimedByUserId` tabl
 4. Verify a fresh player, leaving mid-crack, full-bag failure, repeated completion, rejoin to the same and a fresh server with an unopened pod in the bag, and rejoin after hatching or selling the critter. Cover new and legacy profile paths. Record an isolated published save and reload that shows no duplicate grant and working starter spawn for another eligible player.
 
 - **Migration Note (`SchemaVersion` `1 -> 2`):** Legacy v0/v1 saves lacked item origin, so `DataService.ReconcileAndMigrateProfileData` runs before `ProfileStore:Reconcile()` and sets `StarterMeteorCompleted = true` on positive `StarSlime` evidence (a saved `StarSlime` item in `Items` or `DiscoveredSpecies.StarSlime == true`), while ambiguous legacy profiles without `StarSlime` evidence remain eligible (`false`) for onboarding. Once migrated to `SchemaVersion >= 2`, the explicit `StarterMeteorCompleted` boolean is authoritative. Live isolated verification helper: [`tools/studio/RunS404StarterPersistenceCheck.luau`](../tools/studio/RunS404StarterPersistenceCheck.luau).
+- **Isolated Live DataStore Verification (`2026-11-23`, `PlaceId=106917003014718`, `PlaceVersion=21`, `GameId=10778558732`):**
+  - Cloud Studio Play passed **`59/59`** startup suites (`Mode=LiveProfileStore`, `DataStoreState=Access`).
+  - Two-session `RunS404StarterPersistenceCheck` (`"Write"` in Session 1 -> stop Play -> `"Verify"` in fresh Session 2 on `StarfallRanch_StudioDev_v1_Smoke`, `Version=0.4.2-s4-04-starter-save`, `SchemaVersion=2`) passed with `Ok=true`: `CompletedUser=-960401[StarterMeteorCompleted=true, Pods=1, RespawnBlocked=true]` (no duplicate grant) and `EligibleUser=-960402[SpawnedAndCompleted=true]` (working starter spawn & crack). Pending ChatGPT review.
 
 ---
 
