@@ -26,6 +26,7 @@ Because Rojo (`default.project.json`) syncs `src/` code and does **not** seriali
 - **Build & Cap Notes (Review #032):**
   1. `MaxPlayers=60` (not `6`) on `PlaceVersion=21` — update **Game Settings -> Places -> Max Players = `6`** before running the 6-player soak.
   2. Solo Run #2 (`iPhone 17`) ran on `c8a99d9` (`0.4.1-s4-03-soak`), whereas the open cloud place (`PlaceVersion=21`) now has `0.4.2-s4-04-starter-save` (`f12f3a4`) synced via Rojo; publish to Roblox before launching the 6-player mobile soak.
+  3. **Subsequent Publish (`PlaceVersion=24`, `2026-11-23`):** `PlaceId=106917003014718` was published at **`PlaceVersion=24`** (`v0.5.1-s5-01-telemetry-fix`, `9b91887`) with live server **`MaxPlayers=6`** confirmed (`18:33:41 -- PlaceId 106917003014718 PlaceVersion 24 MaxPlayers 6`), while the 6-player low-end soak remains deferred to the wider playtest gate per Review #034.
 
 ---
 
