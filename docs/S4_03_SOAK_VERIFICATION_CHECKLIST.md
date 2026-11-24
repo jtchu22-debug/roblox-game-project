@@ -111,4 +111,4 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 - **Tester / Date:** `Human Lead / 2026-11-23`
 - **Duration (`15–30 min`):** `30+ min (Run #2; Run #1 was 15+ min)`
 - **Outcome:** `[ ] PASS` / `[ ] CHANGES REQUIRED` *(Run #2 accepted as solo mobile smoke test in Review #032; `S4-03` held `[~]` pending published cloud-place `106917003014718` preflight & 6-player/intermediate-telemetry soak)*
-- **Record Results:** Summarize checkpoint metrics above and log sign-off in `docs/AGENT_REVIEWS.md` / [`docs/AGENT_TASKS.md`](./AGENT_TASKS.md) before proceeding to **Stage 5 (`S5-01`)**.
+- **Record Results:** Summarize checkpoint metrics above and log sign-off in `docs/AGENT_REVIEWS.md` / [`docs/AGENT_TASKS.md`](./AGENT_TASKS.md) before the **S5-02 wider playtest**. Private S5-01 telemetry implementation and verification may proceed while S4-03 remains open. [Review #034](./AGENT_REVIEWS.md#review-034--defer-six-player-soak-to-the-wider-playtest-gate)

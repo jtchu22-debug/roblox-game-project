@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
 > **Last Updated:** November 22, 2026
-> **Current Active Milestone** — **S4-03 full-server soak pending.** Cloud Studio preflight confirmed 6/6 critter and 3/3 meteor templates on the Rojo-synced S4-04 build. Set the private test place cap to six and verify the newly published version before the low-end device soak. S4-04 starter meteor persistence passed technical review. Round 3 product approval remains pending. [Review #033](./AGENT_REVIEWS.md#review-033--s4-04-starter-persistence-and-s4-03-cloud-preflight)
+> **Current Active Milestone** — **S5-01 private telemetry can begin.** S4-04 starter meteor persistence passed technical review. S4-03 remains open for the published six-player low-end soak before the S5-02 wider playtest. Round 3 product approval remains pending. [Review #034](./AGENT_REVIEWS.md#review-034--defer-six-player-soak-to-the-wider-playtest-gate)
 
 ---
 
@@ -90,8 +90,8 @@ The starter meteor currently checks a server-local `starterClaimedByUserId` tabl
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S5-01** | **P2** | `S4-03`, `S4-04` | Gemini | Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
-| **S5-02** | **P2** | `S5-01` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
+| **S5-01** | **P2** | `S4-04` | Gemini | Implement and verify on a private build. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
+| **S5-02** | **P2** | `S5-01`, `S4-03` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
 
 ---
 
