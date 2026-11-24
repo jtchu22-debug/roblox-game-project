@@ -20,6 +20,7 @@ local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 local EconomyMath = require(Shared:WaitForChild("Util"):WaitForChild("EconomyMath"))
 
 local ServicesFolder = script.Parent
+local AnalyticsService = require(ServicesFolder:WaitForChild("AnalyticsService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 
@@ -30,6 +31,7 @@ export type EconomyResult = {
 	SpeciesId: Types.SpeciesId?,
 	Variant: Types.VariantId?,
 	CoinsEarned: number?,
+	SettledCoins: number?,
 }
 
 local VALID_VARIANTS: { [string]: boolean } = table.freeze({
@@ -245,40 +247,42 @@ function EconomyService.ValidateProfileInvariants(profile: Types.PlayerProfileDa
 	return true, "Valid"
 end
 
-function EconomyService.SettleProfileCoins(profile: Types.PlayerProfileData, nowClock: number): boolean
+function EconomyService.SettleProfileCoins(profile: Types.PlayerProfileData, nowClock: number): (boolean, number)
 	if not isFiniteInRange(nowClock, 0, 10_000_000_000) then
-		return false
+		return false, 0
 	end
 
 	local elapsed = nowClock - profile.LastAccrualTimestamp
 	if elapsed <= 0 then
-		return false
+		return false, 0
 	end
 
 	local rate = EconomyMath.CalculateActivePenRate(profile.Items)
 	profile.LastAccrualTimestamp = nowClock
 
 	if rate <= 0 then
-		return false
+		return false, 0
 	end
 
+	local previousCoins = profile.Coins
 	local nextCoins, nextFraction = EconomyMath.SettleElapsedCoins(
-		profile.Coins,
+		previousCoins,
 		profile.PendingFraction,
 		rate,
 		elapsed,
 		Constants.MAX_COINS
 	)
 
-	local coinsChanged = nextCoins ~= profile.Coins
+	local coinsEarned = nextCoins - previousCoins
+	local coinsChanged = coinsEarned > 0
 	profile.Coins = nextCoins
 	profile.PendingFraction = nextFraction
 
 	if coinsChanged then
 		profile.Revision += 1
-		return true
+		return true, coinsEarned
 	end
-	return false
+	return false, 0
 end
 
 function EconomyService.GrantPodToProfile(
@@ -474,14 +478,14 @@ function EconomyService.RemoveFromPenOnProfile(
 	end
 
 	-- Settle elapsed coins using fractional clock at the OLD pen rate before removing critter.
-	EconomyService.SettleProfileCoins(profile, nowClock)
+	local _, settledCoins = EconomyService.SettleProfileCoins(profile, nowClock)
 
 	item.State = "HatchedInBag"
 	item.AssignedSlot = nil
 	profile.Slots[slotId] = nil
 	profile.Revision += 1
 
-	return { Ok = true, ItemUID = itemUID }
+	return { Ok = true, ItemUID = itemUID, SettledCoins = settledCoins }
 end
 
 function EconomyService.SellCritterOnProfile(
@@ -512,6 +516,7 @@ function EconomyService.SellCritterOnProfile(
 	return {
 		Ok = true,
 		ItemUID = itemUID,
+		SpeciesId = item.SpeciesId,
 		CoinsEarned = actualCredited,
 	}
 end
@@ -577,7 +582,7 @@ function EconomyService.FeedCritterInPenOnProfile(
 	end
 
 	-- Settle elapsed coins at the OLD rate before boosting this critter's Coins/s.
-	EconomyService.SettleProfileCoins(profile, nowClock)
+	local _, settledCoins = EconomyService.SettleProfileCoins(profile, nowClock)
 
 	profile.Coins -= Constants.CRITTER_FEED_COST
 	item.FeedLevel = currentFeed + 1
@@ -587,6 +592,7 @@ function EconomyService.FeedCritterInPenOnProfile(
 		Ok = true,
 		ItemUID = itemUID,
 		SpeciesId = item.SpeciesId,
+		SettledCoins = settledCoins,
 	}
 end
 
@@ -621,11 +627,11 @@ function EconomyService.UseFrostLureOnProfile(
 		return { Ok = false, Reason = spawnReason }
 	end
 
-	EconomyService.SettleProfileCoins(profile, nowClock)
+	local _, settledCoins = EconomyService.SettleProfileCoins(profile, nowClock)
 	profile.Coins -= Constants.FROST_LURE_COST
 	profile.Revision += 1
 
-	return { Ok = true }
+	return { Ok = true, SettledCoins = settledCoins }
 end
 
 function EconomyService.NotifyPlotChangedForPlayer(player: Player): ()
@@ -658,6 +664,107 @@ function EconomyService.CheckStationAuthorization(player: Player?, stationKind: 
 		return false, "PlayerUnavailable"
 	end
 	return stationAuthorizer(player, stationKind, targetId)
+end
+
+function EconomyService.RecordPlotActionOutcome(
+	player: Player?,
+	userId: number,
+	profile: Types.PlayerProfileData,
+	action: Types.PlotAction,
+	targetSlotOrUID: string,
+	res: EconomyResult,
+	preSettledEarned: number?,
+	nowClock: number?
+): ()
+	local totalSettled = (preSettledEarned or 0) + (res.SettledCoins or 0)
+	if totalSettled > 0 then
+		local preActionBalance = profile.Coins
+		if res.Ok then
+			if action == "FeedCritter" then
+				preActionBalance = math.min(Constants.MAX_COINS, profile.Coins + Constants.CRITTER_FEED_COST)
+			elseif action == "UseFrostLure" then
+				preActionBalance = math.min(Constants.MAX_COINS, profile.Coins + Constants.FROST_LURE_COST)
+			elseif action == "SellCritter" then
+				preActionBalance = math.max(0, profile.Coins - (res.CoinsEarned or 0))
+			end
+		end
+		AnalyticsService.RecordPenAccrual(player, userId, totalSettled, preActionBalance, nowClock)
+	end
+
+	if not res.Ok then
+		return
+	end
+
+	if action == "Hatch" then
+		AnalyticsService.RecordFirstHatch(player, userId, profile, res.SpeciesId)
+	elseif action == "PlaceInPen" then
+		AnalyticsService.RecordFirstPen(player, userId, profile, targetSlotOrUID)
+	elseif action == "SellCritter" then
+		local earned = res.CoinsEarned or 0
+		if earned > 0 then
+			AnalyticsService.RecordCoinSource(
+				player,
+				userId,
+				earned,
+				profile.Coins,
+				Enum.AnalyticsEconomyTransactionType.Gameplay.Name,
+				"Sell_" .. tostring(res.SpeciesId or "Critter")
+			)
+		end
+	elseif action == "FeedCritter" then
+		AnalyticsService.RecordCoinSink(
+			player,
+			userId,
+			Constants.CRITTER_FEED_COST,
+			profile.Coins,
+			Enum.AnalyticsEconomyTransactionType.Gameplay.Name,
+			"Feed_" .. tostring(res.SpeciesId or "Critter")
+		)
+	elseif action == "UseFrostLure" then
+		AnalyticsService.RecordCoinSink(
+			player,
+			userId,
+			Constants.FROST_LURE_COST,
+			profile.Coins,
+			Enum.AnalyticsEconomyTransactionType.Gameplay.Name,
+			"Lure_Frost"
+		)
+	end
+end
+
+function EconomyService.RecordBuyUpgradeOutcome(
+	player: Player?,
+	userId: number,
+	profile: Types.PlayerProfileData,
+	upgradeId: Types.UpgradeId,
+	res: EconomyResult,
+	preSettledEarned: number?,
+	nowClock: number?
+): ()
+	local def = UpgradeConfig.ById[upgradeId]
+	local totalSettled = (preSettledEarned or 0) + (res.SettledCoins or 0)
+	if totalSettled > 0 then
+		local preActionBalance = if res.Ok and def ~= nil
+			then math.min(Constants.MAX_COINS, profile.Coins + def.Cost)
+			else profile.Coins
+		AnalyticsService.RecordPenAccrual(player, userId, totalSettled, preActionBalance, nowClock)
+	end
+
+	if not res.Ok then
+		return
+	end
+
+	if def ~= nil and def.Cost > 0 then
+		AnalyticsService.RecordCoinSink(
+			player,
+			userId,
+			def.Cost,
+			profile.Coins,
+			Enum.AnalyticsEconomyTransactionType.Shop.Name,
+			"Upgrade_" .. upgradeId
+		)
+	end
+	AnalyticsService.RecordFirstUpgrade(player, userId, profile, upgradeId)
 end
 
 function EconomyService.HandlePlotAction(
@@ -707,6 +814,7 @@ function EconomyService.HandlePlotAction(
 	local res: EconomyResult
 	local affectsPublicPlot = false
 	local settledChanged = false
+	local preSettledEarned = 0
 
 	if action == "StartIncubate" then
 		res = EconomyService.StartIncubateOnProfile(profile, targetSlotOrUID, itemUID :: string, nowClock)
@@ -721,11 +829,11 @@ function EconomyService.HandlePlotAction(
 		res = EconomyService.RemoveFromPenOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
 	elseif action == "FeedCritter" then
-		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+		settledChanged, preSettledEarned = EconomyService.SettleProfileCoins(profile, nowClock)
 		res = EconomyService.FeedCritterInPenOnProfile(profile, targetSlotOrUID, nowClock)
 		affectsPublicPlot = true
 	elseif action == "UseFrostLure" then
-		settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+		settledChanged, preSettledEarned = EconomyService.SettleProfileCoins(profile, nowClock)
 		res = EconomyService.UseFrostLureOnProfile(profile, player.UserId, player.DisplayName, nowClock)
 		if not res.Ok then
 			NetworkService.SendMeteorLifecycleToPlayer(player, {
@@ -739,6 +847,8 @@ function EconomyService.HandlePlotAction(
 	else
 		return { Ok = false, Reason = "InvalidAction" }
 	end
+
+	EconomyService.RecordPlotActionOutcome(player, player.UserId, profile, action, targetSlotOrUID, res, preSettledEarned, nowClock)
 
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
@@ -766,8 +876,10 @@ function EconomyService.HandleBuyUpgrade(player: Player, upgradeId: Types.Upgrad
 	end
 
 	local nowClock = workspace:GetServerTimeNow()
-	local settledChanged = EconomyService.SettleProfileCoins(profile, nowClock)
+	local settledChanged, preSettledEarned = EconomyService.SettleProfileCoins(profile, nowClock)
 	local res = EconomyService.BuyUpgradeOnProfile(profile, upgradeId, nowClock)
+
+	EconomyService.RecordBuyUpgradeOutcome(player, player.UserId, profile, upgradeId, res, preSettledEarned, nowClock)
 
 	if res.Ok then
 		DataService.SendOwnerStateSnapshot(player)
@@ -791,8 +903,15 @@ local function ensureBeforeSaveRegistered(): ()
 		return
 	end
 	beforeSaveRegistered = true
-	DataService.OnBeforeSave(function(_player: Player?, profile: Types.PlayerProfileData)
-		EconomyService.SettleProfileCoins(profile, workspace:GetServerTimeNow())
+	DataService.OnBeforeSave(function(player: Player?, profile: Types.PlayerProfileData)
+		local nowClock = workspace:GetServerTimeNow()
+		local _, earned = EconomyService.SettleProfileCoins(profile, nowClock)
+		if player ~= nil then
+			if earned > 0 then
+				AnalyticsService.RecordPenAccrual(player, player.UserId, earned, profile.Coins, nowClock)
+			end
+			AnalyticsService.FlushPendingAccrual(player, player.UserId, profile.Coins)
+		end
 	end)
 end
 
@@ -818,7 +937,11 @@ function EconomyService.Start(self: typeof(EconomyService)): ()
 				task.wait(1)
 				local nowClock = workspace:GetServerTimeNow()
 				DataService.ForEachReadyPlayer(function(player: Player, profile: Types.PlayerProfileData)
-					if EconomyService.SettleProfileCoins(profile, nowClock) then
+					local changed, earned = EconomyService.SettleProfileCoins(profile, nowClock)
+					if earned > 0 then
+						AnalyticsService.RecordPenAccrual(player, player.UserId, earned, profile.Coins, nowClock)
+					end
+					if changed then
 						DataService.SendOwnerStateSnapshot(player)
 					end
 				end)

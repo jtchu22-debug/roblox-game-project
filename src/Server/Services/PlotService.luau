@@ -24,6 +24,7 @@ local FormatUtil = require(UtilFolder:WaitForChild("FormatUtil"))
 local GreyboxBuilder = require(UtilFolder:WaitForChild("GreyboxBuilder"))
 
 local ServicesFolder = script.Parent
+local AnalyticsService = require(ServicesFolder:WaitForChild("AnalyticsService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
 local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
@@ -604,6 +605,7 @@ function PlotService.AssignPlotForUserId(
 	plotRevisionByPlotId[assignedPlotId] = (plotRevisionByPlotId[assignedPlotId] or 0) + 1
 
 	PlotService.RefreshPlotWorldState(assignedPlotId)
+	AnalyticsService.RecordSpawn(player, userId, profile)
 	for _, cb in ipairs(plotAssignedCallbacks) do
 		local ok, err = pcall(cb, assignedPlotId, userId)
 		if not ok then

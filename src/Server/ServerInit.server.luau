@@ -24,6 +24,7 @@ end
 local ServicesFolder = script.Parent:WaitForChild("Services")
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
+local AnalyticsService = require(ServicesFolder:WaitForChild("AnalyticsService"))
 local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 local PlotService = require(ServicesFolder:WaitForChild("PlotService"))
 local MeteorService = require(ServicesFolder:WaitForChild("MeteorService"))
@@ -33,6 +34,7 @@ local Stage3VerificationSuite = require(ServicesFolder:WaitForChild("Stage3Verif
 local serviceOrder: { Types.Service } = {
 	NetworkService :: Types.Service,
 	DataService :: Types.Service,
+	AnalyticsService :: Types.Service,
 	EconomyService :: Types.Service,
 	PlotService :: Types.Service,
 	MeteorService :: Types.Service,
@@ -48,6 +50,9 @@ if shouldRunSelfTests then
 
 	local dataPassed = DataService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d DataService test suites passed.", dataPassed))
+
+	local analyticsPassed = AnalyticsService.RunSelfTest()
+	print(string.format("[StarfallRanch][SelfTest] PASS: All %d AnalyticsService test suites passed.", analyticsPassed))
 
 	local econPassed = EconomyService.RunSelfTest()
 	print(string.format("[StarfallRanch][SelfTest] PASS: All %d EconomyService test suites passed.", econPassed))

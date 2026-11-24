@@ -32,6 +32,7 @@ export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
 export type SlotCategory = "Pen" | "Incubator" | "Tool" | "Bag"
 export type StationZone = "Ranch" | "Hub"
 export type NavigationTarget = "Hub" | "Ranch"
+export type OnboardingFunnelStep = "Spawn" | "FirstMeteor" | "FirstHatch" | "FirstPen" | "FirstUpgrade" | "SecondRescue"
 
 export type CritterItemRecord = {
 	UID: string,
@@ -56,6 +57,7 @@ export type PlayerProfileData = {
 	Slots: { [string]: string },
 	Upgrades: { [string]: boolean },
 	DiscoveredSpecies: { [SpeciesId]: boolean },
+	OnboardingFunnelSteps: { [OnboardingFunnelStep]: boolean },
 }
 
 export type OwnerStateDTO = {

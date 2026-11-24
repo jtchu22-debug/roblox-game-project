@@ -16,6 +16,7 @@ local Types = require(Shared:WaitForChild("Types"))
 local ServicesFolder = script.Parent
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
+local AnalyticsService = require(ServicesFolder:WaitForChild("AnalyticsService"))
 local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 local PlotService = require(ServicesFolder:WaitForChild("PlotService"))
 local MeteorService = require(ServicesFolder:WaitForChild("MeteorService"))
@@ -1099,6 +1100,189 @@ function Stage3VerificationSuite.RunS404StarterPersistenceCheck(phase: DataServi
 	return true, resultMsg
 end
 
+local function runS501GameplayTelemetrySuite(rng: Random): ()
+	local mockStore = DataService.CreateIsolatedMockStoreForTest("S501Telem")
+	local uTelem = -950501
+	local captured: { AnalyticsService.TelemetryEventRecord } = {}
+	local t0 = 10000
+
+	local function cleanupTelem()
+		AnalyticsService.SetEventSinkForTest(nil)
+		local pId = PlotService.GetAssignedPlotId(uTelem)
+		if pId ~= nil then
+			MeteorService.HandlePlotReleased(pId, uTelem)
+			PlotService.ReleasePlotForUserId(uTelem)
+		end
+		DataService.EndSession(uTelem)
+		DataService.ClearTestTrackingForUserIds({ uTelem })
+		AnalyticsService.ClearTrackingForUserId(uTelem)
+	end
+
+	cleanupTelem()
+	local ok, err = pcall(function()
+		AnalyticsService.SetEventSinkForTest(function(ev: AnalyticsService.TelemetryEventRecord)
+			if ev.UserId == uTelem then
+				table.insert(captured, ev)
+			end
+		end)
+
+		assert(DataService.StartProfileSessionForUserId(uTelem, nil, { Store = mockStore, NowClock = t0 }), "S501 join")
+		local profile = DataService.GetProfileByUserId(uTelem) :: Types.PlayerProfileData
+
+		-- 1. AssignPlot -> Spawn (Step 1)
+		local okPlot, _, plotId = PlotService.AssignPlotForUserId(uTelem, "S501Tester", profile, nil)
+		assert(okPlot and plotId ~= nil, "S501 assign plot")
+		assert(#captured == 1 and captured[1].Kind == "OnboardingFunnel" and captured[1].Step == 1 and captured[1].StepName == "Spawn", "Spawn funnel emitted")
+
+		-- Failed actions must emit ZERO telemetry events
+		captured = {}
+		local spOk, _, mStarter = MeteorService.SpawnStarterMeteorForPlot(plotId :: number, uTelem, t0)
+		assert(spOk and mStarter ~= nil, "S501 spawn starter")
+		local stTooFast = MeteorService.StartCrackAtPosition(uTelem, mStarter.Position, mStarter.UID, t0 + 1)
+		assert(stTooFast.Ok and stTooFast.AttemptNonce ~= nil, "S501 start too-fast crack")
+		local finTooFast = MeteorService.FinishCrackAtPosition(uTelem, mStarter.Position, mStarter.UID, stTooFast.AttemptNonce :: string, t0 + 1.1, rng)
+		assert(not finTooFast.Ok and finTooFast.Reason == "TooFast", "TooFast crack rejected")
+		local badBuy = EconomyService.BuyUpgradeOnProfile(profile, "PenSlot_2", t0 + 2)
+		EconomyService.RecordBuyUpgradeOutcome(nil, uTelem, profile, "PenSlot_2", badBuy, 0, t0 + 2)
+		assert(not badBuy.Ok and badBuy.Reason == "InsufficientCoins", "InsufficientCoins upgrade rejected")
+		local badFeed = EconomyService.FeedCritterInPenOnProfile(profile, "Pen_1", t0 + 2)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "FeedCritter", "Pen_1", badFeed, 0, t0 + 2)
+		assert(not badFeed.Ok, "Empty pen feed rejected")
+		local badLure = EconomyService.UseFrostLureOnProfile(profile, uTelem, "S501Tester", t0 + 2)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "UseFrostLure", "LureStand", badLure, 0, t0 + 2)
+		assert(not badLure.Ok and badLure.Reason == "ToolRequired", "Locked Frost lure rejected")
+		assert(#captured == 0, "Failed gameplay actions must emit zero telemetry events")
+
+		-- 2. Starter rescue -> FirstMeteor (Step 2)
+		local finStarter = MeteorService.FinishCrackAtPosition(uTelem, mStarter.Position, mStarter.UID, stTooFast.AttemptNonce :: string, t0 + 2, rng)
+		assert(finStarter.Ok and finStarter.ItemUID ~= nil, "S501 finish starter")
+		local itemUid1 = finStarter.ItemUID :: string
+		assert(#captured == 1 and captured[1].Kind == "OnboardingFunnel" and captured[1].Step == 2 and captured[1].StepName == "FirstMeteor", "FirstMeteor funnel emitted")
+
+		-- Incubate + NotMature failed hatch emits 0 events
+		local inc1 = EconomyService.StartIncubateOnProfile(profile, "Incubator_1", itemUid1, t0 + 3)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "StartIncubate", "Incubator_1", inc1, 0, t0 + 3)
+		assert(inc1.Ok, "S501 incubate starter")
+		local earlyHatch = EconomyService.HatchFromSlotOnProfile(profile, "Incubator_1", t0 + 4, rng)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "Hatch", "Incubator_1", earlyHatch, 0, t0 + 4)
+		assert(not earlyHatch.Ok and earlyHatch.Reason == "NotMature", "Early hatch rejected")
+		local earlySell = EconomyService.SellCritterOnProfile(profile, itemUid1, t0 + 4)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "SellCritter", itemUid1, earlySell, 0, t0 + 4)
+		assert(not earlySell.Ok and earlySell.Reason == "CannotSellUnhatched", "Unhatched sell rejected")
+		assert(#captured == 1, "Failed hatch/sell emitted 0 extra events")
+
+		-- Mature hatch -> FirstHatch (Step 3)
+		local matureAt1 = profile.Items[itemUid1].MaturesAt :: number
+		local hatch1 = EconomyService.HatchFromSlotOnProfile(profile, "Incubator_1", matureAt1, rng)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "Hatch", "Incubator_1", hatch1, 0, matureAt1)
+		assert(hatch1.Ok, "S501 hatch starter")
+		assert(#captured == 2 and captured[2].Step == 3 and captured[2].StepName == "FirstHatch", "FirstHatch funnel emitted")
+
+		-- PlaceInPen -> FirstPen (Step 4)
+		local place1 = EconomyService.PlaceInPenOnProfile(profile, "Pen_1", itemUid1, matureAt1 + 1)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "PlaceInPen", "Pen_1", place1, 0, matureAt1 + 1)
+		assert(place1.Ok, "S501 place in Pen_1")
+		assert(#captured == 3 and captured[3].Step == 4 and captured[3].StepName == "FirstPen", "FirstPen funnel emitted")
+
+		-- Pen accrual (>= 25 Coins -> PenAccrual Source) + RemoveFromPen + SellCritter (Sell_StarSlime Source)
+		local _, accruedCoins = EconomyService.SettleProfileCoins(profile, matureAt1 + 21)
+		assert(accruedCoins >= 25, "S501 accrued >= 25 Coins")
+		AnalyticsService.RecordPenAccrual(nil, uTelem, accruedCoins, profile.Coins, matureAt1 + 21)
+		assert(#captured == 4 and captured[4].Kind == "Economy" and captured[4].FlowType == Enum.AnalyticsEconomyFlowType.Source and captured[4].ItemSku == "PenAccrual", "PenAccrual Source emitted")
+
+		local rem1 = EconomyService.RemoveFromPenOnProfile(profile, "Pen_1", matureAt1 + 21)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "RemoveFromPen", "Pen_1", rem1, 0, matureAt1 + 21)
+		assert(rem1.Ok, "S501 remove from Pen_1")
+		local sell1 = EconomyService.SellCritterOnProfile(profile, itemUid1, matureAt1 + 21)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "SellCritter", itemUid1, sell1, 0, matureAt1 + 21)
+		assert(sell1.Ok and (sell1.CoinsEarned or 0) > 0, "S501 sell StarSlime")
+		assert(#captured == 5 and captured[5].Kind == "Economy" and captured[5].FlowType == Enum.AnalyticsEconomyFlowType.Source and captured[5].ItemSku == "Sell_StarSlime", "Sell_StarSlime Source emitted")
+
+		-- BuyUpgrade("PenSlot_2") -> Upgrade_PenSlot_2 Sink + FirstUpgrade (Step 5)
+		local _, preBuySettled = EconomyService.SettleProfileCoins(profile, matureAt1 + 22)
+		local buyRes = EconomyService.BuyUpgradeOnProfile(profile, "PenSlot_2", matureAt1 + 22)
+		EconomyService.RecordBuyUpgradeOutcome(nil, uTelem, profile, "PenSlot_2", buyRes, preBuySettled, matureAt1 + 22)
+		assert(buyRes.Ok, "S501 buy PenSlot_2")
+		assert(#captured == 7, "Upgrade emitted Sink + FirstUpgrade")
+		assert(captured[6].Kind == "Economy" and captured[6].FlowType == Enum.AnalyticsEconomyFlowType.Sink and captured[6].ItemSku == "Upgrade_PenSlot_2", "Upgrade_PenSlot_2 Sink emitted")
+		assert(captured[7].Kind == "OnboardingFunnel" and captured[7].Step == 5 and captured[7].StepName == "FirstUpgrade", "FirstUpgrade funnel emitted")
+
+		-- Wild Ember rescue -> SecondRescue (Step 6)
+		local wOk, _, mWild = MeteorService.SpawnWildMeteorAtNode("MeteorNode_1", "Ember", matureAt1 + 23)
+		assert(wOk and mWild ~= nil, "S501 spawn wild Ember")
+		local stW = MeteorService.StartCrackAtPosition(uTelem, mWild.Position, mWild.UID, matureAt1 + 23)
+		assert(stW.Ok and stW.AttemptNonce ~= nil, "S501 start wild")
+		local finW = MeteorService.FinishCrackAtPosition(uTelem, mWild.Position, mWild.UID, stW.AttemptNonce :: string, matureAt1 + 24, rng)
+		assert(finW.Ok and finW.ItemUID ~= nil, "S501 finish wild")
+		local itemUid2 = finW.ItemUID :: string
+		assert(#captured == 8 and captured[8].Kind == "OnboardingFunnel" and captured[8].Step == 6 and captured[8].StepName == "SecondRescue", "SecondRescue funnel emitted")
+
+		-- Hatch & place 2nd critter, FeedCritter Sink, unlock FrostCracker & UseFrostLure Sink
+		local inc2 = EconomyService.StartIncubateOnProfile(profile, "Incubator_1", itemUid2, matureAt1 + 25)
+		assert(inc2.Ok, "S501 incubate 2nd pod")
+		local matureAt2 = profile.Items[itemUid2].MaturesAt :: number
+		local hatch2 = EconomyService.HatchFromSlotOnProfile(profile, "Incubator_1", matureAt2, rng)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "Hatch", "Incubator_1", hatch2, 0, matureAt2)
+		assert(hatch2.Ok, "S501 hatch 2nd pod")
+		local place2 = EconomyService.PlaceInPenOnProfile(profile, "Pen_1", itemUid2, matureAt2 + 1)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "PlaceInPen", "Pen_1", place2, 0, matureAt2 + 1)
+		assert(place2.Ok, "S501 place 2nd critter")
+
+		profile.Coins += 200
+		local _, preFeedSettled = EconomyService.SettleProfileCoins(profile, matureAt2 + 2)
+		local feedRes = EconomyService.FeedCritterInPenOnProfile(profile, "Pen_1", matureAt2 + 2)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "FeedCritter", "Pen_1", feedRes, preFeedSettled, matureAt2 + 2)
+		assert(feedRes.Ok, "S501 feed critter")
+		local feedEv = captured[#captured]
+		assert(feedEv.Kind == "Economy" and feedEv.FlowType == Enum.AnalyticsEconomyFlowType.Sink and string.sub(feedEv.ItemSku or "", 1, 5) == "Feed_", "Feed_* Sink emitted")
+
+		profile.Upgrades["FrostCracker"] = true
+		local _, preLureSettled = EconomyService.SettleProfileCoins(profile, matureAt2 + 3)
+		local lureRes = EconomyService.UseFrostLureOnProfile(profile, uTelem, "S501Tester", matureAt2 + 3, function()
+			return true, "Spawned"
+		end)
+		EconomyService.RecordPlotActionOutcome(nil, uTelem, profile, "UseFrostLure", "LureStand", lureRes, preLureSettled, matureAt2 + 3)
+		assert(lureRes.Ok, "S501 use Frost lure")
+		local lureEv = captured[#captured]
+		assert(lureEv.Kind == "Economy" and lureEv.FlowType == Enum.AnalyticsEconomyFlowType.Sink and lureEv.ItemSku == "Lure_Frost", "Lure_Frost Sink emitted")
+
+		-- Reconnect deduplication: EndSession -> reload -> repeat rescue/hatch/pen/upgrade emits 0 funnel events
+		MeteorService.HandlePlotReleased(plotId :: number, uTelem)
+		PlotService.ReleasePlotForUserId(uTelem)
+		DataService.EndSession(uTelem)
+		assert(DataService.WaitForUserFinalSave(uTelem, 2), "S501 save before reconnect")
+		DataService.ClearTestTrackingForUserIds({ uTelem })
+		AnalyticsService.ClearTrackingForUserId(uTelem)
+
+		captured = {}
+		assert(DataService.StartProfileSessionForUserId(uTelem, nil, { Store = mockStore, NowClock = matureAt2 + 20 }), "S501 reconnect")
+		local relProf = DataService.GetProfileByUserId(uTelem) :: Types.PlayerProfileData
+		local okPlot2, _, plotId2 = PlotService.AssignPlotForUserId(uTelem, "S501Tester", relProf, nil)
+		assert(okPlot2 and plotId2 ~= nil, "S501 reassign plot on reconnect")
+
+		local wOk2, _, mWild2 = MeteorService.SpawnWildMeteorAtNode("MeteorNode_2", "Ember", matureAt2 + 21)
+		assert(wOk2 and mWild2 ~= nil, "S501 spawn wild on reconnect")
+		local stW2 = MeteorService.StartCrackAtPosition(uTelem, mWild2.Position, mWild2.UID, matureAt2 + 21)
+		assert(stW2.Ok and stW2.AttemptNonce ~= nil, "S501 start wild on reconnect")
+		local finW2 = MeteorService.FinishCrackAtPosition(uTelem, mWild2.Position, mWild2.UID, stW2.AttemptNonce :: string, matureAt2 + 22, rng)
+		assert(finW2.Ok, "S501 finish wild on reconnect")
+
+		local buy2 = EconomyService.BuyUpgradeOnProfile(relProf, "Incubator_2", matureAt2 + 23)
+		EconomyService.RecordBuyUpgradeOutcome(nil, uTelem, relProf, "Incubator_2", buy2, 0, matureAt2 + 23)
+		assert(buy2.Ok, "S501 buy Incubator_2 on reconnect")
+
+		for _, ev in ipairs(captured) do
+			assert(ev.Kind ~= "OnboardingFunnel", "Reconnect must emit ZERO duplicate OnboardingFunnel events")
+		end
+		assert(captured[#captured].Kind == "Economy" and captured[#captured].ItemSku == "Upgrade_Incubator_2", "Economy events continue firing after reconnect")
+	end)
+
+	cleanupTelem()
+	if not ok then
+		error(err)
+	end
+end
+
 function Stage3VerificationSuite.RunSelfTest(): number
 	local passed = 0
 	local rng = Random.new(304)
@@ -1127,6 +1311,10 @@ function Stage3VerificationSuite.RunSelfTest(): number
 
 		-- 6. 6-player independent rate-limit buckets, hostile payload rejection & 30-critter PublicPlotDTO privacy audit
 		runSixPlayerRateAndPublicDtoAuditSuite()
+		passed += 1
+
+		-- 7. S5-01 end-to-end onboarding funnel, Coin source/sink telemetry, failed-action guard & reconnect deduplication
+		runS501GameplayTelemetrySuite(rng)
 		passed += 1
 	end)
 

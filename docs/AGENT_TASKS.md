@@ -90,7 +90,7 @@ The starter meteor currently checks a server-local `starterClaimedByUserId` tabl
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S5-01** | **P2** | `S4-04` | Gemini | Implement and verify on a private build. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. | `src/Server/Services/AnalyticsService.luau` | `[ ]` |
+| **S5-01** | **P2** | `S4-04` | Gemini | Implement and verify on a private build. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. *(Implemented `AnalyticsService.luau` with `SCHEMA_VERSION = 3` `OnboardingFunnelSteps` persisted cross-reconnect deduplication + v2 -> v3 backfill, batched `PenAccrual` + `Sell_*` / `Upgrade_*` / `Feed_*` / `Lure_Frost` economy events, zero failed-action leakage, and `65/65` Studio Play suites; pending ChatGPT review.)* | `src/Server/Services/AnalyticsService.luau` | `[~]` |
 | **S5-02** | **P2** | `S5-01`, `S4-03` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
 
 ---

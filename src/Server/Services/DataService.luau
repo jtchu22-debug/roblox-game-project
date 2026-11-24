@@ -106,6 +106,7 @@ local PROFILE_TEMPLATE: Types.PlayerProfileData = {
 	Slots = {},
 	Upgrades = {},
 	DiscoveredSpecies = {},
+	OnboardingFunnelSteps = {},
 }
 
 local LOAD_FAILED_KICK_MESSAGE = "Unable to load your Starfall Ranch save right now. Please rejoin in a moment."
@@ -122,6 +123,15 @@ local VALID_STATES: { [string]: boolean } = table.freeze({
 	Incubating = true,
 	HatchedInBag = true,
 	InPen = true,
+})
+
+local VALID_FUNNEL_STEPS: { [string]: boolean } = table.freeze({
+	Spawn = true,
+	FirstMeteor = true,
+	FirstHatch = true,
+	FirstPen = true,
+	FirstUpgrade = true,
+	SecondRescue = true,
 })
 
 local INCUBATOR_SLOT_ORDER: { [string]: boolean } = table.freeze({
@@ -505,6 +515,51 @@ function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: numb
 		data.StarterMeteorCompleted = hasStarterEvidence
 	end
 
+	local cleanFunnel: { [Types.OnboardingFunnelStep]: boolean } = {}
+	if typeof(data.OnboardingFunnelSteps) == "table" then
+		for k, v in pairs(data.OnboardingFunnelSteps :: { [any]: any }) do
+			if typeof(k) == "string" and VALID_FUNNEL_STEPS[k] and v == true then
+				cleanFunnel[k :: Types.OnboardingFunnelStep] = true
+			end
+		end
+	end
+	if rawSchemaVersion < 3 then
+		local itemCount = 0
+		local hasInPen = false
+		for _, item in pairs(cleanItems) do
+			itemCount += 1
+			if item.State == "InPen" then
+				hasInPen = true
+			end
+		end
+		local discoveredCount = 0
+		for _ in pairs(cleanDiscovered) do
+			discoveredCount += 1
+		end
+		local hasAnyUpgrade = next(cleanUpgrades) ~= nil
+		local starterDone = data.StarterMeteorCompleted == true
+
+		if starterDone or itemCount > 0 or discoveredCount > 0 or hasAnyUpgrade or data.Coins > 0 then
+			cleanFunnel["Spawn"] = true
+		end
+		if starterDone or itemCount > 0 or discoveredCount > 0 then
+			cleanFunnel["FirstMeteor"] = true
+		end
+		if discoveredCount > 0 then
+			cleanFunnel["FirstHatch"] = true
+		end
+		if hasInPen or hasAnyUpgrade then
+			cleanFunnel["FirstPen"] = true
+		end
+		if hasAnyUpgrade then
+			cleanFunnel["FirstUpgrade"] = true
+		end
+		if itemCount >= 2 or discoveredCount >= 2 then
+			cleanFunnel["SecondRescue"] = true
+		end
+	end
+	data.OnboardingFunnelSteps = cleanFunnel
+
 	return data :: Types.PlayerProfileData
 end
 
@@ -521,6 +576,7 @@ function DataService.CreateDefaultProfile(nowClock: number?): Types.PlayerProfil
 		Slots = {},
 		Upgrades = {},
 		DiscoveredSpecies = {},
+		OnboardingFunnelSteps = {},
 	}
 end
 
@@ -1564,6 +1620,7 @@ function DataService.RunSelfTest(): number
 	assert((dtoA :: any).SchemaVersion == nil, "DTO must strip SchemaVersion")
 	assert((dtoA :: any).PendingFraction == nil, "DTO must strip PendingFraction")
 	assert((dtoA :: any).LastAccrualTimestamp == nil, "DTO must strip LastAccrualTimestamp")
+	assert((dtoA :: any).OnboardingFunnelSteps == nil, "DTO must strip OnboardingFunnelSteps")
 
 	profileA.StarterMeteorCompleted = true
 	local dtoAStarterDone = DataService.BuildOwnerStateDTO(profileA)
@@ -2200,7 +2257,7 @@ function DataService.RunSelfTest(): number
 
 	-- 13. S4-04 Starter completion schema & versioned v1 -> v2 migration (direct + ProfileStore.Mock)
 	local freshDefault = DataService.CreateDefaultProfile(tFutureGuard)
-	assert(freshDefault.SchemaVersion == 2 and freshDefault.StarterMeteorCompleted == false, "CreateDefaultProfile initializes SchemaVersion=2 and StarterMeteorCompleted=false")
+	assert(freshDefault.SchemaVersion == Constants.SCHEMA_VERSION and freshDefault.StarterMeteorCompleted == false, "CreateDefaultProfile initializes current SchemaVersion and StarterMeteorCompleted=false")
 	assert(DataService.BuildOwnerStateDTO(freshDefault).StarterMeteorCompleted == false, "Default DTO exposes StarterMeteorCompleted=false")
 
 	local legacyPodV1 = DataService.ReconcileAndMigrateProfileData({
@@ -2217,7 +2274,7 @@ function DataService.RunSelfTest(): number
 			},
 		},
 	}, tFutureGuard)
-	assert(legacyPodV1.SchemaVersion == 2 and legacyPodV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime PodInBag migrates to StarterMeteorCompleted=true")
+	assert(legacyPodV1.SchemaVersion == Constants.SCHEMA_VERSION and legacyPodV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime PodInBag migrates to StarterMeteorCompleted=true")
 	assert(legacyPodV1.Items["v1-pod"] ~= nil and legacyPodV1.Coins == 125 and legacyPodV1.Upgrades["PenSlot_2"] == true, "Legacy v1 migration preserves pod, Coins, and Upgrades")
 
 	local legacySoldV1 = DataService.ReconcileAndMigrateProfileData({
@@ -2226,7 +2283,7 @@ function DataService.RunSelfTest(): number
 		DiscoveredSpecies = { StarSlime = true },
 		Items = {},
 	}, tFutureGuard)
-	assert(legacySoldV1.SchemaVersion == 2 and legacySoldV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime discovery & sold critter migrates to StarterMeteorCompleted=true")
+	assert(legacySoldV1.SchemaVersion == Constants.SCHEMA_VERSION and legacySoldV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime discovery & sold critter migrates to StarterMeteorCompleted=true")
 
 	local legacyAmbigV1 = DataService.ReconcileAndMigrateProfileData({
 		SchemaVersion = 1,
@@ -2242,7 +2299,7 @@ function DataService.RunSelfTest(): number
 			},
 		},
 	}, tFutureGuard)
-	assert(legacyAmbigV1.SchemaVersion == 2 and legacyAmbigV1.StarterMeteorCompleted == false, "Ambiguous legacy v1 without StarSlime stays eligible (StarterMeteorCompleted=false)")
+	assert(legacyAmbigV1.SchemaVersion == Constants.SCHEMA_VERSION and legacyAmbigV1.StarterMeteorCompleted == false, "Ambiguous legacy v1 without StarSlime stays eligible (StarterMeteorCompleted=false)")
 	assert(legacyAmbigV1.Coins == 80 and legacyAmbigV1.Items["v1-pup"] ~= nil, "Ambiguous legacy v1 preserves Coins and CinderPup item")
 
 	local explicitV2False = DataService.ReconcileAndMigrateProfileData({
@@ -2259,7 +2316,7 @@ function DataService.RunSelfTest(): number
 			},
 		},
 	}, tFutureGuard)
-	assert(explicitV2False.SchemaVersion == 2 and explicitV2False.StarterMeteorCompleted == false, "Explicit v2 StarterMeteorCompleted=false remains authoritative")
+	assert(explicitV2False.SchemaVersion == Constants.SCHEMA_VERSION and explicitV2False.StarterMeteorCompleted == false, "Explicit v2 StarterMeteorCompleted=false remains authoritative")
 
 	local explicitV2True = DataService.ReconcileAndMigrateProfileData({
 		SchemaVersion = 2,
@@ -2267,7 +2324,7 @@ function DataService.RunSelfTest(): number
 		DiscoveredSpecies = {},
 		Items = {},
 	}, tFutureGuard)
-	assert(explicitV2True.SchemaVersion == 2 and explicitV2True.StarterMeteorCompleted == true, "Explicit v2 StarterMeteorCompleted=true remains authoritative even with empty items")
+	assert(explicitV2True.SchemaVersion == Constants.SCHEMA_VERSION and explicitV2True.StarterMeteorCompleted == true, "Explicit v2 StarterMeteorCompleted=true remains authoritative even with empty items")
 
 	local s404Store, s404StoreName = DataService.CreateIsolatedMockStoreWithMapForTest("S404Mig")
 	local s404StoreMap = DataService.GetUserMockStoreMapForTest(s404StoreName)
@@ -2328,23 +2385,107 @@ function DataService.RunSelfTest(): number
 
 	assert(DataService.StartProfileSessionForUserId(uMigPod, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw v1 pod profile")
 	local loadedMigPod = DataService.GetProfileByUserId(uMigPod) :: Types.PlayerProfileData
-	assert(loadedMigPod.SchemaVersion == 2 and loadedMigPod.StarterMeteorCompleted == true and loadedMigPod.Items["raw-pod"] ~= nil, "End-to-end v1 pod profile migrates before Reconcile")
+	assert(loadedMigPod.SchemaVersion == Constants.SCHEMA_VERSION and loadedMigPod.StarterMeteorCompleted == true and loadedMigPod.Items["raw-pod"] ~= nil, "End-to-end v1 pod profile migrates before Reconcile")
 	DataService.EndSession(uMigPod)
 	assert(DataService.WaitForUserFinalSave(uMigPod, 2), "Save uMigPod")
 
 	assert(DataService.StartProfileSessionForUserId(uMigDisc, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw nil-version discovered profile")
 	local loadedMigDisc = DataService.GetProfileByUserId(uMigDisc) :: Types.PlayerProfileData
-	assert(loadedMigDisc.SchemaVersion == 2 and loadedMigDisc.StarterMeteorCompleted == true and loadedMigDisc.Coins == 50, "End-to-end nil-version StarSlime discovery migrates before Reconcile")
+	assert(loadedMigDisc.SchemaVersion == Constants.SCHEMA_VERSION and loadedMigDisc.StarterMeteorCompleted == true and loadedMigDisc.Coins == 50, "End-to-end nil-version StarSlime discovery migrates before Reconcile")
 	DataService.EndSession(uMigDisc)
 	assert(DataService.WaitForUserFinalSave(uMigDisc, 2), "Save uMigDisc")
 
 	assert(DataService.StartProfileSessionForUserId(uMigAmbig, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw ambiguous v1 profile")
 	local loadedMigAmbig = DataService.GetProfileByUserId(uMigAmbig) :: Types.PlayerProfileData
-	assert(loadedMigAmbig.SchemaVersion == 2 and loadedMigAmbig.StarterMeteorCompleted == false and loadedMigAmbig.Coins == 80, "End-to-end ambiguous v1 profile stays eligible")
+	assert(loadedMigAmbig.SchemaVersion == Constants.SCHEMA_VERSION and loadedMigAmbig.StarterMeteorCompleted == false and loadedMigAmbig.Coins == 80, "End-to-end ambiguous v1 profile stays eligible")
 	DataService.EndSession(uMigAmbig)
 	assert(DataService.WaitForUserFinalSave(uMigAmbig, 2), "Save uMigAmbig")
 
 	DataService.ClearTestTrackingForUserIds({ uMigPod, uMigDisc, uMigAmbig })
+	passed += 1
+
+	-- 14. S5-01 OnboardingFunnelSteps schema & v2 -> v3 migration + ProfileStore.Mock round-trip
+	assert(freshDefault.SchemaVersion == 3 and next(freshDefault.OnboardingFunnelSteps) == nil, "Fresh profile initializes SchemaVersion=3 with empty OnboardingFunnelSteps")
+	assert((DataService.BuildOwnerStateDTO(freshDefault) :: any).OnboardingFunnelSteps == nil, "OwnerStateDTO strips OnboardingFunnelSteps")
+
+	local migV2Prog = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 2,
+		StarterMeteorCompleted = true,
+		Coins = 120,
+		Upgrades = { PenSlot_2 = true },
+		DiscoveredSpecies = { StarSlime = true },
+		Items = {
+			["v2-pen"] = {
+				UID = "v2-pen",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_1",
+				CreatedAt = 1000,
+			},
+		},
+	}, tFutureGuard)
+	assert(
+		migV2Prog.SchemaVersion == 3
+			and migV2Prog.OnboardingFunnelSteps["Spawn"] == true
+			and migV2Prog.OnboardingFunnelSteps["FirstMeteor"] == true
+			and migV2Prog.OnboardingFunnelSteps["FirstHatch"] == true
+			and migV2Prog.OnboardingFunnelSteps["FirstPen"] == true
+			and migV2Prog.OnboardingFunnelSteps["FirstUpgrade"] == true
+			and migV2Prog.OnboardingFunnelSteps["SecondRescue"] == nil,
+		"v2 -> v3 migration backfills Spawn..FirstUpgrade from positive evidence without SecondRescue"
+	)
+
+	local migV2Second = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 2,
+		StarterMeteorCompleted = true,
+		DiscoveredSpecies = { StarSlime = true, CinderPup = true },
+		Items = {
+			["i1"] = { UID = "i1", SpeciesId = "StarSlime", Variant = "Normal", State = "PodInBag", CreatedAt = 1000 },
+			["i2"] = { UID = "i2", SpeciesId = "CinderPup", Variant = "Normal", State = "PodInBag", CreatedAt = 1001 },
+		},
+	}, tFutureGuard)
+	assert(migV2Second.OnboardingFunnelSteps["SecondRescue"] == true, "v2 -> v3 migration backfills SecondRescue on >= 2 items/species")
+
+	local explicitV3 = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 3,
+		StarterMeteorCompleted = true,
+		Coins = 500,
+		OnboardingFunnelSteps = {
+			Spawn = true,
+			BogusStep = true,
+			FirstMeteor = false,
+		},
+	}, tFutureGuard)
+	assert(
+		explicitV3.OnboardingFunnelSteps["Spawn"] == true
+			and explicitV3.OnboardingFunnelSteps["FirstMeteor"] == nil
+			and (explicitV3.OnboardingFunnelSteps :: any)["BogusStep"] == nil,
+		"Explicit v3 OnboardingFunnelSteps stays authoritative and strips invalid keys"
+	)
+
+	local s501Store = DataService.CreateIsolatedMockStoreForTest("S501Mig")
+	local uFunnelPersist = -910501
+	assert(DataService.StartProfileSessionForUserId(uFunnelPersist, nil, { Store = s501Store, NowClock = tFutureGuard }), "Join S501 persistence test")
+	local pFunnel = DataService.GetProfileByUserId(uFunnelPersist) :: Types.PlayerProfileData
+	pFunnel.OnboardingFunnelSteps["Spawn"] = true
+	pFunnel.OnboardingFunnelSteps["FirstMeteor"] = true
+	DataService.EndSession(uFunnelPersist)
+	assert(DataService.WaitForUserFinalSave(uFunnelPersist, 2), "Save uFunnelPersist")
+	DataService.ClearTestTrackingForUserIds({ uFunnelPersist })
+
+	assert(DataService.StartProfileSessionForUserId(uFunnelPersist, nil, { Store = s501Store, NowClock = tFutureGuard + 10 }), "Reload uFunnelPersist")
+	local pFunnelReloaded = DataService.GetProfileByUserId(uFunnelPersist) :: Types.PlayerProfileData
+	assert(
+		pFunnelReloaded.SchemaVersion == 3
+			and pFunnelReloaded.OnboardingFunnelSteps["Spawn"] == true
+			and pFunnelReloaded.OnboardingFunnelSteps["FirstMeteor"] == true
+			and pFunnelReloaded.OnboardingFunnelSteps["FirstHatch"] == nil,
+		"ProfileStore.Mock reload preserves persisted OnboardingFunnelSteps"
+	)
+	DataService.EndSession(uFunnelPersist)
+	assert(DataService.WaitForUserFinalSave(uFunnelPersist, 2), "Cleanup uFunnelPersist")
+	DataService.ClearTestTrackingForUserIds({ uFunnelPersist })
 	passed += 1
 
 	return passed

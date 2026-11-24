@@ -7,11 +7,11 @@
 ]]
 
 local Constants = {
-	GAME_VERSION = "0.4.2-s4-04-starter-save",
+	GAME_VERSION = "0.5.0-s5-01-telemetry",
 	USE_MOCK_STORE = false,
 	ALLOW_PUBLISHED_PROTOTYPE_PLACE_ID = 0,
 	RUN_SELF_TESTS = true, -- Executes only in Studio (RunService:IsStudio() guard in ServerInit/ClientInit)
-	SCHEMA_VERSION = 2,
+	SCHEMA_VERSION = 3,
 	DATASTORE_NAME_DEV = "StarfallRanch_StudioDev_v1",
 	DATASTORE_NAME_LIVE = "StarfallRanch_Alpha_v1",
 	PROFILE_KEY_PREFIX = "Player_",

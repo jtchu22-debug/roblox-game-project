@@ -20,6 +20,7 @@ local MeteorConfig = require(ConfigFolder:WaitForChild("MeteorConfig"))
 local EconomyMath = require(Shared:WaitForChild("Util"):WaitForChild("EconomyMath"))
 
 local ServicesFolder = script.Parent
+local AnalyticsService = require(ServicesFolder:WaitForChild("AnalyticsService"))
 local DataService = require(ServicesFolder:WaitForChild("DataService"))
 local EconomyService = require(ServicesFolder:WaitForChild("EconomyService"))
 local NetworkService = require(ServicesFolder:WaitForChild("NetworkService"))
@@ -495,10 +496,14 @@ function MeteorService.SpawnStarterMeteorForPlot(plotId: number, ownerUserId: nu
 	end
 	if starterByPlotId[plotId] ~= nil then
 		local existing = activeMeteors[starterByPlotId[plotId]]
-		if existing ~= nil then
+		if existing ~= nil and existing.OwnerUserId == ownerUserId then
 			return true, "AlreadyPresent", existing
 		end
-		starterByPlotId[plotId] = nil
+		if existing ~= nil then
+			removeMeteorInternal(existing.UID)
+		else
+			starterByPlotId[plotId] = nil
+		end
 	end
 
 	local node = starterNodesByPlotId[plotId]
@@ -905,6 +910,7 @@ function MeteorService.FinishCrackAtPosition(
 	end
 
 	removeMeteorInternal(meteorUID)
+	AnalyticsService.RecordMeteorRescue(Players:GetPlayerByUserId(userId), userId, profile, meteor.IsStarter, meteor.Trait, speciesId)
 	publishMeteorLifecycle({
 		Action = "Despawn",
 		MeteorUID = meteorUID,
