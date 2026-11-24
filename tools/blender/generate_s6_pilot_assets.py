@@ -30,6 +30,7 @@ PILOT_CONFIGS = {
     "Ember_Pilot": {"max_parts": 8, "max_tris": 850, "max_height": 8.0, "pivot": "ground"},
     "StarterCracker_Pilot": {"max_parts": 8, "max_tris": 850, "max_height": 4.0, "pivot": "grip"},
     "Incubator_Prototype": {"max_parts": 8, "max_tris": 1200, "max_height": 8.0, "pivot": "ground"},
+    "ToolWorkbench_Prototype": {"max_parts": 8, "max_tris": 1200, "max_height": 8.0, "pivot": "ground"},
 }
 
 
@@ -269,8 +270,33 @@ def build_cinderpup_pilot() -> list[bpy.types.Object]:
 
 
 # ==============================================================================
-# 2. SOLAR GOLEM PILOT (Heavy offset armor + bevels + readable gaps, 800..1200 tris)
+# 2. SOLAR GOLEM PILOT (Irregular stone plates, tapered limbs, expressive face)
 # ==============================================================================
+def add_stone_slab(
+    bm: bmesh.types.BMesh,
+    center: tuple[float, float, float],
+    radii: tuple[float, float, float],
+    rot_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    seed: int = 1,
+) -> None:
+    """Creates an irregular chiseled stone boulder slab from a displaced 1-subdiv icosphere."""
+    tmp = bmesh.new()
+    bmesh.ops.create_icosphere(tmp, subdivisions=1, radius=1.0)
+    rng = random.Random(seed)
+    for v in tmp.verts:
+        jitter = rng.uniform(0.84, 1.14)
+        v.co.x *= radii[0] * jitter
+        v.co.y *= radii[1] * jitter
+        v.co.z *= radii[2] * jitter
+    mat_r = Euler(tuple(math.radians(a) for a in rot_deg), "XYZ").to_matrix().to_4x4()
+    mat_t = Matrix.Translation(Vector(center))
+    bmesh.ops.transform(tmp, matrix=mat_t @ mat_r, verts=tmp.verts)
+    vmap = {v.index: bm.verts.new(v.co) for v in tmp.verts}
+    for f in tmp.faces:
+        bm.faces.new([vmap[v.index] for v in f.verts])
+    tmp.free()
+
+
 def build_solargolem_pilot() -> list[bpy.types.Object]:
     m_body = make_mat("SolarGolem_Body", (255, 175, 65))
     m_sec = make_mat("SolarGolem_Secondary", (168, 100, 44))
@@ -278,43 +304,74 @@ def build_solargolem_pilot() -> list[bpy.types.Object]:
     m_acc = make_mat("SolarGolem_Accent", (255, 240, 145), emission=1.1)
 
     bm_body = bmesh.new()
-    # Heavy V-tapered armored torso plates (left & right chest halves leaving central core gap)
+    # Irregular sculpted chest stone slabs (asymmetric left/right boulder plates)
+    add_stone_slab(bm_body, (-0.56, -0.10, 2.98), (0.64, 0.72, 0.78), (4, -10, 8), seed=11)
+    add_stone_slab(bm_body, (0.58, -0.06, 2.94), (0.66, 0.70, 0.80), (-3, 12, -6), seed=22)
+
     for sx in (-1.0, 1.0):
-        add_beveled_box(bm_body, (sx * 0.62, -0.08, 2.95), (0.86, 1.32, 1.38), (0, sx * -8, sx * 6), bevel=0.09)
-        # Offset layered shoulder pauldrons with clear air gap above inner arm joint
-        add_beveled_box(bm_body, (sx * 1.48, 0.0, 3.55), (0.78, 1.06, 0.72), (0, sx * 18, 0), bevel=0.08)
-        add_beveled_box(bm_body, (sx * 1.62, 0.0, 3.82), (0.56, 0.86, 0.34), (0, sx * 22, 0), bevel=0.06)
-        # Heavy forearm gauntlets
-        add_beveled_box(bm_body, (sx * 1.56, -0.14, 2.02), (0.62, 0.74, 1.12), (-10, 0, sx * -4), bevel=0.07)
-        # Flared heavy greaves
-        add_beveled_box(bm_body, (sx * 0.68, 0.02, 0.74), (0.68, 0.88, 1.38), (0, 0, sx * 4), bevel=0.07)
-    # Sculpted guardian helmet + brow crest
-    add_beveled_box(bm_body, (0.0, -0.06, 4.18), (0.96, 0.94, 0.88), (4, 0, 0), bevel=0.09)
-    add_beveled_box(bm_body, (0.0, -0.20, 4.56), (0.44, 0.82, 0.34), (-8, 0, 0), bevel=0.06)
+        s_seed = 30 if sx < 0 else 40
+        # Irregular overhanging boulder shoulder plates
+        add_stone_slab(bm_body, (sx * 1.46, 0.0, 3.56), (0.58, 0.62, 0.44), (6, sx * 22, sx * -8), seed=s_seed)
+        add_stone_slab(bm_body, (sx * 1.62, 0.05, 3.82), (0.42, 0.48, 0.26), (-4, sx * 28, 0), seed=s_seed + 1)
+        # Tapered organic stone forearms (narrow elbow -> broad boulder fist)
+        add_lofted_tube(
+            bm_body,
+            [
+                ((sx * 1.46, 0.02, 2.66), 0.24, 0.26, (0, 0, 0)),
+                ((sx * 1.56, -0.08, 2.20), 0.34, 0.38, (-8, 0, sx * -4)),
+                ((sx * 1.60, -0.18, 1.72), 0.42, 0.46, (-12, 0, sx * -6)),
+                ((sx * 1.58, -0.22, 1.48), 0.28, 0.30, (-12, 0, 0)),
+            ],
+            segments=7,
+        )
+        # Tapered pillar stone legs (narrow knee -> wide grounded boulder foot)
+        add_lofted_tube(
+            bm_body,
+            [
+                ((sx * 0.66, 0.04, 1.38), 0.28, 0.30, (0, 0, 0)),
+                ((sx * 0.72, 0.0, 0.80), 0.38, 0.44, (0, 0, sx * 3)),
+                ((sx * 0.76, -0.06, 0.20), 0.46, 0.54, (0, 0, 0)),
+                ((sx * 0.76, -0.06, 0.0), 0.42, 0.50, (0, 0, 0)),
+            ],
+            segments=7,
+        )
+
+    # Rounded carved-stone creature head + expressive brow ridge
+    add_ellipsoid(bm_body, (0.0, -0.08, 4.18), (0.64, 0.58, 0.54), (4, 0, 0), u_seg=10, v_seg=6)
+    add_stone_slab(bm_body, (0.0, -0.32, 4.46), (0.58, 0.36, 0.20), (-10, 0, 0), seed=55)
     body_obj = finalize_obj("Body", bm_body, m_body, smooth=False)
 
-    # Secondary: inner mechanical core, waist belt, shoulder/elbow/knee joints
+    # Secondary: inner warm bronze-stone core spine, waist stone belt, tapered limb joints
     bm_sec = bmesh.new()
-    add_beveled_box(bm_sec, (0.0, 0.02, 2.72), (1.02, 0.96, 1.44), (0, 0, 0), bevel=0.06)
-    add_beveled_box(bm_sec, (0.0, 0.0, 1.76), (1.28, 0.96, 0.42), (0, 0, 0), bevel=0.05)
+    add_lofted_tube(
+        bm_sec,
+        [
+            ((0.0, 0.02, 1.62), 0.72, 0.54, (0, 0, 0)),
+            ((0.0, 0.04, 2.25), 0.58, 0.48, (0, 0, 0)),
+            ((0.0, 0.02, 3.35), 0.68, 0.52, (0, 0, 0)),
+        ],
+        segments=8,
+    )
+    add_stone_slab(bm_sec, (0.0, 0.0, 1.72), (0.86, 0.62, 0.28), (0, 0, 0), seed=66)
     for sx in (-1.0, 1.0):
-        add_ellipsoid(bm_sec, (sx * 1.24, 0.0, 3.16), (0.28, 0.30, 0.28), (0, 0, 0), u_seg=6, v_seg=4)
-        add_ellipsoid(bm_sec, (sx * 1.50, -0.06, 2.66), (0.24, 0.24, 0.26), (0, 0, 0), u_seg=6, v_seg=4)
-        add_beveled_box(bm_sec, (sx * 0.66, 0.04, 1.46), (0.48, 0.56, 0.36), (0, 0, 0), bevel=0.04)
+        add_ellipsoid(bm_sec, (sx * 1.24, 0.0, 3.16), (0.28, 0.28, 0.26), (0, 0, 0), u_seg=6, v_seg=4)
+        add_ellipsoid(bm_sec, (sx * 1.48, -0.04, 2.74), (0.22, 0.22, 0.24), (0, 0, 0), u_seg=6, v_seg=4)
     sec_obj = finalize_obj("Secondary", bm_sec, m_sec, smooth=False)
 
-    # Eyes: recessed visor slit
+    # Eyes: expressive large rounded creature eyes + friendly carved nose/smile dimple
     bm_eyes = bmesh.new()
-    add_beveled_box(bm_eyes, (0.0, -0.52, 4.16), (0.72, 0.14, 0.22), (0, 0, 0), bevel=0.02)
-    eyes_obj = finalize_obj("Eyes", bm_eyes, m_eyes, smooth=False)
-
-    # Accent: chest solar core disc + glowing visor pips + dorsal solar halo fins
-    bm_acc = bmesh.new()
-    add_ellipsoid(bm_acc, (0.0, -0.52, 2.95), (0.34, 0.16, 0.34), (0, 0, 0), u_seg=8, v_seg=5)
     for sx in (-1.0, 1.0):
-        add_beveled_box(bm_acc, (sx * 0.18, -0.58, 4.16), (0.16, 0.08, 0.10), (0, 0, 0), bevel=0.01)
-        add_crystal_prism(bm_acc, (sx * 0.58, 0.48, 3.92), 0.18, 0.88, (-16, sx * 28, 0), sides=5)
-    add_crystal_prism(bm_acc, (0.0, 0.54, 4.12), 0.20, 0.78, (-20, 0, 0), sides=5)
+        add_ellipsoid(bm_eyes, (sx * 0.24, -0.58, 4.22), (0.14, 0.10, 0.16), (0, sx * -14, 0), u_seg=7, v_seg=4)
+    add_ellipsoid(bm_eyes, (0.0, -0.64, 4.02), (0.12, 0.08, 0.07), (0, 0, 0), u_seg=6, v_seg=4)
+    eyes_obj = finalize_obj("Eyes", bm_eyes, m_eyes, smooth=True)
+
+    # Accent: faceted solar heart crystal in chest + eye catchlights + asymmetric sun-shard crest
+    bm_acc = bmesh.new()
+    add_crystal_prism(bm_acc, (0.0, -0.44, 2.76), 0.28, 0.46, (82, 0, 0), sides=6)
+    for sx in (-1.0, 1.0):
+        add_ellipsoid(bm_acc, (sx * 0.27, -0.66, 4.27), (0.05, 0.04, 0.06), (0, 0, 0), u_seg=5, v_seg=3)
+        add_crystal_prism(bm_acc, (sx * 0.56, 0.42, 3.92), 0.18, 0.86, (-18, sx * 26, 0), sides=5)
+    add_crystal_prism(bm_acc, (0.0, 0.48, 4.14), 0.22, 0.92, (-22, 0, 0), sides=5)
     acc_obj = finalize_obj("Accent", bm_acc, m_acc, smooth=False)
 
     return [body_obj, sec_obj, eyes_obj, acc_obj]
@@ -564,12 +621,73 @@ def build_incubator_prototype() -> list[bpy.types.Object]:
     return [base_obj, trim_obj, cradle_obj, canopy_obj, hinge_obj, status_obj]
 
 
+# ==============================================================================
+# 6. TOOL WORKBENCH PROTOTYPE (S6-ART-02 — Timber, Cream Stone, Brass, 3 Cradles)
+# ==============================================================================
+def build_toolworkbench_prototype() -> list[bpy.types.Object]:
+    m_timber = make_mat("Workbench_Timber", (118, 76, 48))
+    m_stone = make_mat("Workbench_StoneTop", (245, 235, 220))
+    m_brass = make_mat("Workbench_Brass", (210, 164, 82))
+    m_drawer = make_mat("Workbench_Drawers", (82, 54, 38))
+    m_cradle = make_mat("Workbench_Cradles", (46, 44, 66))
+    m_accent = make_mat("Workbench_Accent", (85, 195, 185), emission=0.8)
+
+    # Timber bench carcass: 22.0 wide (X) x 3.9 deep (Y), Z=0.0..3.25
+    bm_timber = bmesh.new()
+    add_beveled_box(bm_timber, (0.0, 0.0, 1.65), (21.6, 3.7, 2.95), (0, 0, 0), bevel=0.08)
+    for sx in (-10.3, -3.5, 3.5, 10.3):
+        add_beveled_box(bm_timber, (sx, 0.0, 1.55), (0.65, 4.05, 3.10), (0, 0, 0), bevel=0.06)
+    timber_obj = finalize_obj("TimberFrame", bm_timber, m_timber, smooth=False)
+
+    # Cream stone beveled countertop: Z=3.15..3.60 (top at exact 3.60 studs above Y=0.5 -> 4.10)
+    bm_stone = bmesh.new()
+    add_beveled_box(bm_stone, (0.0, 0.0, 3.375), (22.2, 4.25, 0.45), (0, 0, 0), bevel=0.08)
+    stone_obj = finalize_obj("StoneTop", bm_stone, m_stone, smooth=False)
+
+    # Brass trim plinth + drawer pulls + edge corner brackets
+    bm_brass = bmesh.new()
+    add_beveled_box(bm_brass, (0.0, 0.0, 0.18), (22.0, 4.10, 0.36), (0, 0, 0), bevel=0.05)
+    for dx in (-6.8, 0.0, 6.8):
+        add_beveled_box(bm_brass, (dx, -2.02, 2.35), (1.10, 0.14, 0.16), (0, 0, 0), bevel=0.02)
+        add_beveled_box(bm_brass, (dx, -2.02, 1.35), (1.10, 0.14, 0.16), (0, 0, 0), bevel=0.02)
+    brass_obj = finalize_obj("BrassTrim", bm_brass, m_brass, smooth=False)
+
+    # Fitted front drawers facing -Y (East toward plaza)
+    bm_drawers = bmesh.new()
+    for dx in (-6.8, 0.0, 6.8):
+        add_beveled_box(bm_drawers, (dx, -1.86, 2.35), (5.4, 0.24, 0.82), (0, 0, 0), bevel=0.04)
+        add_beveled_box(bm_drawers, (dx, -1.86, 1.35), (5.4, 0.24, 0.82), (0, 0, 0), bevel=0.04)
+    drawer_obj = finalize_obj("Drawers", bm_drawers, m_drawer, smooth=False)
+
+    # 3 recessed Cracker cradle bases at X = -8.0, 0.0, +8.0 (Z = -32, -24, -16 in Hub)
+    bm_cradles = bmesh.new()
+    for cx in (-8.0, 0.0, 8.0):
+        add_lofted_tube(
+            bm_cradles,
+            [
+                ((cx, 0.0, 3.54), 1.32, 1.32, (0, 0, 0)),
+                ((cx, 0.0, 3.66), 1.24, 1.24, (0, 0, 0)),
+            ],
+            segments=10,
+        )
+    cradle_obj = finalize_obj("Cradles", bm_cradles, m_cradle, smooth=False)
+
+    # Observatory teal accent trim strips on front apron
+    bm_acc = bmesh.new()
+    for cx in (-8.0, 0.0, 8.0):
+        add_beveled_box(bm_acc, (cx, -2.12, 3.38), (2.4, 0.08, 0.14), (0, 0, 0), bevel=0.02)
+    acc_obj = finalize_obj("AccentInlay", bm_acc, m_accent, smooth=False)
+
+    return [timber_obj, stone_obj, brass_obj, drawer_obj, cradle_obj, acc_obj]
+
+
 BUILDERS = {
     "CinderPup_Pilot": build_cinderpup_pilot,
     "SolarGolem_Pilot": build_solargolem_pilot,
     "Ember_Pilot": build_ember_pilot,
     "StarterCracker_Pilot": build_startercracker_pilot,
     "Incubator_Prototype": build_incubator_prototype,
+    "ToolWorkbench_Prototype": build_toolworkbench_prototype,
 }
 
 
@@ -640,6 +758,13 @@ def main() -> None:
 
     manifest_path = os.path.join(exports_dir, "manifest.json")
     manifest = {}
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            manifest = {}
+
     for name in args.only:
         clear_scene()
         objs = BUILDERS[name]()
@@ -662,8 +787,8 @@ def main() -> None:
             add_leaf_bones=False,
             path_mode="AUTO",
         )
-        stats["blend_path"] = blend_path
-        stats["fbx_path"] = fbx_path
+        stats["blend_path"] = f"tools/blender/sources/pilot/{name}.blend"
+        stats["fbx_path"] = f"tools/blender/exports/pilot/{name}.fbx"
         manifest[name] = stats
         print(
             f"[PilotGen] {name} | Parts={stats['parts']}/{PILOT_CONFIGS[name]['max_parts']} | "

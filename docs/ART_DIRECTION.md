@@ -79,15 +79,18 @@ Use the [Steal an Egg gameplay gallery](https://bo3.gg/games/articles/steal-an-e
 
 - **S6-ART-04 Pilot & First S6-ART-02 Incubator Prototype (`StarfallRanch_Dev.rbxl` — Nov 23, 2026):**
   - **Generator, Sources & Exports:** [`tools/blender/generate_s6_pilot_assets.py`](../tools/blender/generate_s6_pilot_assets.py), `.blend` sources in `tools/blender/sources/pilot/`, Studio-ready `.fbx` exports + `manifest.json` in `tools/blender/exports/pilot/`, imported under isolated `ReplicatedStorage.AssetTemplates.Pilot` (Stage 4 shipped baselines remain untouched pending review). Workflow documented in [`tools/studio/ASSET_IMPORT_WORKFLOW.md`](../tools/studio/ASSET_IMPORT_WORKFLOW.md).
-  - **Pilot Budgets & Dimensions (`<= 8` parts, `<= 1,200` tris critters/station, `<= 850` tris meteor/tool):**
-    - `CinderPup_Pilot`: `4/8` parts, `1,018` tris (`328` baseline), `2.118 × 3.011 × 2.675` studs, `0.0000` ground pivot delta.
-    - `SolarGolem_Pilot`: `4/8` parts, `1,098` tris (`352` baseline), `3.875 × 4.803 × 1.652` studs, `0.0000` ground pivot delta.
-    - `Ember_Pilot`: `3/8` parts, `388` tris (`246` baseline), `3.476 × 3.309 × 3.471` studs, `0.0000` ground pivot delta.
+  - **Pilot Budgets & Dimensions (`<= 8` parts, `<= 1,200` tris critters/stations, `<= 850` tris meteor/tool):**
+    - `CinderPup_Pilot`: `4/8` parts, `1,018` tris (`382` Stage 4 baseline), `2.118 × 3.011 × 2.675` studs, `0.0000` ground pivot delta.
+    - `SolarGolem_Pilot` *(v2)*: `4/8` parts, `892` tris (`396` Stage 4 baseline), `4.078 × 4.993 × 1.775` studs, `0.0000` ground pivot delta (irregular chiseled stone plates, tapered limbs, carved brow, rounded creature eyes).
+    - `Ember_Pilot`: `3/8` parts, `388` tris (`246` Stage 4 baseline), `3.476 × 3.309 × 3.471` studs, `0.0000` ground pivot delta.
     - `StarterCracker_Pilot`: `5/8` parts, `552` tris (`344` baseline), `0.820 × 2.880 × 1.160` studs, `(0, 0, 0)` grip pivot.
-    - `Incubator_Prototype` *(S6-ART-02)*: `6/8` parts, `766` tris, `6.700 × 5.180 × 6.700` studs, `0.0000` ground pivot delta.
-  - **Populated-Map Studio A/B Benchmark (Studio Play Solo, 6 plots × 5 critters = 30 critters + 5 meteors, identical locked overview camera, 5.0s `RenderStepped` window):**
-    - **Run A (Stage 4 Baseline, `11,430` tris):** `75` frames, `15.0` avg / `14.8` min FPS (unfocused Studio cap), `66.66 ms` avg frame, `2591.0 MB` TotalMem, `1094.3 MB` LuaHeap.
-    - **Run B (Pilot + 12 Incubators, `42,872` tris):** `75` frames, `15.0` avg / `14.7` min FPS, `66.66 ms` avg frame, `2591.3 MB` TotalMem (`+0.3 MB`), `1094.3 MB` LuaHeap (`+0.0 MB`). Physical low-end mobile soak remains gated on `S4-03`.
+    - `Incubator_Prototype` *(S6-ART-02)*: `6/8` parts, `766` tris, `6.700 × 5.180 × 6.700` studs, `0.0000` ground pivot delta (integrated on `Plot_1` via [`StationVisualController.luau`](../src/Client/Controllers/StationVisualController.luau) with `Locked`/`Idle`/`Incubating`/`Ready` states and cradled Star-Pod offset).
+    - `ToolWorkbench_Prototype` *(S6-ART-02)*: `6/8` parts, `1,076` tris, `22.200 × 3.660 × 4.285` studs, `0.0000` ground pivot delta (integrated on `CentralHub.ToolWorkbench` preserving display & upgrade pad placement).
+  - **Populated-Map Studio 3-Run A/B Benchmark (Studio Play Solo, 30 critters + 5 meteors, identical locked overview camera, 2 × 5.0s `RenderStepped` windows per run):**
+    - **Run A (Stage 4 Baseline, 0 pilot stations, `12,900` tris):** S1 `15.0`/`14.7` FPS (`66.66 ms`), S2 `15.0`/`14.7` FPS (`66.67 ms`), `2576.8 MB` TotalMem, `1062.9 MB` LuaHeap.
+    - **Run B1 (Pilot Critters/Meteors ONLY, 0 pilot stations, `30,590` tris):** S1 `15.0`/`14.7` FPS (`66.65 ms`), S2 `15.0`/`14.8` FPS (`66.67 ms`), `2576.8 MB` TotalMem (`+0.0 MB`), `1058.5 MB` LuaHeap.
+    - **Run B2 (Combined Load — Pilot + 12 Incubators + 1 Workbench, `40,858` tris):** S1 `15.0`/`14.7` FPS (`66.67 ms`), S2 `15.0`/`14.8` FPS (`66.66 ms`), `2573.9 MB` TotalMem, `1048.5 MB` LuaHeap.
+    - *Note:* Automated MCP `Play Solo` hit Studio's `15.0 FPS` (`66.66 ms`) background cap across all 3 runs; uncapped interactive foreground and physical low-end mobile frame-time checks remain gated on `S4-03`.
 
 ## Launch tool models
 

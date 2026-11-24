@@ -702,7 +702,9 @@ local function buildPodVisual(
 	end
 
 	local padTopY = pad.Position.Y + pad.Size.X * 0.5
-	local baseCFrame = CFrame.new(pad.Position.X, padTopY + 1.55, pad.Position.Z) * horizontalRotation
+	local podOffsetAttr = pad:GetAttribute("ModeledIncubatorPodYOffset")
+	local podYOffset = if typeof(podOffsetAttr) == "number" then podOffsetAttr else 1.55
+	local baseCFrame = CFrame.new(pad.Position.X, padTopY + podYOffset, pad.Position.Z) * horizontalRotation
 
 	local model = Instance.new("Model")
 	model.Name = key .. "_Pod"

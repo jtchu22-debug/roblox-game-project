@@ -20,6 +20,7 @@ local controllerOrder: { Types.Controller } = {
 	require(ControllersFolder:WaitForChild("UIController")) :: Types.Controller,
 	require(ControllersFolder:WaitForChild("PlotVisualController")) :: Types.Controller,
 	require(ControllersFolder:WaitForChild("ToolVisualController")) :: Types.Controller,
+	require(ControllersFolder:WaitForChild("StationVisualController")) :: Types.Controller,
 	require(ControllersFolder:WaitForChild("CrackController")) :: Types.Controller,
 	require(ControllersFolder:WaitForChild("InputController")) :: Types.Controller,
 }
@@ -51,6 +52,14 @@ if Constants.RUN_SELF_TESTS and RunService:IsStudio() then
 		print(string.format("[StarfallRanch][SelfTest] PASS: All %d ToolVisualController client test suites passed.", toolPassedOrErr :: number))
 	else
 		warn("[StarfallRanch][SelfTest] FAIL: ToolVisualController self-test error: " .. tostring(toolPassedOrErr))
+	end
+
+	local StationVisualController = require(ControllersFolder:WaitForChild("StationVisualController"))
+	local okStationTest, stationPassedOrErr = pcall(StationVisualController.RunSelfTest)
+	if okStationTest then
+		print(string.format("[StarfallRanch][SelfTest] PASS: All %d StationVisualController client test suites passed.", stationPassedOrErr :: number))
+	else
+		warn("[StarfallRanch][SelfTest] FAIL: StationVisualController self-test error: " .. tostring(stationPassedOrErr))
 	end
 end
 

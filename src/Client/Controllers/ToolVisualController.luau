@@ -217,6 +217,9 @@ local function isValidCrackerTemplate(template: Instance?): (boolean, string?)
 	if template == nil or not template:IsA("Model") then
 		return false, "template is not a Model"
 	end
+	if not template.Archivable then
+		return false, "template is not Archivable"
+	end
 
 	local gripPart = template:FindFirstChild("Grip", true)
 	if gripPart == nil or not gripPart:IsA("BasePart") then
@@ -241,40 +244,61 @@ function ToolVisualController.BuildCrackerModel(toolId: Types.CrackerToolId, opt
 	local toolsFolder = if templatesRoot ~= nil then templatesRoot:FindFirstChild("Tools") else nil
 	local template = if toolsFolder ~= nil then toolsFolder:FindFirstChild(toolId) else nil
 
-	local model: Model
-	local sourceTag: string
+	local model: Model? = nil
+	local sourceTag = "ProceduralFallback"
 	if template ~= nil then
 		local okTemplate, badReason = isValidCrackerTemplate(template)
 		if okTemplate then
-			model = (template :: Model):Clone()
-			model.Name = toolId
-			sourceTag = "MeshTemplate"
+			local cloned = (template :: Model):Clone()
+			if cloned ~= nil then
+				local okCloned, clonedBadReason = isValidCrackerTemplate(cloned)
+				if okCloned then
+					cloned.Name = toolId
+					model = cloned
+					sourceTag = "MeshTemplate"
+				else
+					cloned:Destroy()
+					warn(string.format(
+						"[ToolVisualController] Rejected cloned tool template '%s': %s. Using procedural fallback.",
+						toolId,
+						tostring(clonedBadReason)
+					))
+				end
+			else
+				warn(string.format(
+					"[ToolVisualController] Clone() returned nil for tool template '%s'. Using procedural fallback.",
+					toolId
+				))
+			end
 		else
 			warn(string.format(
 				"[ToolVisualController] Rejected malformed tool template '%s': %s. Using procedural fallback.",
 				toolId,
 				tostring(badReason)
 			))
-			model = buildProceduralCracker(toolId)
-			sourceTag = "ProceduralFallback"
 		end
+	end
+
+	local finalModel: Model
+	if model ~= nil then
+		finalModel = model
 	else
-		model = buildProceduralCracker(toolId)
+		finalModel = buildProceduralCracker(toolId)
 		sourceTag = "ProceduralFallback"
 	end
 
-	applyCrackerStyling(model, toolId, options)
+	applyCrackerStyling(finalModel, toolId, options)
 
 	local partCount = 0
-	for _, desc in ipairs(model:GetDescendants()) do
+	for _, desc in ipairs(finalModel:GetDescendants()) do
 		if desc:IsA("BasePart") then
 			partCount += 1
 		end
 	end
 
-	model:SetAttribute("CrackerToolId", toolId)
-	model:SetAttribute("AssetSource", sourceTag)
-	return model, sourceTag, partCount
+	finalModel:SetAttribute("CrackerToolId", toolId)
+	finalModel:SetAttribute("AssetSource", sourceTag)
+	return finalModel, sourceTag, partCount
 end
 
 local function findWorkbenchCounterTop(): BasePart?
@@ -768,7 +792,7 @@ function ToolVisualController.RunSelfTest(): number
 	ToolVisualController.ReconcileWorkbenchDisplays({})
 	passed += 1
 
-	-- Suite 4: Malformed optional tool template falls back cleanly without interrupting startup
+	-- Suite 4: Malformed / oversized / non-archivable tool templates fall back cleanly without interrupting startup
 	local templatesRoot = ReplicatedStorage:FindFirstChild(Constants.ASSET_TEMPLATES_FOLDER_NAME)
 	local createdRoot = false
 	if templatesRoot == nil then
@@ -793,27 +817,70 @@ function ToolVisualController.RunSelfTest(): number
 		origStarter.Parent = nil
 	end
 
-	local badModel = Instance.new("Model")
-	badModel.Name = "StarterCracker"
-	local badGripFolder = Instance.new("Folder")
-	badGripFolder.Name = "Grip"
-	badGripFolder.Parent = badModel
-	for idx = 1, ToolConfig.MAX_TOOL_PARTS + 1 do
-		local p = Instance.new("Part")
-		p.Name = "Extra_" .. tostring(idx)
-		p.Parent = badModel
+	local function runInvalidTemplateCase(caseName: string, builder: () -> Model): (boolean, string?)
+		local bad = builder()
+		bad.Parent = toolsFolder
+		local okCase, errCase = pcall(function()
+			local fallbackModel, sourceTag, partCount = ToolVisualController.BuildCrackerModel("StarterCracker", { Owned = true })
+			assert(sourceTag == "ProceduralFallback", caseName .. ": expected ProceduralFallback, got " .. sourceTag)
+			assert(partCount <= ToolConfig.MAX_TOOL_PARTS, caseName .. ": fallback exceeded part budget")
+			fallbackModel:Destroy()
+			ToolVisualController.ReconcileWorkbenchDisplays({})
+		end)
+		bad:Destroy()
+		return okCase, if okCase then nil else tostring(errCase)
 	end
-	badModel.Parent = toolsFolder
 
-	local okMalformed, malformedErr = pcall(function()
-		local fallbackModel, sourceTag, partCount = ToolVisualController.BuildCrackerModel("StarterCracker", { Owned = true })
-		assert(sourceTag == "ProceduralFallback", "Malformed template must fall back to ProceduralFallback")
-		assert(partCount <= ToolConfig.MAX_TOOL_PARTS, "Fallback model must respect part budget")
-		fallbackModel:Destroy()
-		ToolVisualController.ReconcileWorkbenchDisplays({})
+	-- Case A: Folder named Grip (missing Grip BasePart)
+	local okA, errA = runInvalidTemplateCase("CaseA_FolderGrip", function()
+		local m = Instance.new("Model")
+		m.Name = "StarterCracker"
+		local f = Instance.new("Folder")
+		f.Name = "Grip"
+		f.Parent = m
+		return m
 	end)
 
-	badModel:Destroy()
+	-- Case B: Valid Grip BasePart + 8 extra BaseParts (9 > 8 budget)
+	local okB, errB = runInvalidTemplateCase("CaseB_ValidGripOversized", function()
+		local m = Instance.new("Model")
+		m.Name = "StarterCracker"
+		local g = Instance.new("Part")
+		g.Name = "Grip"
+		g.Parent = m
+		for idx = 1, ToolConfig.MAX_TOOL_PARTS do
+			local p = Instance.new("Part")
+			p.Name = "Extra_" .. tostring(idx)
+			p.Parent = m
+		end
+		return m
+	end)
+
+	-- Case C: Non-archivable Model (Clone() returns nil)
+	local okC, errC = runInvalidTemplateCase("CaseC_NonArchivableModel", function()
+		local m = Instance.new("Model")
+		m.Name = "StarterCracker"
+		local g = Instance.new("Part")
+		g.Name = "Grip"
+		g.Parent = m
+		m.Archivable = false
+		return m
+	end)
+
+	-- Case D: Archivable Model with non-archivable Grip (Clone() omits Grip)
+	local okD, errD = runInvalidTemplateCase("CaseD_NonArchivableGrip", function()
+		local m = Instance.new("Model")
+		m.Name = "StarterCracker"
+		local g = Instance.new("Part")
+		g.Name = "Grip"
+		g.Archivable = false
+		g.Parent = m
+		local h = Instance.new("Part")
+		h.Name = "Handle"
+		h.Parent = m
+		return m
+	end)
+
 	if origStarter ~= nil then
 		origStarter.Parent = toolsFolder
 	end
@@ -823,7 +890,10 @@ function ToolVisualController.RunSelfTest(): number
 	if createdRoot and templatesRoot ~= nil then
 		templatesRoot:Destroy()
 	end
-	assert(okMalformed, "Malformed tool template regression failed: " .. tostring(malformedErr))
+	assert(okA, tostring(errA))
+	assert(okB, tostring(errB))
+	assert(okC, tostring(errC))
+	assert(okD, tostring(errD))
 	passed += 1
 
 	return passed

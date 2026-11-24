@@ -9,7 +9,72 @@
       3.309
     ],
     "pivot": "ground",
-    "blend_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\sources\\pilot\\Ember_Pilot.blend",
-    "fbx_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\exports\\pilot\\Ember_Pilot.fbx"
+    "blend_path": "tools/blender/sources/pilot/Ember_Pilot.blend",
+    "fbx_path": "tools/blender/exports/pilot/Ember_Pilot.fbx"
+  },
+  "CinderPup_Pilot": {
+    "name": "CinderPup_Pilot",
+    "parts": 4,
+    "triangles": 1018,
+    "size_studs": [
+      2.118,
+      2.675,
+      3.011
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/CinderPup_Pilot.blend",
+    "fbx_path": "tools/blender/exports/pilot/CinderPup_Pilot.fbx"
+  },
+  "SolarGolem_Pilot": {
+    "name": "SolarGolem_Pilot",
+    "parts": 4,
+    "triangles": 892,
+    "size_studs": [
+      4.078,
+      1.775,
+      4.993
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/SolarGolem_Pilot.blend",
+    "fbx_path": "tools/blender/exports/pilot/SolarGolem_Pilot.fbx"
+  },
+  "StarterCracker_Pilot": {
+    "name": "StarterCracker_Pilot",
+    "parts": 5,
+    "triangles": 552,
+    "size_studs": [
+      0.82,
+      1.16,
+      2.88
+    ],
+    "pivot": "grip",
+    "blend_path": "tools/blender/sources/pilot/StarterCracker_Pilot.blend",
+    "fbx_path": "tools/blender/exports/pilot/StarterCracker_Pilot.fbx"
+  },
+  "Incubator_Prototype": {
+    "name": "Incubator_Prototype",
+    "parts": 6,
+    "triangles": 766,
+    "size_studs": [
+      6.7,
+      6.7,
+      5.18
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/Incubator_Prototype.blend",
+    "fbx_path": "tools/blender/exports/pilot/Incubator_Prototype.fbx"
+  },
+  "ToolWorkbench_Prototype": {
+    "name": "ToolWorkbench_Prototype",
+    "parts": 6,
+    "triangles": 1076,
+    "size_studs": [
+      22.2,
+      4.285,
+      3.66
+    ],
+    "pivot": "ground",
+    "blend_path": "tools/blender/sources/pilot/ToolWorkbench_Prototype.blend",
+    "fbx_path": "tools/blender/exports/pilot/ToolWorkbench_Prototype.fbx"
   }
 }
