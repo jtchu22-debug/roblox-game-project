@@ -1,7 +1,7 @@
 # Prioritized MVP Task List & Project Board (`AGENT_TASKS.md`)
 
 > **Last Updated:** November 22, 2026
-> **Current Active Milestone** — **S5-01 private telemetry can begin.** S4-04 starter meteor persistence passed technical review. S4-03 remains open for the published six-player low-end soak before the S5-02 wider playtest. Round 3 product approval remains pending. [Review #034](./AGENT_REVIEWS.md#review-034--defer-six-player-soak-to-the-wider-playtest-gate)
+> **Current Active Milestone** — **S5-01 private telemetry passed.** The S4-03 published six-player low-end soak remains open before the S5-02 wider playtest. Round 3 product approval remains pending. [Review #036](./AGENT_REVIEWS.md#review-036--s5-01-telemetry-sign-off)
 
 ---
 
@@ -90,14 +90,14 @@ The starter meteor currently checks a server-local `starterClaimedByUserId` tabl
 
 | Task ID | Priority | Depends On | Owner | Task Description & Acceptance Criteria | Deliverable / Path | Status |
 | :---: | :---: | :---: | :---: | :--- | :--- | :---: |
-| **S5-01** | **P2** | `S4-04` | Gemini | Implement and verify on a private build. Instrument anonymous `AnalyticsService` onboarding funnel (`Spawn -> FirstMeteor -> FirstHatch -> FirstPen -> FirstUpgrade -> SecondRescue`) and economy source/sink events. *(Updated in `v0.5.1-s5-01-telemetry-fix` for Review #035: `SCHEMA_VERSION = 4` `Fresh`/`Legacy` cohort separation, contiguous-prefix funnel flushing, separate `Achieved`/`Submitted` retryable submission & Studio-vs-Published distinction, `PlaceInPenOnProfile` `SettledCoins` telemetry, and `67/67` Studio Play suites; private published-server receipt verified on `PlaceId 106917003014718` `PlaceVersion 24` (`MaxPlayers 6`); pending ChatGPT sign-off.)* | `src/Server/Services/AnalyticsService.luau` | `[~]` |
+| **S5-01** | **P2** | `S4-04` | Gemini | Server-controlled onboarding and Coin source/sink telemetry passed technical review. Verified ordered funnel submissions, retry after API failure, pen-placement accrual, and private published-server submissions on place `106917003014718`, version `24`. | [Telemetry](../src/Server/Services/AnalyticsService.luau) · [Review #036](./AGENT_REVIEWS.md#review-036--s5-01-telemetry-sign-off) | `[x]` |
 | **S5-02** | **P2** | `S5-01`, `S4-03` | Human + ChatGPT | Publish soft launch, monitor organic vs. ad cohorts, and evaluate pure fixed-price cosmetics **only** after stability & Roblox policy review. | `docs/MONETIZATION.md` | `[ ]` |
 
 ### S5-01 Private Published-Server Telemetry Evidence (`2026-11-23`)
 - **Published Server Identity:** `PlaceId=106917003014718 | PlaceVersion=24 | MaxPlayers=6 | Version=v0.5.1-s5-01-telemetry-fix (9b91887) | Mode=LiveProfileStore | Store=StarfallRanch_Alpha_v1 | Reason=PublishedLiveDataStore | DataStoreState=Access | Server Script Errors=0` *(Note: `PlotService` logged `Players.MaxPlayers=60` at startup tick `18:31:33`, and `game:GetService("Players").MaxPlayers` confirmed `6` at `18:33:41`.)*
 - **Onboarding Funnel (`Cohort=Fresh`, sequential `1..6`):**
   - `18:31:34` `Step=1 (Spawn)` -> `18:31:41` `Step=2 (FirstMeteor)` -> `18:32:01` `Step=3 (FirstHatch)` -> `18:32:04` `Step=4 (FirstPen)` -> `18:32:37` `Step=5 (FirstUpgrade)` -> `18:32:58` `Step=6 (SecondRescue)`.
-- **Coin Economy Ledger (monotonic balances, pre-spend accrual flush verified):**
+- **Coin Economy Ledger (running balances reconciled, pre-spend accrual flush verified):**
   - `Source 26 Coins (Balance=26, Tx=Gameplay, Sku=PenAccrual)` -> `Source 26 (Balance=52)` -> pre-spend flush `Source 12 (Balance=64)` -> `Sink 60 Coins (Balance=4, Tx=Shop, Sku=Upgrade_PenSlot_2)` -> `Source 26 (Balance=30)` -> `Source 25 (Balance=55)` -> `Source 26 (Balance=81)` -> `Source 26 (Balance=107)` -> `Source 25 (Balance=132)`.
 - **Dashboard Note:** Creator Hub Analytics dashboard charts can be spot-checked after Roblox's standard ingestion window; server-side submission succeeded with zero script errors.
 
