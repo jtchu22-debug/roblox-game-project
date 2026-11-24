@@ -47,6 +47,7 @@ export type CritterItemRecord = {
 
 export type PlayerProfileData = {
 	SchemaVersion: number,
+	StarterMeteorCompleted: boolean,
 	Coins: number,
 	PendingFraction: number,
 	LastAccrualTimestamp: number,
@@ -62,6 +63,7 @@ export type OwnerStateDTO = {
 	Coins: number,
 	BagCap: number,
 	ReservedBagSlots: number,
+	StarterMeteorCompleted: boolean,
 	Items: { [string]: CritterItemRecord },
 	Slots: { [string]: string },
 	Upgrades: { [string]: boolean },

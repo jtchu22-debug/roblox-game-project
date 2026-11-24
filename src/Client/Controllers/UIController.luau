@@ -735,6 +735,9 @@ local function updateContextualHint(): ()
 		elseif shortestRemaining < math.huge then
 			label.Text = string.format("Hatching (%s) — crack Basin Meteors!", FormatUtil.FormatTimer(shortestRemaining))
 			label.TextColor3 = PALETTE.TextCream
+		elseif dto.StarterMeteorCompleted == true then
+			label.Text = "Explore Ember Basin to crack an Ember Meteor!"
+			label.TextColor3 = PALETTE.OrbitalCyan
 		else
 			label.Text = "Rescue your glowing Starter Meteor!"
 			label.TextColor3 = PALETTE.StarlightGold
@@ -2965,6 +2968,7 @@ function UIController.RunSelfTest(): number
 			Coins = 44,
 			BagCap = Constants.MAX_BAG_CAPACITY,
 			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
 			Upgrades = { FrostCracker = true },
@@ -2975,6 +2979,7 @@ function UIController.RunSelfTest(): number
 			Coins = 75,
 			BagCap = Constants.MAX_BAG_CAPACITY,
 			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
 			Upgrades = { FrostCracker = true },
@@ -3056,6 +3061,7 @@ function UIController.RunSelfTest(): number
 			Coins = 1500,
 			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
 			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
 			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
@@ -3133,6 +3139,7 @@ function UIController.RunSelfTest(): number
 			Coins = 2200,
 			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
 			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
 			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
@@ -3149,6 +3156,7 @@ function UIController.RunSelfTest(): number
 			Coins = 2200,
 			BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
 			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
 			Items = mockItems,
 			Slots = { Pen_1 = "pen-1" },
 			Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
@@ -3169,6 +3177,47 @@ function UIController.RunSelfTest(): number
 		end
 		assert(owlRevealedTitle, "Newly discovered CometOwl reveals title & stats in Field Guide")
 		assert(UIController.CloseDrawers() == true and not UIController.IsDrawerOpen(), "CloseDrawers cleanly closes FieldGuideDrawer")
+
+		-- S4-04: Empty-ranch HUD hint gates on StarterMeteorCompleted
+		local dtoEmptyEligible: Types.OwnerStateDTO = {
+			Revision = 6,
+			Coins = 0,
+			BagCap = Constants.MAX_BAG_CAPACITY,
+			ReservedBagSlots = 0,
+			StarterMeteorCompleted = false,
+			Items = {},
+			Slots = {},
+			Upgrades = {},
+			DiscoveredSpecies = {},
+		}
+		latestOwnerState = dtoEmptyEligible
+		refreshAllHUD(dtoEmptyEligible)
+		assert(
+			hintBarFrame ~= nil and hintBarFrame.Visible and hintLabel ~= nil and hintLabel.Text == "Rescue your glowing Starter Meteor!",
+			"Eligible empty ranch shows starter meteor hint"
+		)
+
+		local dtoEmptyCompleted: Types.OwnerStateDTO = {
+			Revision = 7,
+			Coins = 40,
+			BagCap = Constants.MAX_BAG_CAPACITY,
+			ReservedBagSlots = 0,
+			StarterMeteorCompleted = true,
+			Items = {},
+			Slots = {},
+			Upgrades = {},
+			DiscoveredSpecies = { StarSlime = true },
+		}
+		latestOwnerState = dtoEmptyCompleted
+		refreshAllHUD(dtoEmptyCompleted)
+		assert(
+			hintBarFrame ~= nil
+				and hintBarFrame.Visible
+				and hintLabel ~= nil
+				and hintLabel.Text == "Explore Ember Basin to crack an Ember Meteor!"
+				and string.find(hintLabel.Text, "Starter Meteor", 1, true) == nil,
+			"Completed empty ranch skips starter hint and points to Ember Basin"
+		)
 
 		-- S4-03 Soak Perf Stats overlay toggles cleanly with zero leftover RenderStepped listener when OFF
 		assert(UIController.TogglePerfOverlay() == true and UIController.IsPerfOverlayOpen() == true, "TogglePerfOverlay opens Soak Perf Stats")

@@ -86,7 +86,6 @@ local activeMeteors: { [string]: ActiveMeteor } = {}
 local wildNodeOccupied: { [string]: string } = {}
 local wildNodeCooldownUntil: { [string]: number } = {}
 local starterByPlotId: { [number]: string } = {}
-local starterClaimedByUserId: { [number]: boolean } = {}
 local luredMeteorByUserId: { [number]: string } = {}
 local lastLureClockByUserId: { [number]: number } = {}
 local activeClaimsByUserId: { [number]: ActiveClaim } = {}
@@ -487,12 +486,19 @@ function MeteorService.ReleaseClaimForUserId(userId: number): boolean
 end
 
 function MeteorService.SpawnStarterMeteorForPlot(plotId: number, ownerUserId: number, nowClock: number?): (boolean, string, ActiveMeteor?)
-	if starterClaimedByUserId[ownerUserId] then
-		return false, "StarterAlreadyClaimed", nil
+	local profile = DataService.GetProfileByUserId(ownerUserId)
+	if profile == nil then
+		return false, "ProfileNotReady", nil
+	end
+	if profile.StarterMeteorCompleted == true then
+		return false, "StarterAlreadyCompleted", nil
 	end
 	if starterByPlotId[plotId] ~= nil then
 		local existing = activeMeteors[starterByPlotId[plotId]]
-		return true, "AlreadyPresent", existing
+		if existing ~= nil then
+			return true, "AlreadyPresent", existing
+		end
+		starterByPlotId[plotId] = nil
 	end
 
 	local node = starterNodesByPlotId[plotId]
@@ -725,8 +731,17 @@ function MeteorService.StartCrackAtPosition(
 	if meteor == nil then
 		return { Ok = false, Reason = "MeteorNotFound" }
 	end
-	if meteor.IsStarter and meteor.OwnerUserId ~= userId then
-		return { Ok = false, Reason = "NotStarterOwner" }
+	if meteor.IsStarter then
+		if meteor.OwnerUserId ~= userId then
+			return { Ok = false, Reason = "NotStarterOwner" }
+		end
+		if profile.StarterMeteorCompleted == true then
+			return { Ok = false, Reason = "StarterAlreadyCompleted" }
+		end
+	end
+	if meteor.IsStarter and profile.StarterMeteorCompleted == true then
+		MeteorService.ReleaseClaimForUserId(userId)
+		return { Ok = false, Reason = "StarterAlreadyCompleted" }
 	end
 	if meteor.LuredByUserId ~= nil and meteor.LuredByUserId ~= userId then
 		return { Ok = false, Reason = "NotLureOwner" }
@@ -831,6 +846,10 @@ function MeteorService.FinishCrackAtPosition(
 		activeClaimsByUserId[userId] = nil
 		return { Ok = false, Reason = "MeteorNotFound" }
 	end
+	if meteor.IsStarter and profile.StarterMeteorCompleted == true then
+		MeteorService.ReleaseClaimForUserId(userId)
+		return { Ok = false, Reason = "StarterAlreadyCompleted" }
+	end
 	if meteor.LuredByUserId ~= nil and meteor.LuredByUserId ~= userId then
 		MeteorService.ReleaseClaimForUserId(userId)
 		return { Ok = false, Reason = "NotLureOwner" }
@@ -871,17 +890,17 @@ function MeteorService.FinishCrackAtPosition(
 		then "StarSlime"
 		else EconomyMath.RollSpeciesForMeteorTrait(meteor.Trait, customRng or serverRng)
 
-	local grantRes = EconomyService.GrantPodToProfile(profile, speciesId, nowClock)
+	local grantRes = if meteor.IsStarter
+		then EconomyService.GrantStarterPodToProfile(profile, nowClock)
+		else EconomyService.GrantPodToProfile(profile, speciesId, nowClock)
 	if not grantRes.Ok then
 		MeteorService.ReleaseClaimForUserId(userId)
 		return { Ok = false, Reason = grantRes.Reason or "GrantFailed" }
 	end
 
-	-- Pod grant succeeded; now atomically consume claim and despawn meteor.
+	-- Pod grant (and StarterMeteorCompleted for starter) succeeded; now atomically consume claim and despawn meteor.
 	activeClaimsByUserId[userId] = nil
-	if meteor.IsStarter then
-		starterClaimedByUserId[userId] = true
-	else
+	if not meteor.IsStarter then
 		wildNodeCooldownUntil[meteor.NodeName] = nowClock + Constants.WILD_METEOR_RESPAWN_SECONDS
 	end
 
@@ -973,7 +992,6 @@ function MeteorService.HandlePlotReleased(plotId: number, userId: number): ()
 	despawnLuredMeteorForUserId(userId)
 	MeteorService.ReleaseClaimForUserId(userId)
 	disconnectCharacterListeners(userId)
-	starterClaimedByUserId[userId] = nil
 end
 
 function MeteorService.HandlePlayerClosing(userId: number): ()
@@ -1436,14 +1454,23 @@ function MeteorService.RunSelfTest(): number
 
 		local p1Finish = MeteorService.FinishCrackAtPosition(u1, starterObj.Position, starterObj.UID, p1Start.AttemptNonce :: string, 5002, rng)
 		assert(p1Finish.Ok and p1Finish.SpeciesId == "StarSlime", "Starter meteor guarantees StarSlime")
+		assert(p1.StarterMeteorCompleted == true, "Starter rescue marks profile.StarterMeteorCompleted=true")
 		assert(countBagItems(p1) == p1BagBeforeStarter + 1, "Starter rescue grants exactly 1 pod")
 		assert(activeMeteors[starterObj.UID] == nil, "Starter meteor despawned after grant")
 		assert(countEvents("Despawn", starterObj.UID) == 1 and countEvents("ClaimReleased", starterObj.UID) == 0, "Starter completion emits single Despawn and zero ClaimReleased")
 
-		-- Verify Plot_6 starter node spawns cleanly as part of 6-plot expansion
+		local respawnBlockedOk, respawnBlockedReason = MeteorService.SpawnStarterMeteorForPlot(1, u1, 5002)
+		assert(not respawnBlockedOk and respawnBlockedReason == "StarterAlreadyCompleted", "Completed profile blocks starter respawn")
+
+		-- Verify Plot_6 starter node requires ready profile & spawns cleanly as part of 6-plot expansion
+		local noProfOk, noProfReason = MeteorService.SpawnStarterMeteorForPlot(6, uUnassigned, 5002)
+		assert(not noProfOk and noProfReason == "ProfileNotReady", "Unloaded profile blocks starter spawn")
+		DataService.BeginMockSession(uUnassigned, nil)
+		DataService.CompleteMockSession(uUnassigned, 5002)
 		local s6Ok, _, starter6 = MeteorService.SpawnStarterMeteorForPlot(6, uUnassigned, 5002)
 		assert(s6Ok and starter6 ~= nil and (starter6 :: ActiveMeteor).NodeName == "StarterNode_Plot_6", "Starter meteor spawns on Plot_6")
 		removeMeteorInternal((starter6 :: ActiveMeteor).UID)
+		DataService.EndMockSession(uUnassigned)
 		passed += 1
 
 		-- 2. Wild UID validation, 2-player race, forged nonce, TooFast, 1-pod grant & replay rejection
@@ -1663,7 +1690,7 @@ function MeteorService.RunSelfTest(): number
 		assert(countEvents("ClaimReleased", wildObj2.UID) == 1, "Respawn/death reset broadcasts ClaimReleased")
 
 		-- 4e. Leave while claiming wild meteor while Plot 1 has an unclaimed starter meteor
-		starterClaimedByUserId[u1] = nil
+		p1.StarterMeteorCompleted = false
 		local sLeaveOk, _, u1Starter = MeteorService.SpawnStarterMeteorForPlot(1, u1, 5060)
 		assert(sLeaveOk and u1Starter ~= nil, "Unclaimed starter spawns for u1 leave test")
 		local u1StarterObj = u1Starter :: ActiveMeteor
@@ -1691,7 +1718,7 @@ function MeteorService.RunSelfTest(): number
 		assert(MeteorService.ReleaseClaimForUserId(u2), "Release u2 reclaim before Plot 2 leave test")
 
 		-- 4f. Leave while claiming own starter meteor -> single Despawn and zero redundant ClaimReleased
-		starterClaimedByUserId[u2] = nil
+		p2.StarterMeteorCompleted = false
 		local s2LeaveOk, _, u2Starter = MeteorService.SpawnStarterMeteorForPlot(2, u2, 5070)
 		assert(s2LeaveOk and u2Starter ~= nil, "Starter spawns for u2 own-starter leave test")
 		local u2StarterObj = u2Starter :: ActiveMeteor
@@ -1949,6 +1976,219 @@ function MeteorService.RunSelfTest(): number
 		end
 		assert(mOk, tostring(mErr))
 		passed += 1
+
+		-- 6. S4-04 Starter meteor persistence lifecycle (mid-crack leave, full-bag, replay, rejoin same/fresh, hatch+sell, legacy, other eligible player)
+		local s404Store, s404StoreName = DataService.CreateIsolatedMockStoreWithMapForTest("S404Starter")
+		local s404Map = DataService.GetUserMockStoreMapForTest(s404StoreName)
+		local uFresh = -930401
+		local uLegacyDone = -930402
+		local uLegacyAmbig = -930403
+		local uOther = -930404
+		local s404Users = { uFresh, uLegacyDone, uLegacyAmbig, uOther }
+
+		local s6Ok, s6Err = pcall(function()
+			local tS4 = 6000
+			-- 6a. Fresh player joins & leaves mid-crack -> starter remains available on rejoin
+			assert(DataService.StartProfileSessionForUserId(uFresh, nil, { Store = s404Store, NowClock = tS4 }), "S404 fresh join")
+			local pFresh = DataService.GetProfileByUserId(uFresh) :: Types.PlayerProfileData
+			assert(pFresh.StarterMeteorCompleted == false, "Fresh profile starts with StarterMeteorCompleted=false")
+			local okPlotF, _, plotF = PlotService.AssignPlotForUserId(uFresh, "S404Fresh", pFresh, nil)
+			assert(okPlotF and plotF ~= nil, "Assign plot for fresh player")
+			local spOk1, _, mFresh1 = MeteorService.SpawnStarterMeteorForPlot(plotF :: number, uFresh, tS4)
+			assert(spOk1 and mFresh1 ~= nil, "Starter spawns for fresh player")
+			local stMid = MeteorService.StartCrackAtPosition(uFresh, (mFresh1 :: ActiveMeteor).Position, (mFresh1 :: ActiveMeteor).UID, tS4 + 1)
+			assert(stMid.Ok, "Start crack before mid-crack disconnect")
+
+			MeteorService.HandlePlotReleased(plotF :: number, uFresh)
+			PlotService.ReleasePlotForUserId(uFresh)
+			DataService.EndSession(uFresh)
+			assert(DataService.WaitForUserFinalSave(uFresh, 2), "Save after mid-crack leave")
+
+			assert(DataService.StartProfileSessionForUserId(uFresh, nil, { Store = s404Store, NowClock = tS4 + 5 }), "Rejoin after mid-crack leave")
+			pFresh = DataService.GetProfileByUserId(uFresh) :: Types.PlayerProfileData
+			assert(pFresh.StarterMeteorCompleted == false and countBagItems(pFresh) == 0, "Mid-crack leave preserves starter eligibility and grants 0 pods")
+			local okPlotF2, _, plotF2 = PlotService.AssignPlotForUserId(uFresh, "S404Fresh", pFresh, nil)
+			assert(okPlotF2 and plotF2 ~= nil, "Reassign plot after mid-crack leave")
+			local spOk2, _, mFresh2 = MeteorService.SpawnStarterMeteorForPlot(plotF2 :: number, uFresh, tS4 + 5)
+			assert(spOk2 and mFresh2 ~= nil, "Starter respawns after mid-crack leave")
+			local mFreshObj = mFresh2 :: ActiveMeteor
+
+			-- 6b. Full-bag failure at start and mid-crack keeps starter available
+			local fillerUids: { string } = {}
+			for i = 1, Constants.MAX_BAG_CAPACITY do
+				local uid = "s404-fill-" .. tostring(i)
+				assert(EconomyService.GrantPodToProfile(pFresh, "CinderPup", tS4 + 5, uid).Ok, "Fill bag slot " .. tostring(i))
+				table.insert(fillerUids, uid)
+			end
+			local fullStart = MeteorService.StartCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, tS4 + 6)
+			assert(not fullStart.Ok and fullStart.Reason == "BagFull", "Full bag rejects starter crack start")
+
+			pFresh.Items[fillerUids[Constants.MAX_BAG_CAPACITY]] = nil
+			local okStartBeforeFill = MeteorService.StartCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, tS4 + 7)
+			assert(okStartBeforeFill.Ok and okStartBeforeFill.AttemptNonce ~= nil, "Starter crack starts with 9/10 bag")
+			assert(EconomyService.GrantPodToProfile(pFresh, "CinderPup", tS4 + 7, fillerUids[Constants.MAX_BAG_CAPACITY]).Ok, "Refill 10th slot mid-crack")
+			local fullFinish = MeteorService.FinishCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, okStartBeforeFill.AttemptNonce :: string, tS4 + 8, rng)
+			assert(not fullFinish.Ok and fullFinish.Reason == "BagFull", "Full bag mid-crack rejects starter finish")
+			assert(pFresh.StarterMeteorCompleted == false and activeMeteors[mFreshObj.UID] ~= nil and isPromptEnabled(mFreshObj), "Full-bag finish leaves starter eligible and prompt re-enabled")
+
+			-- 6c. Completion & repeated completion rejection
+			for _, fUid in ipairs(fillerUids) do
+				pFresh.Items[fUid] = nil
+			end
+			local okStartDone = MeteorService.StartCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, tS4 + 9)
+			assert(okStartDone.Ok and okStartDone.AttemptNonce ~= nil, "Starter crack starts with free bag")
+			local okFinishDone = MeteorService.FinishCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, okStartDone.AttemptNonce :: string, tS4 + 10, rng)
+			assert(okFinishDone.Ok and okFinishDone.SpeciesId == "StarSlime" and okFinishDone.ItemUID ~= nil, "Starter crack succeeds")
+			local starterItemUid = okFinishDone.ItemUID :: string
+			assert(pFresh.StarterMeteorCompleted == true and countBagItems(pFresh) == 1, "Starter completion atomically sets flag and grants 1 pod")
+
+			local replayFinish = MeteorService.FinishCrackAtPosition(uFresh, mFreshObj.Position, mFreshObj.UID, okStartDone.AttemptNonce :: string, tS4 + 11, rng)
+			assert(not replayFinish.Ok, "Replayed FinishCrackAtPosition rejected")
+			local repeatGrant = EconomyService.GrantStarterPodToProfile(pFresh, tS4 + 11, "s404-dup")
+			assert(not repeatGrant.Ok and repeatGrant.Reason == "StarterAlreadyCompleted", "Repeat GrantStarterPodToProfile rejected")
+			local respawnDoneOk, respawnDoneReason = MeteorService.SpawnStarterMeteorForPlot(plotF2 :: number, uFresh, tS4 + 11)
+			assert(not respawnDoneOk and respawnDoneReason == "StarterAlreadyCompleted" and countBagItems(pFresh) == 1, "Completed starter never respawns or double-grants")
+
+			-- 6d. Rejoin same server & simulated fresh server with unopened pod in bag
+			MeteorService.HandlePlotReleased(plotF2 :: number, uFresh)
+			PlotService.ReleasePlotForUserId(uFresh)
+			DataService.EndSession(uFresh)
+			assert(DataService.WaitForUserFinalSave(uFresh, 2), "Save with unopened starter pod")
+
+			assert(DataService.StartProfileSessionForUserId(uFresh, nil, { Store = s404Store, NowClock = tS4 + 20 }), "Rejoin same server with unopened pod")
+			pFresh = DataService.GetProfileByUserId(uFresh) :: Types.PlayerProfileData
+			assert(pFresh.StarterMeteorCompleted == true and pFresh.Items[starterItemUid] ~= nil and pFresh.Items[starterItemUid].State == "PodInBag", "Unopened starter pod and completion persist on rejoin")
+			local okPlotF3, _, plotF3 = PlotService.AssignPlotForUserId(uFresh, "S404Fresh", pFresh, nil)
+			assert(okPlotF3 and plotF3 ~= nil, "Reassign plot on same-server rejoin")
+			local spRejoinSame, spRejoinSameReason = MeteorService.SpawnStarterMeteorForPlot(plotF3 :: number, uFresh, tS4 + 20)
+			assert(not spRejoinSame and spRejoinSameReason == "StarterAlreadyCompleted", "Same-server rejoin skips starter respawn")
+
+			MeteorService.HandlePlotReleased(plotF3 :: number, uFresh)
+			PlotService.ReleasePlotForUserId(uFresh)
+			DataService.EndSession(uFresh)
+			assert(DataService.WaitForUserFinalSave(uFresh, 2), "Save before fresh-server reload")
+			DataService.ClearTestTrackingForUserIds({ uFresh })
+
+			assert(DataService.StartProfileSessionForUserId(uFresh, nil, { Store = s404Store, NowClock = tS4 + 25 }), "Rejoin fresh server with unopened pod")
+			pFresh = DataService.GetProfileByUserId(uFresh) :: Types.PlayerProfileData
+			assert(pFresh.StarterMeteorCompleted == true and pFresh.Items[starterItemUid] ~= nil, "Fresh-server rejoin preserves unopened pod & completion")
+			local okPlotF4, _, plotF4 = PlotService.AssignPlotForUserId(uFresh, "S404Fresh", pFresh, nil)
+			assert(okPlotF4 and plotF4 ~= nil, "Assign plot on fresh-server rejoin")
+			local spRejoinFresh, spRejoinFreshReason = MeteorService.SpawnStarterMeteorForPlot(plotF4 :: number, uFresh, tS4 + 25)
+			assert(not spRejoinFresh and spRejoinFreshReason == "StarterAlreadyCompleted", "Fresh-server rejoin skips starter respawn")
+
+			-- 6e. Hatch and sell StarSlime, then rejoin -> still completed & skips respawn
+			local incRes = EconomyService.StartIncubateOnProfile(pFresh, "Incubator_1", starterItemUid, tS4 + 26)
+			assert(incRes.Ok, "Incubate starter StarSlime pod")
+			local matureAt = pFresh.Items[starterItemUid].MaturesAt :: number
+			local hatchRes = EconomyService.HatchFromSlotOnProfile(pFresh, "Incubator_1", matureAt, rng)
+			assert(hatchRes.Ok, "Hatch starter StarSlime pod")
+			local sellRes = EconomyService.SellCritterOnProfile(pFresh, starterItemUid, matureAt + 1)
+			assert(sellRes.Ok and pFresh.Items[starterItemUid] == nil and pFresh.Coins > 0, "Sell hatched starter StarSlime")
+
+			MeteorService.HandlePlotReleased(plotF4 :: number, uFresh)
+			PlotService.ReleasePlotForUserId(uFresh)
+			DataService.EndSession(uFresh)
+			assert(DataService.WaitForUserFinalSave(uFresh, 2), "Save after selling starter critter")
+			DataService.ClearTestTrackingForUserIds({ uFresh })
+
+			assert(DataService.StartProfileSessionForUserId(uFresh, nil, { Store = s404Store, NowClock = matureAt + 10 }), "Rejoin after selling starter critter")
+			pFresh = DataService.GetProfileByUserId(uFresh) :: Types.PlayerProfileData
+			assert(pFresh.StarterMeteorCompleted == true and pFresh.Coins > 0 and next(pFresh.Items) == nil, "Post-sell rejoin preserves Coins, 0 items, and StarterMeteorCompleted=true")
+			local okPlotF5, _, plotF5 = PlotService.AssignPlotForUserId(uFresh, "S404Fresh", pFresh, nil)
+			assert(okPlotF5 and plotF5 ~= nil, "Assign plot after selling critter")
+			local spAfterSell, spAfterSellReason = MeteorService.SpawnStarterMeteorForPlot(plotF5 :: number, uFresh, matureAt + 10)
+			assert(not spAfterSell and spAfterSellReason == "StarterAlreadyCompleted", "Post-sell rejoin skips starter respawn")
+
+			-- 6f. Legacy profiles (completed with StarSlime evidence vs ambiguous without StarSlime)
+			s404Map[Constants.PROFILE_KEY_PREFIX .. tostring(uLegacyDone)] = {
+				Data = {
+					Data = {
+						SchemaVersion = 1,
+						Coins = 30,
+						Items = {
+							["leg-pod"] = {
+								UID = "leg-pod",
+								SpeciesId = "StarSlime",
+								Variant = "Normal",
+								State = "PodInBag",
+								CreatedAt = 1000,
+							},
+						},
+						Slots = {},
+						Upgrades = {},
+						DiscoveredSpecies = {},
+					},
+					MetaData = { ProfileCreateTime = 1, SessionLoadCount = 1, LastUpdate = 1, MetaTags = {} },
+					GlobalUpdates = { 0, {} },
+				},
+				CreatedTime = 1,
+				UpdatedTime = 1,
+				VersionId = 1,
+				UserIds = {},
+				MetaData = {},
+			}
+			s404Map[Constants.PROFILE_KEY_PREFIX .. tostring(uLegacyAmbig)] = {
+				Data = {
+					Data = {
+						SchemaVersion = 1,
+						Coins = 60,
+						Items = {},
+						Slots = {},
+						Upgrades = {},
+						DiscoveredSpecies = {},
+					},
+					MetaData = { ProfileCreateTime = 1, SessionLoadCount = 1, LastUpdate = 1, MetaTags = {} },
+					GlobalUpdates = { 0, {} },
+				},
+				CreatedTime = 1,
+				UpdatedTime = 1,
+				VersionId = 1,
+				UserIds = {},
+				MetaData = {},
+			}
+
+			assert(DataService.StartProfileSessionForUserId(uLegacyDone, nil, { Store = s404Store, NowClock = tS4 + 30 }), "Load legacy done user")
+			local pLegDone = DataService.GetProfileByUserId(uLegacyDone) :: Types.PlayerProfileData
+			assert(pLegDone.StarterMeteorCompleted == true, "Legacy completed user skips starter")
+			local okPlotLD, _, plotLD = PlotService.AssignPlotForUserId(uLegacyDone, "S404LegDone", pLegDone, nil)
+			assert(okPlotLD and plotLD ~= nil, "Assign plot for legacy done user")
+			local spLD, spLDReason = MeteorService.SpawnStarterMeteorForPlot(plotLD :: number, uLegacyDone, tS4 + 30)
+			assert(not spLD and spLDReason == "StarterAlreadyCompleted", "Legacy completed user does not spawn starter")
+
+			assert(DataService.StartProfileSessionForUserId(uLegacyAmbig, nil, { Store = s404Store, NowClock = tS4 + 30 }), "Load legacy ambiguous user")
+			local pLegAmbig = DataService.GetProfileByUserId(uLegacyAmbig) :: Types.PlayerProfileData
+			assert(pLegAmbig.StarterMeteorCompleted == false, "Ambiguous legacy user stays eligible")
+			local okPlotLA, _, plotLA = PlotService.AssignPlotForUserId(uLegacyAmbig, "S404LegAmbig", pLegAmbig, nil)
+			assert(okPlotLA and plotLA ~= nil, "Assign plot for legacy ambiguous user")
+			local spLA, _, mLA = MeteorService.SpawnStarterMeteorForPlot(plotLA :: number, uLegacyAmbig, tS4 + 30)
+			assert(spLA and mLA ~= nil, "Ambiguous legacy user spawns starter meteor")
+			removeMeteorInternal((mLA :: ActiveMeteor).UID)
+
+			-- 6g. Another eligible player on the same server still gets working starter spawn & crack
+			assert(DataService.StartProfileSessionForUserId(uOther, nil, { Store = s404Store, NowClock = tS4 + 30 }), "Load other eligible player")
+			local pOther = DataService.GetProfileByUserId(uOther) :: Types.PlayerProfileData
+			local okPlotO, _, plotO = PlotService.AssignPlotForUserId(uOther, "S404Other", pOther, nil)
+			assert(okPlotO and plotO ~= nil, "Assign plot for other eligible player")
+			local spO, _, mO = MeteorService.SpawnStarterMeteorForPlot(plotO :: number, uOther, tS4 + 30)
+			assert(spO and mO ~= nil, "Other eligible player spawns starter meteor")
+			local stO = MeteorService.StartCrackAtPosition(uOther, (mO :: ActiveMeteor).Position, (mO :: ActiveMeteor).UID, tS4 + 31)
+			assert(stO.Ok and stO.AttemptNonce ~= nil, "Other eligible player starts starter crack")
+			local finO = MeteorService.FinishCrackAtPosition(uOther, (mO :: ActiveMeteor).Position, (mO :: ActiveMeteor).UID, stO.AttemptNonce :: string, tS4 + 32, rng)
+			assert(finO.Ok and finO.SpeciesId == "StarSlime" and pOther.StarterMeteorCompleted == true, "Other eligible player finishes starter crack")
+		end)
+
+		for _, sUid in ipairs(s404Users) do
+			local pId = PlotService.GetAssignedPlotId(sUid)
+			if pId ~= nil then
+				MeteorService.HandlePlotReleased(pId, sUid)
+				PlotService.ReleasePlotForUserId(sUid)
+			end
+			DataService.EndSession(sUid)
+		end
+		DataService.ClearTestTrackingForUserIds(s404Users)
+		assert(s6Ok, tostring(s6Err))
+		passed += 1
 	end)
 
 	lifecycleObserver = nil
@@ -1967,8 +2207,6 @@ function MeteorService.RunSelfTest(): number
 	activeClaimsByUserId[u1] = nil
 	activeClaimsByUserId[u2] = nil
 	activeClaimsByUserId[uUnassigned] = nil
-	starterClaimedByUserId[u1] = nil
-	starterClaimedByUserId[u2] = nil
 	luredMeteorByUserId[u1] = nil
 	luredMeteorByUserId[u2] = nil
 	lastLureClockByUserId[u1] = nil

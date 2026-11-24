@@ -126,10 +126,11 @@ end
 
 logLine("=== S4-03 Soak Preflight Report (Read-Only) ===")
 logLine(string.format(
-	"Build: GAME_VERSION=%s | USE_MOCK_STORE=%s | PlaceId=%d | GameId=%d | MaxPlayers=%d",
+	"Build: GAME_VERSION=%s | USE_MOCK_STORE=%s | PlaceId=%d | PlaceVersion=%d | GameId=%d | MaxPlayers=%d",
 	tostring(Constants.GAME_VERSION),
 	tostring(Constants.USE_MOCK_STORE),
 	game.PlaceId,
+	game.PlaceVersion,
 	game.GameId,
 	Players.MaxPlayers
 ))

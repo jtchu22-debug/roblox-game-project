@@ -939,6 +939,162 @@ function Stage3VerificationSuite.RunLiveApiPersistenceCheck(phase: DataService.S
 	)
 end
 
+function Stage3VerificationSuite.RunS404StarterPersistenceCheck(phase: DataService.SmokeTestPhase?, baseTestUserId: number?): (boolean, string)
+	EconomyService:Init()
+
+	local runPhase: DataService.SmokeTestPhase = if phase ~= nil then phase else "RoundTrip"
+	local uCompleted = if baseTestUserId ~= nil then baseTestUserId else -960401
+	local uEligible = uCompleted - 1
+
+	local storeOk, liveStoreOrErr, storeName = DataService.GetLiveDevSmokeStore()
+	if not storeOk then
+		return false, tostring(liveStoreOrErr)
+	end
+	local smokeStore = liveStoreOrErr
+	local keyCompleted = Constants.PROFILE_KEY_PREFIX .. tostring(uCompleted)
+	local keyEligible = Constants.PROFILE_KEY_PREFIX .. tostring(uEligible)
+	local t0 = math.floor(workspace:GetServerTimeNow())
+
+	local function cleanupUsers(removeKeys: boolean): ()
+		for _, uid in ipairs({ uCompleted, uEligible }) do
+			local pId = PlotService.GetAssignedPlotId(uid)
+			if pId ~= nil then
+				MeteorService.HandlePlotReleased(pId, uid)
+				PlotService.ReleasePlotForUserId(uid)
+			end
+			DataService.EndSession(uid)
+		end
+		DataService.FlushActiveProfileSessions(5)
+		if removeKeys and smokeStore.RemoveAsync ~= nil then
+			local anyStore = smokeStore :: any
+			pcall(function()
+				anyStore:RemoveAsync(keyCompleted)
+				anyStore:RemoveAsync(keyEligible)
+			end)
+		end
+		DataService.ClearTestTrackingForUserIds({ uCompleted, uEligible })
+	end
+
+	local resultMsg = ""
+	local ok, err = pcall(function()
+		if runPhase == "RoundTrip" or runPhase == "Write" then
+			cleanupUsers(true)
+
+			local joinC, reasonC = DataService.StartProfileSessionForUserId(uCompleted, nil, { Store = smokeStore, NowClock = t0 })
+			assert(joinC, "S404 Write load uCompleted failed: " .. tostring(reasonC))
+			local joinE, reasonE = DataService.StartProfileSessionForUserId(uEligible, nil, { Store = smokeStore, NowClock = t0 })
+			assert(joinE, "S404 Write load uEligible failed: " .. tostring(reasonE))
+
+			local profC = DataService.GetProfileByUserId(uCompleted) :: Types.PlayerProfileData
+			local profE = DataService.GetProfileByUserId(uEligible) :: Types.PlayerProfileData
+
+			local okPlotC, reasonPlotC, plotC = PlotService.AssignPlotForUserId(uCompleted, "S404Completed", profC, nil)
+			assert(okPlotC and plotC ~= nil, "S404 Write assign plot uCompleted failed: " .. tostring(reasonPlotC))
+			local okPlotE, reasonPlotE, plotE = PlotService.AssignPlotForUserId(uEligible, "S404Eligible", profE, nil)
+			assert(okPlotE and plotE ~= nil, "S404 Write assign plot uEligible failed: " .. tostring(reasonPlotE))
+
+			local spC, reasonSpC, mC = MeteorService.SpawnStarterMeteorForPlot(plotC :: number, uCompleted, t0)
+			assert(spC and mC ~= nil, "S404 Write spawn starter uCompleted failed: " .. tostring(reasonSpC))
+			local stC = MeteorService.StartCrackAtPosition(uCompleted, mC.Position, mC.UID, t0 + 1)
+			assert(stC.Ok and stC.AttemptNonce ~= nil, "S404 Write start starter uCompleted failed: " .. tostring(stC.Reason))
+			local finC = MeteorService.FinishCrackAtPosition(uCompleted, mC.Position, mC.UID, stC.AttemptNonce :: string, t0 + 2, Random.new(404))
+			assert(finC.Ok and finC.SpeciesId == "StarSlime", "S404 Write finish starter uCompleted failed: " .. tostring(finC.Reason))
+			assert(profC.StarterMeteorCompleted == true, "S404 Write StarterMeteorCompleted must be true")
+
+			local podCountWrite = 0
+			for _ in pairs(profC.Items) do
+				podCountWrite += 1
+			end
+			assert(podCountWrite == 1, "S404 Write granted exactly 1 StarSlime pod")
+
+			local dupGrant = EconomyService.GrantStarterPodToProfile(profC, t0 + 3, "s404-live-dup")
+			assert(not dupGrant.Ok and dupGrant.Reason == "StarterAlreadyCompleted", "S404 Write replay grant must be rejected")
+
+			local spE, reasonSpE, mE = MeteorService.SpawnStarterMeteorForPlot(plotE :: number, uEligible, t0)
+			assert(spE and mE ~= nil and profE.StarterMeteorCompleted == false, "S404 Write eligible player keeps starter available: " .. tostring(reasonSpE))
+
+			for _, uid in ipairs({ uCompleted, uEligible }) do
+				local pId = PlotService.GetAssignedPlotId(uid)
+				if pId ~= nil then
+					MeteorService.HandlePlotReleased(pId, uid)
+					PlotService.ReleasePlotForUserId(uid)
+				end
+			end
+			local flushed = DataService.FlushActiveProfileSessions(10)
+			assert(flushed, "S404 Write flush failed")
+			DataService.ClearTestTrackingForUserIds({ uCompleted, uEligible })
+
+			if runPhase == "Write" then
+				resultMsg = string.format(
+					"Live Dev DataStore S4-04 Write complete (%s, Version=%s, PlaceId=%d, PlaceVersion=%d, GameId=%d, CompletedUser=%d, EligibleUser=%d).",
+					storeName,
+					Constants.GAME_VERSION,
+					game.PlaceId,
+					game.PlaceVersion,
+					game.GameId,
+					uCompleted,
+					uEligible
+				)
+				return
+			end
+		end
+
+		local relOkC, relReasonC = DataService.StartProfileSessionForUserId(uCompleted, nil, { Store = smokeStore, NowClock = t0 + 60 })
+		assert(relOkC, "S404 Verify reload uCompleted failed: " .. tostring(relReasonC))
+		local relOkE, relReasonE = DataService.StartProfileSessionForUserId(uEligible, nil, { Store = smokeStore, NowClock = t0 + 60 })
+		assert(relOkE, "S404 Verify reload uEligible failed: " .. tostring(relReasonE))
+
+		local relC = DataService.GetProfileByUserId(uCompleted) :: Types.PlayerProfileData
+		local relE = DataService.GetProfileByUserId(uEligible) :: Types.PlayerProfileData
+		assert(relC.SchemaVersion == Constants.SCHEMA_VERSION, "S404 Verify SchemaVersion == " .. tostring(Constants.SCHEMA_VERSION))
+		assert(relC.StarterMeteorCompleted == true, "S404 Verify uCompleted retained StarterMeteorCompleted=true")
+
+		local podCountVerify = 0
+		local hasStarSlimePod = false
+		for _, item in pairs(relC.Items) do
+			podCountVerify += 1
+			if item.SpeciesId == "StarSlime" and item.State == "PodInBag" then
+				hasStarSlimePod = true
+			end
+		end
+		assert(podCountVerify == 1 and hasStarSlimePod, "S404 Verify uCompleted restored exactly 1 StarSlime PodInBag")
+
+		local okPlotC2, _, plotC2 = PlotService.AssignPlotForUserId(uCompleted, "S404Completed", relC, nil)
+		assert(okPlotC2 and plotC2 ~= nil, "S404 Verify assign plot uCompleted")
+		local spBlocked, spBlockedReason = MeteorService.SpawnStarterMeteorForPlot(plotC2 :: number, uCompleted, t0 + 60)
+		assert(not spBlocked and spBlockedReason == "StarterAlreadyCompleted", "S404 Verify completed user skips starter respawn")
+
+		local okPlotE2, _, plotE2 = PlotService.AssignPlotForUserId(uEligible, "S404Eligible", relE, nil)
+		assert(okPlotE2 and plotE2 ~= nil, "S404 Verify assign plot uEligible")
+		assert(relE.StarterMeteorCompleted == false, "S404 Verify uEligible retained StarterMeteorCompleted=false")
+		local spEligible, reasonSpE2, mE2 = MeteorService.SpawnStarterMeteorForPlot(plotE2 :: number, uEligible, t0 + 60)
+		assert(spEligible and mE2 ~= nil, "S404 Verify eligible user spawns starter: " .. tostring(reasonSpE2))
+		local stE2 = MeteorService.StartCrackAtPosition(uEligible, mE2.Position, mE2.UID, t0 + 61)
+		assert(stE2.Ok and stE2.AttemptNonce ~= nil, "S404 Verify eligible user starts crack")
+		local finE2 = MeteorService.FinishCrackAtPosition(uEligible, mE2.Position, mE2.UID, stE2.AttemptNonce :: string, t0 + 62, Random.new(405))
+		assert(finE2.Ok and finE2.SpeciesId == "StarSlime" and relE.StarterMeteorCompleted == true, "S404 Verify eligible user completes starter crack")
+
+		resultMsg = string.format(
+			"Live Dev DataStore S4-04 %s verified (%s, Version=%s, PlaceId=%d, PlaceVersion=%d, GameId=%d, SchemaVersion=%d, CompletedUser=%d[StarterMeteorCompleted=true, Pods=1, RespawnBlocked=true], EligibleUser=%d[SpawnedAndCompleted=true]).",
+			runPhase,
+			storeName,
+			Constants.GAME_VERSION,
+			game.PlaceId,
+			game.PlaceVersion,
+			game.GameId,
+			relC.SchemaVersion,
+			uCompleted,
+			uEligible
+		)
+	end)
+
+	cleanupUsers(runPhase ~= "Write")
+	if not ok then
+		return false, tostring(err)
+	end
+	return true, resultMsg
+end
+
 function Stage3VerificationSuite.RunSelfTest(): number
 	local passed = 0
 	local rng = Random.new(304)

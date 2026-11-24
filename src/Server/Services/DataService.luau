@@ -97,6 +97,7 @@ type PlayerSession = {
 
 local PROFILE_TEMPLATE: Types.PlayerProfileData = {
 	SchemaVersion = Constants.SCHEMA_VERSION,
+	StarterMeteorCompleted = false,
 	Coins = 0,
 	PendingFraction = 0,
 	LastAccrualTimestamp = 0,
@@ -336,6 +337,12 @@ function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: numb
 	assert(typeof(rawData) == "table", "Profile.Data must be a table")
 	local data = rawData :: { [string]: any }
 
+	local rawSchemaNum = tonumber(data.SchemaVersion)
+	local rawSchemaVersion = if rawSchemaNum ~= nil and isFiniteNumber(rawSchemaNum)
+		then math.floor(rawSchemaNum :: number)
+		else 0
+	local rawStarterCompleted = data.StarterMeteorCompleted
+
 	data.SchemaVersion = Constants.SCHEMA_VERSION
 
 	local coinsNum = tonumber(data.Coins)
@@ -481,6 +488,23 @@ function DataService.ReconcileAndMigrateProfileData(rawData: any, nowClock: numb
 	data.Slots = cleanSlots
 	data.DiscoveredSpecies = cleanDiscovered
 
+	if rawSchemaVersion >= 2 then
+		data.StarterMeteorCompleted = (rawStarterCompleted == true)
+	else
+		-- Legacy v0/v1 saves lacked item origin: mark completed on positive StarSlime evidence
+		-- (saved StarSlime item or discovery), while ambiguous legacy profiles remain eligible (false).
+		local hasStarterEvidence = (rawStarterCompleted == true) or (cleanDiscovered["StarSlime"] == true)
+		if not hasStarterEvidence then
+			for _, item in pairs(cleanItems) do
+				if item.SpeciesId == "StarSlime" then
+					hasStarterEvidence = true
+					break
+				end
+			end
+		end
+		data.StarterMeteorCompleted = hasStarterEvidence
+	end
+
 	return data :: Types.PlayerProfileData
 end
 
@@ -488,6 +512,7 @@ function DataService.CreateDefaultProfile(nowClock: number?): Types.PlayerProfil
 	local clockTime = if nowClock ~= nil then nowClock else workspace:GetServerTimeNow()
 	return {
 		SchemaVersion = Constants.SCHEMA_VERSION,
+		StarterMeteorCompleted = false,
 		Coins = 0,
 		PendingFraction = 0,
 		LastAccrualTimestamp = clockTime,
@@ -518,6 +543,7 @@ function DataService.BuildOwnerStateDTO(profile: Types.PlayerProfileData): Types
 		Coins = profile.Coins,
 		BagCap = bagCap,
 		ReservedBagSlots = reservedSlots,
+		StarterMeteorCompleted = profile.StarterMeteorCompleted == true,
 		Items = copiedItems,
 		Slots = cloneStringMap(profile.Slots),
 		Upgrades = cloneBoolMap(profile.Upgrades),
@@ -585,7 +611,11 @@ function DataService.CreateIsolatedMockStoreWithMapForTest(label: string): (any,
 end
 
 function DataService.GetUserMockStoreMapForTest(storeName: string): { [string]: any }
-	return (ProfileStore :: any).Test().UserMockStore[storeName]
+	local mockRoot = (ProfileStore :: any).Test().UserMockStore
+	if mockRoot[storeName] == nil then
+		mockRoot[storeName] = {}
+	end
+	return mockRoot[storeName]
 end
 
 function DataService.TriggerTestProfileSave(userId: number): boolean
@@ -825,12 +855,14 @@ function DataService.StartProfileSessionForUserId(
 	end
 
 	profileHandle:AddUserId(userId)
-	profileHandle:Reconcile()
 
 	local loginClock = if options ~= nil and options.NowClock ~= nil
 		then options.NowClock
 		else workspace:GetServerTimeNow()
+	-- Run versioned migration BEFORE ProfileStore:Reconcile() so legacy SchemaVersion < 2
+	-- saves are inspected before template defaults (SchemaVersion = 2, StarterMeteorCompleted = false) are filled.
 	local migratedProfile = DataService.ReconcileAndMigrateProfileData(profileHandle.Data, loginClock)
+	profileHandle:Reconcile()
 
 	session.ProfileHandle = profileHandle
 	session.Profile = migratedProfile
@@ -1528,9 +1560,15 @@ function DataService.RunSelfTest(): number
 	-- 3. Verify OwnerStateDTO whitelisting and deep-copy isolation
 	local dtoA = DataService.BuildOwnerStateDTO(profileA)
 	assert(dtoA.Coins == 250 and dtoA.BagCap == Constants.MAX_BAG_CAPACITY and dtoA.ReservedBagSlots == 0, "DTO exposes owner fields")
+	assert(dtoA.StarterMeteorCompleted == false, "DTO exposes StarterMeteorCompleted=false initially")
 	assert((dtoA :: any).SchemaVersion == nil, "DTO must strip SchemaVersion")
 	assert((dtoA :: any).PendingFraction == nil, "DTO must strip PendingFraction")
 	assert((dtoA :: any).LastAccrualTimestamp == nil, "DTO must strip LastAccrualTimestamp")
+
+	profileA.StarterMeteorCompleted = true
+	local dtoAStarterDone = DataService.BuildOwnerStateDTO(profileA)
+	assert(dtoAStarterDone.StarterMeteorCompleted == true, "DTO exposes StarterMeteorCompleted=true when set")
+	profileA.StarterMeteorCompleted = false
 
 	dtoA.Coins = 999999
 	dtoA.Upgrades["PenSlot_3"] = true
@@ -1800,6 +1838,7 @@ function DataService.RunSelfTest(): number
 	assert(migrated.Items["locked-pen"] ~= nil and migrated.Items["locked-pen"].State == "HatchedInBag" and migrated.Items["locked-pen"].AssignedSlot == nil, "Locked pen item safely demoted to bag")
 	assert(migrated.Items["locked-pen5"] ~= nil and migrated.Items["locked-pen5"].State == "HatchedInBag" and migrated.Items["locked-pen5"].AssignedSlot == nil, "Locked Pen_5 item safely demoted to bag")
 	assert(migrated.Items["bad-species"] == nil, "Unknown species entry removed safely during migration")
+	assert(migrated.StarterMeteorCompleted == true, "Legacy v0 profile with StarSlime evidence migrates StarterMeteorCompleted=true")
 
 	local unlockedPen5Raw: { [string]: any } = {
 		SchemaVersion = 1,
@@ -1819,6 +1858,7 @@ function DataService.RunSelfTest(): number
 	}
 	local migratedPen5 = DataService.ReconcileAndMigrateProfileData(unlockedPen5Raw, 2044)
 	assert(migratedPen5.Items["pen5-owner"].State == "InPen" and migratedPen5.Slots["Pen_5"] == "pen5-owner", "Owned PenSlot_5 preserves Pen_5 placement on migration")
+	assert(migratedPen5.StarterMeteorCompleted == false, "Legacy v1 profile without StarSlime evidence remains eligible (StarterMeteorCompleted=false)")
 	passed += 1
 
 	-- 10. Verify OnBeforeSave runs once after closing gameplay and BEFORE ProfileStore writes on BOTH EndSession and FlushActiveProfileSessions
@@ -2156,6 +2196,155 @@ function DataService.RunSelfTest(): number
 		uCancel,
 		uFastRejoin,
 	})
+	passed += 1
+
+	-- 13. S4-04 Starter completion schema & versioned v1 -> v2 migration (direct + ProfileStore.Mock)
+	local freshDefault = DataService.CreateDefaultProfile(tFutureGuard)
+	assert(freshDefault.SchemaVersion == 2 and freshDefault.StarterMeteorCompleted == false, "CreateDefaultProfile initializes SchemaVersion=2 and StarterMeteorCompleted=false")
+	assert(DataService.BuildOwnerStateDTO(freshDefault).StarterMeteorCompleted == false, "Default DTO exposes StarterMeteorCompleted=false")
+
+	local legacyPodV1 = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 1,
+		Coins = 125,
+		Upgrades = { PenSlot_2 = true },
+		Items = {
+			["v1-pod"] = {
+				UID = "v1-pod",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 1000,
+			},
+		},
+	}, tFutureGuard)
+	assert(legacyPodV1.SchemaVersion == 2 and legacyPodV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime PodInBag migrates to StarterMeteorCompleted=true")
+	assert(legacyPodV1.Items["v1-pod"] ~= nil and legacyPodV1.Coins == 125 and legacyPodV1.Upgrades["PenSlot_2"] == true, "Legacy v1 migration preserves pod, Coins, and Upgrades")
+
+	local legacySoldV1 = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 1,
+		Coins = 40,
+		DiscoveredSpecies = { StarSlime = true },
+		Items = {},
+	}, tFutureGuard)
+	assert(legacySoldV1.SchemaVersion == 2 and legacySoldV1.StarterMeteorCompleted == true, "Legacy v1 with StarSlime discovery & sold critter migrates to StarterMeteorCompleted=true")
+
+	local legacyAmbigV1 = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 1,
+		Coins = 80,
+		Items = {
+			["v1-pup"] = {
+				UID = "v1-pup",
+				SpeciesId = "CinderPup",
+				Variant = "Normal",
+				State = "InPen",
+				AssignedSlot = "Pen_1",
+				CreatedAt = 1100,
+			},
+		},
+	}, tFutureGuard)
+	assert(legacyAmbigV1.SchemaVersion == 2 and legacyAmbigV1.StarterMeteorCompleted == false, "Ambiguous legacy v1 without StarSlime stays eligible (StarterMeteorCompleted=false)")
+	assert(legacyAmbigV1.Coins == 80 and legacyAmbigV1.Items["v1-pup"] ~= nil, "Ambiguous legacy v1 preserves Coins and CinderPup item")
+
+	local explicitV2False = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 2,
+		StarterMeteorCompleted = false,
+		DiscoveredSpecies = { StarSlime = true },
+		Items = {
+			["v2-pod"] = {
+				UID = "v2-pod",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 1200,
+			},
+		},
+	}, tFutureGuard)
+	assert(explicitV2False.SchemaVersion == 2 and explicitV2False.StarterMeteorCompleted == false, "Explicit v2 StarterMeteorCompleted=false remains authoritative")
+
+	local explicitV2True = DataService.ReconcileAndMigrateProfileData({
+		SchemaVersion = 2,
+		StarterMeteorCompleted = true,
+		DiscoveredSpecies = {},
+		Items = {},
+	}, tFutureGuard)
+	assert(explicitV2True.SchemaVersion == 2 and explicitV2True.StarterMeteorCompleted == true, "Explicit v2 StarterMeteorCompleted=true remains authoritative even with empty items")
+
+	local s404Store, s404StoreName = DataService.CreateIsolatedMockStoreWithMapForTest("S404Mig")
+	local s404StoreMap = DataService.GetUserMockStoreMapForTest(s404StoreName)
+	local uMigPod = -910401
+	local uMigDisc = -910402
+	local uMigAmbig = -910403
+	local function seedRawProfile(uid: number, rawData: { [string]: any })
+		s404StoreMap[Constants.PROFILE_KEY_PREFIX .. tostring(uid)] = {
+			Data = {
+				Data = rawData,
+				MetaData = {
+					ProfileCreateTime = 1,
+					SessionLoadCount = 1,
+					LastUpdate = 1,
+					MetaTags = {},
+				},
+				GlobalUpdates = { 0, {} },
+			},
+			CreatedTime = 1,
+			UpdatedTime = 1,
+			VersionId = 1,
+			UserIds = {},
+			MetaData = {},
+		}
+	end
+
+	seedRawProfile(uMigPod, {
+		SchemaVersion = 1,
+		Coins = 15,
+		Items = {
+			["raw-pod"] = {
+				UID = "raw-pod",
+				SpeciesId = "StarSlime",
+				Variant = "Normal",
+				State = "PodInBag",
+				CreatedAt = 1000,
+			},
+		},
+		Slots = {},
+		Upgrades = {},
+		DiscoveredSpecies = {},
+	})
+	seedRawProfile(uMigDisc, {
+		Coins = 50,
+		Items = {},
+		Slots = {},
+		Upgrades = {},
+		DiscoveredSpecies = { StarSlime = true },
+	})
+	seedRawProfile(uMigAmbig, {
+		SchemaVersion = 1,
+		Coins = 80,
+		Items = {},
+		Slots = {},
+		Upgrades = {},
+		DiscoveredSpecies = {},
+	})
+
+	assert(DataService.StartProfileSessionForUserId(uMigPod, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw v1 pod profile")
+	local loadedMigPod = DataService.GetProfileByUserId(uMigPod) :: Types.PlayerProfileData
+	assert(loadedMigPod.SchemaVersion == 2 and loadedMigPod.StarterMeteorCompleted == true and loadedMigPod.Items["raw-pod"] ~= nil, "End-to-end v1 pod profile migrates before Reconcile")
+	DataService.EndSession(uMigPod)
+	assert(DataService.WaitForUserFinalSave(uMigPod, 2), "Save uMigPod")
+
+	assert(DataService.StartProfileSessionForUserId(uMigDisc, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw nil-version discovered profile")
+	local loadedMigDisc = DataService.GetProfileByUserId(uMigDisc) :: Types.PlayerProfileData
+	assert(loadedMigDisc.SchemaVersion == 2 and loadedMigDisc.StarterMeteorCompleted == true and loadedMigDisc.Coins == 50, "End-to-end nil-version StarSlime discovery migrates before Reconcile")
+	DataService.EndSession(uMigDisc)
+	assert(DataService.WaitForUserFinalSave(uMigDisc, 2), "Save uMigDisc")
+
+	assert(DataService.StartProfileSessionForUserId(uMigAmbig, nil, { Store = s404Store, NowClock = tFutureGuard }), "Load raw ambiguous v1 profile")
+	local loadedMigAmbig = DataService.GetProfileByUserId(uMigAmbig) :: Types.PlayerProfileData
+	assert(loadedMigAmbig.SchemaVersion == 2 and loadedMigAmbig.StarterMeteorCompleted == false and loadedMigAmbig.Coins == 80, "End-to-end ambiguous v1 profile stays eligible")
+	DataService.EndSession(uMigAmbig)
+	assert(DataService.WaitForUserFinalSave(uMigAmbig, 2), "Save uMigAmbig")
+
+	DataService.ClearTestTrackingForUserIds({ uMigPod, uMigDisc, uMigAmbig })
 	passed += 1
 
 	return passed

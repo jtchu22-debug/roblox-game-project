@@ -15,7 +15,7 @@ Because Rojo (`default.project.json`) syncs `src/` code and does **not** seriali
 - [x] **Rojo Connected & Build Synced:** Confirm `ReplicatedStorage.Shared.Constants.GAME_VERSION` equals `"0.4.1-s4-03-soak"` and `USE_MOCK_STORE == false`.
 - [x] **Read-Only Preflight Audit PASS:** Run [`tools/studio/VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) in the Studio Command Bar -> confirm **`Critters=6/6`**, **`Meteors=3/3`**, **`Greybox=PASS`**, and `Status=ASSETS_READY_FOR_PUBLISH`.
 - [x] **Live Play Startup Verification (`57/57`):** Press **Play (F5)** in Studio -> confirm all `57` Server/Client self-test suites pass, `[PlotVisualController] Runtime Template Verified` prints all `6` species, and `[MeteorService] Runtime Template Verified` prints real **`Ember`**, **`Frost`**, and **`Astral`** (all with `PromptOk=true | ClaimOk=true`, zero mock fallback!).
-- [ ] **Publish & Re-Verify on `106917003014718`:** Save `StarfallRanch_Dev.rbxl`, publish to `106917003014718` (`serverSize: 6`), run [`VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) (confirm `Status=READY_FOR_SOAK`), and boot once in a private live server to confirm `6/6` critters + `3/3` meteors render with working `RescuePrompt`s. *(Pending direct Studio preflight on cloud place `106917003014718`.)*
+- [ ] **Publish & Re-Verify on `106917003014718`:** Save `StarfallRanch_Dev.rbxl`, publish to `106917003014718` (`serverSize: 6`), run [`VerifyS403SoakPreflight.luau`](../tools/studio/VerifyS403SoakPreflight.luau) on the cloud place and record `Status=READY_FOR_SOAK`, `PlaceId`, `PlaceVersion`, `MaxPlayers=6`, runtime build/source SHA, and `6/6` critters + `3/3` meteors (per Review #032). *(Pending opening `106917003014718` in Studio.)*
 
 ---
 
@@ -78,9 +78,9 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
   2. Scope caveats left transparently open: solo `1/6` plot (`5` placed critters) rather than 6-player server load, `T+30:00+` end reading + `+2 MB` baseline delta without separate intermediate `T+2m`/`T+15m` checkpoint rows, gamepad not tested, and low-end phone/tablet hardware check left open (`iPhone 17` only per Review #031).
 
 ### Pass / Fail Thresholds
-- [x] **Sustained Frame Rate:** Average & steady-state FPS remains **$\ge 30$ FPS** throughout the 15–30 minute run with active critters (`<= 30`), incubators, and meteors visible. *(Verified on `iPhone 17` solo soak `1/6` plot, `5/5` pens, `Met 6`: `60 FPS` avg / `58 FPS` min, `16.7 ms`; low-end hardware and 6-player load remain open caveats.)*
-- [x] **Memory Stability (Zero Leak):** Total Memory and `LuaHeap` plateau after initial warmup (no continuous monotonic climb across `T+10m -> T+30m`; destroyed pods/meteors/drawers release cleanly). *(Verified on `iPhone 17` over `T+30:00+`: `839 MB (+2 MB vs baseline)`; separate `LuaHeap` / `GraphicsMeshParts` breakdown was not captured.)*
-- [x] **Runtime Cleanliness:** `0` uncaught script errors in Client or Server Developer Console logs; no orphaned visuals on plot leave/rejoin; all **Ember**, **Frost**, and **Astral** meteors spawn grounded with working `Crack` prompts. *(Verified `0` errors and normal spawns on `iPhone 17` Run #2; real `Ember`, `Frost`, and `Astral` `PromptOk=true | ClaimOk=true` also verified in Studio Play `57/57`.)*
+- [ ] **Sustained Frame Rate:** Average & steady-state FPS remains **$\ge 30$ FPS** throughout the 15–30 minute run with active critters (`<= 30`), incubators, and meteors visible. *(Solo `iPhone 17` Run #2 passed `60 FPS` avg / `58 FPS` min, `16.7 ms` on `1/6` plot, `5/5` pens, `Met 6`; 6-player server load + low-end device coverage remain open per Review #032.)*
+- [ ] **Memory Stability (Zero Leak):** Total Memory and `LuaHeap` plateau after initial warmup (no continuous monotonic climb across `T+10m -> T+30m`; destroyed pods/meteors/drawers release cleanly). *(Solo `iPhone 17` Run #2 ended at `839 MB (+2 MB vs baseline)` at `T+30:00+`; intermediate total & `LuaHeap` checkpoints remain open per Review #032.)*
+- [ ] **Runtime Cleanliness:** `0` uncaught script errors in Client or Server Developer Console logs; no orphaned visuals on plot leave/rejoin; all **Ember**, **Frost**, and **Astral** meteors spawn grounded with working `Crack` prompts. *(Solo `iPhone 17` Run #2 reported `0` errors and normal spawns, and Studio Play `57/57` verified real `Ember`/`Frost`/`Astral` `PromptOk=true | ClaimOk=true`; explicit per-family live cracks during the 6-player published soak remain open per Review #032.)*
 
 ---
 
@@ -88,10 +88,10 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 
 *(Confirms real-device touch/gamepad ergonomics noted in Review #030.)*
 
-- [x] **Top HUD Reachability (`>= 44×44` targets):** `Coins/Rate/Bag` bar and `Hub` / `Ranch` / `Bag` / `Guide` / `⚙` buttons never overlap Roblox CoreUI or device notches/home indicators. *(Confirmed `"gui works cleanly"` on `iPhone 17` Run #2.)*
-- [x] **Bag & Field Guide Drawers:** Both scroll smoothly by touch drag, stay clear of the top HUD on compact landscape phones, and reveal species details/clues cleanly when tapped. *(Confirmed `"gui works cleanly"` on `iPhone 17` Run #2.)*
-- [x] **Meteor Quick-Burst:** Tapping the **Quick Burst** zone on touch (or pressing `E`/`Space` on keyboard / `X` on physical gamepad if tested) is responsive and never leaves the crack bar stuck. *(Confirmed `"spawns were normal"` and `"gui works cleanly"` on `iPhone 17` Run #2.)*
-- [ ] **Gamepad (If Tested):** `Y` (Bag), `L1` (Field Guide), `B` (Close Drawer), and D-pad traversal stay contained inside `SelectionGroup` without escaping to background buttons. *(Not tested in Run #2.)*
+- [x] **Top HUD Reachability (`>= 44×44` targets):** `Coins/Rate/Bag` bar and `Hub` / `Ranch` / `Bag` / `Guide` / `⚙` buttons never overlap Roblox CoreUI or device notches/home indicators. *(Confirmed `"gui works cleanly"` on solo `iPhone 17` Run #2.)*
+- [x] **Bag & Field Guide Drawers:** Both scroll smoothly by touch drag, stay clear of the top HUD on compact landscape phones, and reveal species details/clues cleanly when tapped. *(Confirmed `"gui works cleanly"` on solo `iPhone 17` Run #2.)*
+- [ ] **Meteor Quick-Burst:** Tapping the **Quick Burst** zone on touch (or pressing `E`/`Space` on keyboard / `X` on physical gamepad if tested) is responsive and never leaves the crack bar stuck. *(Solo `iPhone 17` Run #2 reported `"spawns were normal"` and `"gui works cleanly"`; explicit Quick-Burst + per-family live crack confirmation on the 6-player published soak remains open per Review #032.)*
+- [ ] **Gamepad (If Tested):** `Y` (Bag), `L1` (Field Guide), `B` (Close Drawer), and D-pad traversal stay contained inside `SelectionGroup` without escaping to background buttons. *(Optional; not tested in Run #2.)*
 
 ---
 
@@ -100,5 +100,5 @@ Repeat **3–6 full 5-minute cycles** continuously without closing the client:
 - **Tested Device & OS:** `iPhone 17 (only physical test device available; low-end device check left open per Review #031)`
 - **Tester / Date:** `Human Lead / 2026-11-23`
 - **Duration (`15–30 min`):** `30+ min (Run #2; Run #1 was 15+ min)`
-- **Outcome:** `[ ] PASS` / `[ ] CHANGES REQUIRED` *(Ready for ChatGPT Review #031 re-check; `S4-03` held `[~]` until ChatGPT approves sign-off and unlocks `S5-01`)*
+- **Outcome:** `[ ] PASS` / `[ ] CHANGES REQUIRED` *(Run #2 accepted as solo mobile smoke test in Review #032; `S4-03` held `[~]` pending published cloud-place `106917003014718` preflight & 6-player/intermediate-telemetry soak)*
 - **Record Results:** Summarize checkpoint metrics above and log sign-off in `docs/AGENT_REVIEWS.md` / [`docs/AGENT_TASKS.md`](./AGENT_TASKS.md) before proceeding to **Stage 5 (`S5-01`)**.

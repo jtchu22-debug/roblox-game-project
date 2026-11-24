@@ -320,6 +320,22 @@ function EconomyService.GrantPodToProfile(
 	}
 end
 
+function EconomyService.GrantStarterPodToProfile(
+	profile: Types.PlayerProfileData,
+	nowClock: number,
+	customUid: string?
+): EconomyResult
+	if profile.StarterMeteorCompleted == true then
+		return { Ok = false, Reason = "StarterAlreadyCompleted" }
+	end
+	local grantRes = EconomyService.GrantPodToProfile(profile, "StarSlime", nowClock, customUid)
+	if not grantRes.Ok then
+		return grantRes
+	end
+	profile.StarterMeteorCompleted = true
+	return grantRes
+end
+
 function EconomyService.StartIncubateOnProfile(
 	profile: Types.PlayerProfileData,
 	slotId: string,
@@ -1213,6 +1229,23 @@ function EconomyService.RunSelfTest(): number
 	assert(EconomyMath.CalculateActivePenRate(pStage3.Items) == 7, "Pen_5 NebulaFox contributes +7 Coins/s")
 	assert(EconomyService.RemoveFromPenOnProfile(pStage3, "Pen_5", 4052).Ok, "Remove critter from Pen_5 settles coins & returns to bag")
 	assert((EconomyService.ValidateProfileInvariants(pStage3)), "Invariants valid after Pen_5 cycle")
+
+	-- S4-04: Atomic GrantStarterPodToProfile (full bag keeps eligible, success marks completed, repeat rejected)
+	local pStarterFull = DataService.CreateDefaultProfile(4100)
+	for i = 1, Constants.MAX_BAG_CAPACITY do
+		assert(EconomyService.GrantPodToProfile(pStarterFull, "CinderPup", 4100, "full-" .. tostring(i)).Ok, "Fill bag before starter")
+	end
+	local starterFullRes = EconomyService.GrantStarterPodToProfile(pStarterFull, 4101, "starter-full")
+	assert(not starterFullRes.Ok and starterFullRes.Reason == "BagFull", "Full bag rejects starter pod grant")
+	assert(pStarterFull.StarterMeteorCompleted == false, "Full-bag starter failure keeps StarterMeteorCompleted=false")
+
+	local pStarterOk = DataService.CreateDefaultProfile(4100)
+	local starterGrant1 = EconomyService.GrantStarterPodToProfile(pStarterOk, 4101, "starter-ok-1")
+	assert(starterGrant1.Ok and starterGrant1.SpeciesId == "StarSlime", "Starter pod grant succeeds with StarSlime")
+	assert(pStarterOk.StarterMeteorCompleted == true and EconomyService.GetBagCount(pStarterOk) == 1, "Starter grant atomically marks StarterMeteorCompleted=true and adds 1 pod")
+	local starterGrant2 = EconomyService.GrantStarterPodToProfile(pStarterOk, 4102, "starter-ok-2")
+	assert(not starterGrant2.Ok and starterGrant2.Reason == "StarterAlreadyCompleted", "Repeat starter pod grant rejected")
+	assert(EconomyService.GetBagCount(pStarterOk) == 1, "Repeat starter pod grant adds zero extra pods")
 	passed += 1
 
 	return passed
