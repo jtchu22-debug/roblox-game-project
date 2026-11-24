@@ -1,0 +1,18 @@
+﻿{
+    "nav/Hub":  "tools/art/icons_png/nav/Hub.png",
+    "nav/Ranch":  "tools/art/icons_png/nav/Ranch.png",
+    "nav/Bag":  "tools/art/icons_png/nav/Bag.png",
+    "nav/Guide":  "tools/art/icons_png/nav/Guide.png",
+    "nav/Shop":  "tools/art/icons_png/nav/Shop.png",
+    "nav/Settings":  "tools/art/icons_png/nav/Settings.png",
+    "meteors/Ember":  "tools/art/icons_png/meteors/Ember.png",
+    "meteors/Frost":  "tools/art/icons_png/meteors/Frost.png",
+    "meteors/Astral":  "tools/art/icons_png/meteors/Astral.png",
+    "tools/StarterCracker":  "tools/art/icons_png/tools/StarterCracker.png",
+    "tools/FrostCracker":  "tools/art/icons_png/tools/FrostCracker.png",
+    "tools/AstralCracker":  "tools/art/icons_png/tools/AstralCracker.png",
+    "upgrades/PenSlot":  "tools/art/icons_png/upgrades/PenSlot.png",
+    "upgrades/Incubator":  "tools/art/icons_png/upgrades/Incubator.png",
+    "upgrades/BagCap":  "tools/art/icons_png/upgrades/BagCap.png",
+    "upgrades/FrostLure":  "tools/art/icons_png/upgrades/FrostLure.png"
+}

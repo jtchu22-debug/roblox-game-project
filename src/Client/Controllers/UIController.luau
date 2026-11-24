@@ -57,6 +57,22 @@ export type DrawerLayout = {
 	Height: number,
 }
 
+export type BagRowLayout = {
+	Stacked: boolean,
+	RowHeight: number,
+	MedallionY: number,
+	TextOffsetX: number,
+	TextWidthMargin: number,
+	ActionY: number,
+	ButtonHeight: number,
+	SingleBtnPos: UDim2,
+	SingleBtnSize: UDim2,
+	LeftBtnPos: UDim2,
+	LeftBtnSize: UDim2,
+	RightBtnPos: UDim2,
+	RightBtnSize: UDim2,
+}
+
 type TimerBinding = {
 	Label: TextLabel,
 	MaturesAt: number,
@@ -65,6 +81,7 @@ type TimerBinding = {
 }
 
 local WIDE_TOP_HUD_MIN_WIDTH = 560
+local NARROW_BAG_DRAWER_MAX_WIDTH = 460
 local ACTION_TRAY_WIDTH = 288
 local SETTINGS_DRAWER_HEIGHT = 272
 
@@ -127,6 +144,7 @@ local lastBagStructureSignature: string? = nil
 local bagRebuildCount = 0
 local bagRestoreToken = 0
 local bagRestoreInFlight = false
+local lastBagDrawerNarrow: boolean? = nil
 
 local guideDrawer: Frame? = nil
 local guideProgressLabel: TextLabel? = nil
@@ -141,6 +159,7 @@ local lastGuideStructureSignature: string? = nil
 local guideRebuildCount = 0
 local guideRestoreToken = 0
 local guideRestoreInFlight = false
+local lastGuideDrawerNarrow: boolean? = nil
 
 local settingsDrawer: Frame? = nil
 local muteToggleButton: TextButton? = nil
@@ -284,6 +303,58 @@ function UIController.ComputeDrawerLayout(safeWidth: number, safeHeight: number)
 	}
 end
 
+function UIController.ComputeBagRowLayout(drawerWidth: number, actionCount: number): BagRowLayout
+	local w = if typeof(drawerWidth) == "number" and drawerWidth == drawerWidth and drawerWidth > 0 then drawerWidth else 520
+	local actions = if actionCount == 2 then 2 else 1
+	local stacked = w < NARROW_BAG_DRAWER_MAX_WIDTH
+	if stacked then
+		return {
+			Stacked = true,
+			RowHeight = 112,
+			MedallionY = 9,
+			TextOffsetX = 58,
+			TextWidthMargin = 66,
+			ActionY = 60,
+			ButtonHeight = 44,
+			SingleBtnPos = UDim2.new(0, 8, 0, 60),
+			SingleBtnSize = UDim2.new(1, -16, 0, 44),
+			LeftBtnPos = UDim2.new(0, 8, 0, 60),
+			LeftBtnSize = UDim2.new(0.5, -12, 0, 44),
+			RightBtnPos = UDim2.new(0.5, 4, 0, 60),
+			RightBtnSize = UDim2.new(0.5, -12, 0, 44),
+		}
+	end
+
+	return {
+		Stacked = false,
+		RowHeight = 62,
+		MedallionY = 10,
+		TextOffsetX = 58,
+		TextWidthMargin = if actions == 2 then 234 else 174,
+		ActionY = 9,
+		ButtonHeight = 44,
+		SingleBtnPos = UDim2.new(1, -108, 0.5, -22),
+		SingleBtnSize = UDim2.fromOffset(100, 44),
+		LeftBtnPos = UDim2.new(1, -172, 0.5, -22),
+		LeftBtnSize = UDim2.fromOffset(80, 44),
+		RightBtnPos = UDim2.new(1, -88, 0.5, -22),
+		RightBtnSize = UDim2.fromOffset(80, 44),
+	}
+end
+
+local function getActiveDrawerWidth(drawer: Frame?): number
+	if drawer == nil then
+		return 520
+	end
+	if drawer.Size.X.Offset > 0 then
+		return drawer.Size.X.Offset
+	end
+	if drawer.AbsoluteSize.X > 0 then
+		return drawer.AbsoluteSize.X
+	end
+	return 520
+end
+
 local function applyResponsiveTopLayout(): ()
 	local screenGui = hudGui
 	if screenGui == nil then
@@ -330,6 +401,14 @@ local function applyResponsiveTopLayout(): ()
 		settingsDrawer.AnchorPoint = Vector2.new(0, 0)
 		settingsDrawer.Position = UDim2.fromOffset(layout.SettingsX, layout.SettingsY)
 		settingsDrawer.Size = UDim2.fromOffset(layout.SettingsWidth, SETTINGS_DRAWER_HEIGHT)
+	end
+
+	local nextNarrow = dLayout.Width < NARROW_BAG_DRAWER_MAX_WIDTH
+	if bagOpen and latestOwnerState ~= nil and lastBagDrawerNarrow ~= nil and lastBagDrawerNarrow ~= nextNarrow and rebuildBagContents ~= nil then
+		rebuildBagContents(true)
+	end
+	if guideOpen and latestOwnerState ~= nil and lastGuideDrawerNarrow ~= nil and lastGuideDrawerNarrow ~= nextNarrow and rebuildFieldGuideContents ~= nil then
+		rebuildFieldGuideContents(true)
 	end
 end
 
@@ -1039,10 +1118,15 @@ local function createRowCard(
 	swatchColor: Color3,
 	layoutOrder: number,
 	artEntry: ArtAssetConfig.ArtEntry?,
-	medallionOpts: { Undiscovered: boolean?, Radiant: boolean? }?
+	medallionOpts: { Undiscovered: boolean?, Radiant: boolean? }?,
+	rowLayout: BagRowLayout?
 ): (Frame, TextLabel, TextLabel)
+	local effectiveLayout = if rowLayout ~= nil
+		then rowLayout
+		else UIController.ComputeBagRowLayout(getActiveDrawerWidth(bagDrawer), 1)
+
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 62)
+	row.Size = UDim2.new(1, 0, 0, effectiveLayout.RowHeight)
 	row.BackgroundColor3 = PALETTE.CardDark
 	row.BorderSizePixel = 0
 	row.LayoutOrder = layoutOrder
@@ -1051,19 +1135,20 @@ local function createRowCard(
 	row.Parent = parent
 
 	local textOffsetX = 24
-	local textWidthMargin = 190
+	local textWidthMargin = math.max(32, effectiveLayout.TextWidthMargin - 34)
 	if artEntry ~= nil then
 		attachArtMedallion(row, artEntry, {
 			SizePx = 42,
+			Position = UDim2.fromOffset(8, effectiveLayout.MedallionY),
 			Undiscovered = if medallionOpts ~= nil then medallionOpts.Undiscovered else false,
 			Radiant = if medallionOpts ~= nil then medallionOpts.Radiant else false,
 		})
-		textOffsetX = 58
-		textWidthMargin = 224
+		textOffsetX = effectiveLayout.TextOffsetX
+		textWidthMargin = effectiveLayout.TextWidthMargin
 	else
 		local swatch = Instance.new("Frame")
 		swatch.Size = UDim2.fromOffset(10, 44)
-		swatch.Position = UDim2.new(0, 8, 0.5, -22)
+		swatch.Position = UDim2.fromOffset(8, effectiveLayout.MedallionY)
 		swatch.BackgroundColor3 = swatchColor
 		swatch.BorderSizePixel = 0
 		addCorner(swatch, 4)
@@ -1071,6 +1156,7 @@ local function createRowCard(
 	end
 
 	local title = Instance.new("TextLabel")
+	title.Name = "RowTitle"
 	title.Size = UDim2.new(1, -textWidthMargin, 0, 24)
 	title.Position = UDim2.fromOffset(textOffsetX, 7)
 	title.BackgroundTransparency = 1
@@ -1082,6 +1168,7 @@ local function createRowCard(
 	title.Parent = row
 
 	local subtitle = Instance.new("TextLabel")
+	subtitle.Name = "RowSubtitle"
 	subtitle.Size = UDim2.new(1, -textWidthMargin, 0, 20)
 	subtitle.Position = UDim2.fromOffset(textOffsetX, 33)
 	subtitle.BackgroundTransparency = 1
@@ -1093,6 +1180,18 @@ local function createRowCard(
 	subtitle.Parent = row
 
 	return row, title, subtitle
+end
+
+local function applyRowButtonLayout(layout: BagRowLayout, primaryBtn: GuiObject, secondaryBtn: GuiObject?): ()
+	if secondaryBtn ~= nil then
+		primaryBtn.Position = layout.LeftBtnPos
+		primaryBtn.Size = layout.LeftBtnSize
+		secondaryBtn.Position = layout.RightBtnPos
+		secondaryBtn.Size = layout.RightBtnSize
+	else
+		primaryBtn.Position = layout.SingleBtnPos
+		primaryBtn.Size = layout.SingleBtnSize
+	end
 end
 
 rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
@@ -1215,6 +1314,11 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 	sortItems(incubatingList)
 	sortItems(inPenList)
 
+	local activeBagWidth = getActiveDrawerWidth(bagDrawer)
+	local oneActionLayout = UIController.ComputeBagRowLayout(activeBagWidth, 1)
+	local twoActionLayout = UIController.ComputeBagRowLayout(activeBagWidth, 2)
+	lastBagDrawerNarrow = oneActionLayout.Stacked
+
 	local order = 1
 	local nowClock = workspace:GetServerTimeNow()
 
@@ -1229,7 +1333,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			local def = CritterConfig.ById[item.SpeciesId]
 			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
 				Radiant = item.Variant == "Radiant",
-			})
+			}, twoActionLayout)
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
@@ -1240,7 +1344,6 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			subtitle.Text = string.format("Keep: +%d Coins/s  |  Sell: +%d Coins", effRate, effSell)
 
 			local placeBtn = makeTextButton(row, "PlaceBtn", "Place", PALETTE.MeadowMint, PALETTE.PanelDark, UDim2.fromOffset(72, 44), 13)
-			placeBtn.Position = UDim2.new(1, -166, 0.5, -22)
 			registerBagButton("Place:" .. item.UID, placeBtn)
 			placeBtn.Activated:Connect(function()
 				local currentDto = latestOwnerState
@@ -1270,7 +1373,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			local sellBg = if isArmed then PALETTE.DangerRed else PALETTE.StarlightGold
 			local sellFg = if isArmed then PALETTE.TextCream else PALETTE.PanelDark
 			local sellBtn = makeTextButton(row, "SellBtn", sellText, sellBg, sellFg, UDim2.fromOffset(84, 44), 12)
-			sellBtn.Position = UDim2.new(1, -88, 0.5, -22)
+			applyRowButtonLayout(twoActionLayout, placeBtn, sellBtn)
 			registerBagButton("Sell:" .. item.UID, sellBtn)
 			sellBtn.Activated:Connect(function()
 				local okRange = isWithinStationRange("SellStand", "SellStand")
@@ -1316,14 +1419,14 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			local def = CritterConfig.ById[item.SpeciesId]
 			local row, title, subtitle = createRowCard(scroll, def.AccentColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
 				Radiant = item.Variant == "Radiant",
-			})
+			}, oneActionLayout)
 			order += 1
 
 			title.Text = def.DisplayName .. " Pod"
 			subtitle.Text = string.format("Hatch: %ds  |  Earns +%d Coins/s", def.HatchSeconds, def.CoinsPerSecond)
 
 			local incBtn = makeTextButton(row, "IncubateBtn", "Incubate", PALETTE.OrbitalCyan, PALETTE.PanelDark, UDim2.fromOffset(100, 44), 14)
-			incBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, incBtn, nil)
 			registerBagButton("Incubate:" .. item.UID, incBtn)
 			incBtn.Activated:Connect(function()
 				local currentDto = latestOwnerState
@@ -1369,7 +1472,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				if mature then PALETTE.StarlightGold else PALETTE.OrbitalCyan,
 				order,
 				ArtAssetConfig.GetSpeciesArt(item.SpeciesId),
-				{ Radiant = item.Variant == "Radiant" }
+				{ Radiant = item.Variant == "Radiant" },
+				oneActionLayout
 			)
 			order += 1
 
@@ -1392,7 +1496,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				UDim2.fromOffset(100, 44),
 				14
 			)
-			hatchBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, hatchBtn, nil)
 			registerBagButton("Hatch:" .. slotId, hatchBtn)
 			hatchBtn.Activated:Connect(function()
 				if workspace:GetServerTimeNow() < maturesAt then
@@ -1426,7 +1530,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			local slotId = item.AssignedSlot or "Pen_1"
 			local row, title, subtitle = createRowCard(scroll, def.BodyColor, order, ArtAssetConfig.GetSpeciesArt(item.SpeciesId), {
 				Radiant = item.Variant == "Radiant",
-			})
+			}, twoActionLayout)
 			order += 1
 
 			local variantTag = if item.Variant == "Radiant" then " [RADIANT]" else ""
@@ -1440,11 +1544,12 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				if isFed then " (Star-Fed!)" else ""
 			)
 
+			local leftPenBtn: TextButton
 			if isFed then
 				local fedTagBtn = makeTextButton(row, "FedTag", "Fed ★", PALETTE.PanelDark, PALETTE.StarlightGold, UDim2.fromOffset(84, 44), 13)
-				fedTagBtn.Position = UDim2.new(1, -172, 0.5, -22)
 				fedTagBtn.AutoButtonColor = false
 				fedTagBtn.Selectable = false
+				leftPenBtn = fedTagBtn
 			else
 				local canFeed = dto.Coins >= Constants.CRITTER_FEED_COST
 				local feedBtn = makeTextButton(
@@ -1456,9 +1561,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 					UDim2.fromOffset(84, 44),
 					12
 				)
-				feedBtn.Position = UDim2.new(1, -172, 0.5, -22)
 				feedButtonsBySlot[slotId] = feedBtn
 				registerBagButton("Feed:" .. slotId, feedBtn)
+				leftPenBtn = feedBtn
 				feedBtn.Activated:Connect(function()
 					local currentDto = latestOwnerState
 					if currentDto == nil then
@@ -1490,8 +1595,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			end
 
 			local pickUpBtn = makeTextButton(row, "PickUpBtn", "Pick Up", PALETTE.CardDark, PALETTE.TextCream, UDim2.fromOffset(76, 44), 13)
-			pickUpBtn.Position = UDim2.new(1, -84, 0.5, -22)
 			addStroke(pickUpBtn, PALETTE.OrbitalCyan, 1)
+			applyRowButtonLayout(twoActionLayout, leftPenBtn, pickUpBtn)
 			registerBagButton("PickUp:" .. slotId, pickUpBtn)
 			pickUpBtn.Activated:Connect(function()
 				local currentDto = latestOwnerState
@@ -1541,7 +1646,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			scroll,
 			if owned then PALETTE.OrbitalCyan elseif prereqMet then unownedAccent else PALETTE.BorderSoft,
 			order,
-			ArtAssetConfig.GetUpgradeArt(upgradeId)
+			ArtAssetConfig.GetUpgradeArt(upgradeId),
+			nil,
+			oneActionLayout
 		)
 		order += 1
 
@@ -1554,12 +1661,12 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 
 		if owned then
 			local ownedBtn = makeTextButton(row, "OwnedTag", "Owned", PALETTE.PanelDark, PALETTE.OrbitalCyan, UDim2.fromOffset(100, 44), 14)
-			ownedBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, ownedBtn, nil)
 			ownedBtn.AutoButtonColor = false
 			ownedBtn.Selectable = false
 		elseif not prereqMet then
 			local lockedBtn = makeTextButton(row, "LockedTag", "Locked", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
-			lockedBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, lockedBtn, nil)
 			lockedBtn.AutoButtonColor = false
 			lockedBtn.Selectable = false
 		else
@@ -1573,7 +1680,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				UDim2.fromOffset(100, 44),
 				13
 			)
-			buyBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, buyBtn, nil)
 			upgradeBuyButtons[upgradeId] = buyBtn
 			registerBagButton("Buy:" .. upgradeId, buyBtn)
 			buyBtn.Activated:Connect(function()
@@ -1628,7 +1735,9 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			scroll,
 			if hasFrostTool then PALETTE.OrbitalCyan else PALETTE.BorderSoft,
 			order,
-			ArtAssetConfig.GetUpgradeArt("FrostLure")
+			ArtAssetConfig.GetUpgradeArt("FrostLure"),
+			nil,
+			oneActionLayout
 		)
 		order += 1
 		lureTitle.Text = "Frost Lure Beacon"
@@ -1639,7 +1748,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 
 		if not hasFrostTool then
 			local lockedTag = makeTextButton(lureRow, "LockedTag", "Locked", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
-			lockedTag.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, lockedTag, nil)
 			lockedTag.AutoButtonColor = false
 			lockedTag.Selectable = false
 		else
@@ -1653,7 +1762,7 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				UDim2.fromOffset(100, 44),
 				12
 			)
-			lureBtn.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, lureBtn, nil)
 			frostLureButton = lureBtn
 			registerBagButton("Lure:Frost", lureBtn)
 			lureBtn.Activated:Connect(function()
@@ -1717,7 +1826,8 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 			if discovered then def.BodyColor else PALETTE.BorderSoft,
 			order,
 			ArtAssetConfig.GetSpeciesArt(speciesId),
-			{ Undiscovered = not discovered }
+			{ Undiscovered = not discovered },
+			oneActionLayout
 		)
 		order += 1
 
@@ -1730,14 +1840,14 @@ rebuildBagContents = function(preserveFocusAndScroll: boolean?): ()
 				def.HatchSeconds
 			)
 			local foundTag = makeTextButton(row, "FoundTag", "Found", PALETTE.PanelDark, PALETTE.MeadowMint, UDim2.fromOffset(100, 44), 13)
-			foundTag.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, foundTag, nil)
 			foundTag.AutoButtonColor = false
 			foundTag.Selectable = false
 		else
 			title.Text = string.format("??? [%s]", def.Rarity)
 			subtitle.Text = def.FieldClue
 			local unknownTag = makeTextButton(row, "UnknownTag", "???", PALETTE.PanelDark, PALETTE.TextMuted, UDim2.fromOffset(100, 44), 13)
-			unknownTag.Position = UDim2.new(1, -108, 0.5, -22)
+			applyRowButtonLayout(oneActionLayout, unknownTag, nil)
 			unknownTag.AutoButtonColor = false
 			unknownTag.Selectable = false
 		end
@@ -1915,6 +2025,9 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		guideProgressFill.Size = UDim2.fromScale(ratio, 1)
 	end
 
+	local isNarrowGuide = getActiveDrawerWidth(guideDrawer) < NARROW_BAG_DRAWER_MAX_WIDTH
+	lastGuideDrawerNarrow = isNarrowGuide
+
 	local order = 1
 	for _, speciesId in ipairs(CritterConfig.OrderedIds) do
 		local def = CritterConfig.ById[speciesId]
@@ -1945,7 +2058,7 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		})
 
 		local title = Instance.new("TextLabel")
-		title.Size = UDim2.new(1, -164, 0, 22)
+		title.Size = UDim2.new(1, if isNarrowGuide then -142 else -164, 0, 22)
 		title.Position = UDim2.fromOffset(68, 8)
 		title.BackgroundTransparency = 1
 		title.Font = Enum.Font.GothamBold
@@ -1959,7 +2072,7 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		title.Parent = card
 
 		local details = Instance.new("TextLabel")
-		details.Size = UDim2.new(1, -164, 0, 18)
+		details.Size = UDim2.new(1, if isNarrowGuide then -76 else -164, 0, 18)
 		details.Position = UDim2.fromOffset(68, 32)
 		details.BackgroundTransparency = 1
 		details.Font = Enum.Font.GothamMedium
@@ -1973,7 +2086,7 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		details.Parent = card
 
 		local subInfo = Instance.new("TextLabel")
-		subInfo.Size = UDim2.new(1, -164, 0, 18)
+		subInfo.Size = UDim2.new(1, if isNarrowGuide then -76 else -164, 0, 18)
 		subInfo.Position = UDim2.fromOffset(68, 54)
 		subInfo.BackgroundTransparency = 1
 		subInfo.Font = Enum.Font.GothamMedium
@@ -1985,12 +2098,12 @@ rebuildFieldGuideContents = function(preserveFocusAndScroll: boolean?): ()
 		subInfo.Parent = card
 
 		local badge = Instance.new("TextLabel")
-		badge.Size = UDim2.fromOffset(82, 34)
-		badge.Position = UDim2.new(1, -92, 0.5, -17)
+		badge.Size = if isNarrowGuide then UDim2.fromOffset(60, 22) else UDim2.fromOffset(82, 34)
+		badge.Position = if isNarrowGuide then UDim2.new(1, -68, 0, 8) else UDim2.new(1, -92, 0.5, -17)
 		badge.BackgroundColor3 = PALETTE.PanelDark
 		badge.TextColor3 = if discovered then PALETTE.MeadowMint else PALETTE.TextMuted
 		badge.Font = Enum.Font.GothamBold
-		badge.TextSize = 12
+		badge.TextSize = if isNarrowGuide then 11 else 12
 		badge.Text = if discovered then "Found" else "Locked"
 		addCorner(badge, 8)
 		badge.Parent = card
@@ -2999,25 +3112,18 @@ function UIController.RunSelfTest(): number
 		for _, navBtn in ipairs({ hubButton, ranchButton, bagButton, guideButton, settingsButton }) do
 			assert(navBtn ~= nil and navBtn.AbsoluteSize.X >= 44 and navBtn.AbsoluteSize.Y >= 44, "All top HUD buttons maintain >= 44px touch target")
 		end
-		-- S6-ART-03: verify ArtAssetConfig medallions render consistently in Bag & Field Guide
-		do
-			local bagCardFound = false
-			for _, child in ipairs(scroll:GetChildren()) do
-				local med = child:FindFirstChild("ArtMedallion")
-				if med ~= nil and med:GetAttribute("ArtKey") ~= nil then
-					bagCardFound = true
-					break
-				end
-			end
-			local guideCardFound = false
-			for _, child in ipairs(gScroll:GetChildren()) do
-				local med = child:FindFirstChild("ArtMedallion")
-				if med ~= nil and med:GetAttribute("ArtKey") == "StarSlime" then
-					guideCardFound = true
-					break
-				end
-			end
-			assert(bagCardFound or guideCardFound or #ArtAssetConfig.Critters == 0, "ArtMedallion helper ready")
+		-- S6-ART-03: verify pure ComputeBagRowLayout invariants for portrait (320px -> 300px drawer) and wide drawers
+		for _, actionCount in ipairs({ 1, 2 }) do
+			local narrowRow = UIController.ComputeBagRowLayout(300, actionCount)
+			assert(narrowRow.Stacked == true, "300px drawer stacks Bag row actions below text")
+			assert(narrowRow.RowHeight >= 110, "Stacked Bag row provides room for text + 44px buttons")
+			assert(narrowRow.ButtonHeight >= 44, "Stacked Bag buttons preserve >= 44px touch target")
+			assert(narrowRow.MedallionY + 42 <= narrowRow.ActionY, "Stacked Bag medallion clears bottom action row")
+			assert((276 - narrowRow.TextWidthMargin) >= 200, "Stacked 320px portrait Bag card preserves >= 200px text width")
+
+			local wideRow = UIController.ComputeBagRowLayout(560, actionCount)
+			assert(wideRow.Stacked == false, "560px drawer keeps single-row Bag layout")
+			assert(wideRow.RowHeight == 62 and wideRow.ButtonHeight >= 44, "Wide Bag row keeps 62px height and >= 44px buttons")
 		end
 		assert(
 			bagDrawer ~= nil and bagDrawer.SelectionGroup == true
@@ -3198,6 +3304,93 @@ function UIController.RunSelfTest(): number
 		assert(bagCapacityLabel ~= nil and string.find(bagCapacityLabel.Text, "/20", 1, true) ~= nil, "Bag drawer shows /20 capacity after BagCap_20")
 		assert(bagLabel ~= nil and string.find(bagLabel.Text, "/20", 1, true) ~= nil, "Top HUD BagLabel shows /20 capacity")
 
+		-- Review #042: verify Bag ArtMedallions separately (no tautological fallback) & live 300px portrait stacked cards
+		do
+			local bagSlimeMed = false
+			local bagUpgradeMed = false
+			for _, child in ipairs(scroll:GetChildren()) do
+				local med = child:FindFirstChild("ArtMedallion")
+				if med ~= nil then
+					local artKey = med:GetAttribute("ArtKey")
+					if artKey == "StarSlime" and med:GetAttribute("ArtUndiscovered") == false then
+						bagSlimeMed = true
+					elseif artKey == "FrostCracker" and med:GetAttribute("ArtUndiscovered") == false then
+						bagUpgradeMed = true
+					end
+				end
+			end
+			assert(bagSlimeMed, "Bag renders discovered StarSlime ArtMedallion")
+			assert(bagUpgradeMed, "Bag renders FrostCracker upgrade ArtMedallion")
+		end
+
+		if bagDrawer ~= nil then
+			local origBagSize = bagDrawer.Size
+			local origState = latestOwnerState
+			local portraitItems = table.clone(mockItems)
+			portraitItems["inc-1"] = {
+				UID = "inc-1",
+				SpeciesId = "NebulaFox",
+				Variant = "Normal",
+				State = "Incubating",
+				AssignedSlot = "Incubator_1",
+				MaturesAt = workspace:GetServerTimeNow() - 5,
+				CreatedAt = 107,
+			}
+			local dtoPortrait: Types.OwnerStateDTO = {
+				Revision = 99,
+				Coins = 1500,
+				BagCap = Constants.MAX_BAG_CAPACITY_UPGRADED,
+				ReservedBagSlots = 0,
+				StarterMeteorCompleted = true,
+				Items = portraitItems,
+				Slots = { Pen_1 = "pen-1", Incubator_1 = "inc-1" },
+				Upgrades = { FrostCracker = true, Incubator_2 = true, BagCap_20 = true },
+				DiscoveredSpecies = { StarSlime = true, NebulaFox = true, SolarGolem = true },
+			}
+			bagDrawer.Size = UDim2.fromOffset(300, 360)
+			latestOwnerState = dtoPortrait
+			rebuildBagContents(false)
+			waitForBagSettled()
+
+			local checkedHatched = false
+			local checkedPod = false
+			local checkedHatch = false
+			for _, child in ipairs(scroll:GetChildren()) do
+				if child:IsA("Frame") then
+					local titleLbl = child:FindFirstChild("RowTitle") :: TextLabel?
+					local subLbl = child:FindFirstChild("RowSubtitle") :: TextLabel?
+					local placeBtn = child:FindFirstChild("PlaceBtn") :: TextButton?
+					local sellBtn = child:FindFirstChild("SellBtn") :: TextButton?
+					local incBtn = child:FindFirstChild("IncubateBtn") :: TextButton?
+					local hatchBtn = child:FindFirstChild("HatchBtn") :: TextButton?
+					if placeBtn ~= nil and sellBtn ~= nil and titleLbl ~= nil and subLbl ~= nil then
+						assert(child.AbsoluteSize.Y >= 110, "Portrait Hatched row expands to stacked height")
+						assert(titleLbl.AbsoluteSize.X >= 180 and subLbl.AbsoluteSize.X >= 180, "Portrait Hatched text keeps >= 180px width")
+						assert(placeBtn.AbsoluteSize.Y >= 44 and sellBtn.AbsoluteSize.Y >= 44, "Portrait Place/Sell buttons keep >= 44px touch height")
+						local subBottom = subLbl.AbsolutePosition.Y + subLbl.AbsoluteSize.Y
+						assert(placeBtn.AbsolutePosition.Y >= subBottom and sellBtn.AbsolutePosition.Y >= subBottom, "Portrait Place/Sell sit below subtitle")
+						assert((placeBtn.AbsolutePosition.X + placeBtn.AbsoluteSize.X) <= sellBtn.AbsolutePosition.X, "Portrait Place/Sell do not overlap")
+						checkedHatched = true
+					elseif incBtn ~= nil and titleLbl ~= nil and subLbl ~= nil then
+						assert(incBtn.AbsoluteSize.Y >= 44, "Portrait Incubate button keeps >= 44px touch height")
+						assert(titleLbl.AbsoluteSize.X >= 180, "Portrait Pod title keeps >= 180px width")
+						assert(incBtn.AbsolutePosition.Y >= (subLbl.AbsolutePosition.Y + subLbl.AbsoluteSize.Y), "Portrait Incubate sits below subtitle")
+						checkedPod = true
+					elseif hatchBtn ~= nil and titleLbl ~= nil and subLbl ~= nil then
+						assert(hatchBtn.AbsoluteSize.Y >= 44, "Portrait Hatch button keeps >= 44px touch height")
+						assert(hatchBtn.AbsolutePosition.Y >= (subLbl.AbsolutePosition.Y + subLbl.AbsoluteSize.Y), "Portrait Hatch sits below subtitle")
+						checkedHatch = true
+					end
+				end
+			end
+			assert(checkedHatched and checkedPod and checkedHatch, "Portrait Bag test verified Hatched, Pod, and Hatch rows")
+
+			bagDrawer.Size = origBagSize
+			latestOwnerState = origState
+			rebuildBagContents(false)
+			waitForBagSettled()
+		end
+
 		-- Verify server-acknowledged navigation only confirms arrival on Ok=true and honors 2.0s client cooldown
 		lastNavRequestClock = -Constants.NAVIGATE_CLIENT_COOLDOWN_SECONDS
 		pendingNavigate = false
@@ -3243,6 +3436,16 @@ function UIController.RunSelfTest(): number
 		local slimeCard = gScroll:FindFirstChild("GuideCard_StarSlime")
 		local owlCard = gScroll:FindFirstChild("GuideCard_CometOwl")
 		assert(slimeCard ~= nil and owlCard ~= nil, "FieldGuide renders all species cards")
+		local slimeMed = slimeCard:FindFirstChild("ArtMedallion")
+		local owlMed = owlCard:FindFirstChild("ArtMedallion")
+		assert(
+			slimeMed ~= nil and slimeMed:GetAttribute("ArtKey") == "StarSlime" and slimeMed:GetAttribute("ArtUndiscovered") == false,
+			"FieldGuide renders discovered StarSlime ArtMedallion"
+		)
+		assert(
+			owlMed ~= nil and owlMed:GetAttribute("ArtKey") == "CometOwl" and owlMed:GetAttribute("ArtUndiscovered") == true,
+			"FieldGuide renders undiscovered CometOwl '?' ArtMedallion"
+		)
 		local hasRadiantText = false
 		for _, ch in ipairs(slimeCard:GetChildren()) do
 			if ch:IsA("TextLabel") and string.find(ch.Text, "Radiant", 1, true) ~= nil then
@@ -3294,6 +3497,11 @@ function UIController.RunSelfTest(): number
 		assert(guideProgressLabel ~= nil and string.find(guideProgressLabel.Text, "4 / 6", 1, true) ~= nil, "FieldGuide updates cleanly to 4 / 6")
 		local revealedOwlCard = gScroll:FindFirstChild("GuideCard_CometOwl")
 		assert(revealedOwlCard ~= nil, "CometOwl card present after discovery")
+		local revealedOwlMed = revealedOwlCard:FindFirstChild("ArtMedallion")
+		assert(
+			revealedOwlMed ~= nil and revealedOwlMed:GetAttribute("ArtKey") == "CometOwl" and revealedOwlMed:GetAttribute("ArtUndiscovered") == false,
+			"CometOwl ArtMedallion flips to discovered glyph after discovery"
+		)
 		local owlRevealedTitle = false
 		for _, ch in ipairs(revealedOwlCard:GetChildren()) do
 			if ch:IsA("TextLabel") and string.find(ch.Text, "Comet Owl [Legendary]", 1, true) ~= nil then
