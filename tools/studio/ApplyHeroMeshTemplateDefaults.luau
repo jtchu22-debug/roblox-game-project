@@ -27,6 +27,18 @@ type MeteorPalette = {
 	TrailColor: Color3,
 }
 
+type ToolPalette = {
+	GripColor: Color3,
+	HandleColor: Color3,
+	BandColor: Color3,
+	HeadColor: Color3,
+	AccentColor: Color3,
+	HandleMaterial: Enum.Material,
+	BandMaterial: Enum.Material,
+	HeadMaterial: Enum.Material,
+	AccentMaterial: Enum.Material,
+}
+
 local SECONDARY_CRITTER_COLORS: { [string]: Color3 } = {
 	StarSlime = Color3.fromRGB(42, 152, 116),
 	CinderPup = Color3.fromRGB(245, 228, 204),
@@ -36,12 +48,20 @@ local SECONDARY_CRITTER_COLORS: { [string]: Color3 } = {
 	CometOwl = Color3.fromRGB(228, 220, 246),
 }
 
-local function loadPalettes(): ({ [string]: CritterPalette }, { [string]: MeteorPalette })
+local function loadPalettes(): ({ [string]: CritterPalette }, { [string]: MeteorPalette }, { [string]: ToolPalette })
 	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared")
 	local configFolder = if sharedFolder ~= nil then sharedFolder:FindFirstChild("Config") else nil
 	if configFolder ~= nil then
 		local critterCfg = require(configFolder:WaitForChild("CritterConfig")) :: any
 		local meteorCfg = require(configFolder:WaitForChild("MeteorConfig")) :: any
+		local toolCfgInst = configFolder:FindFirstChild("ToolConfig")
+		local mergedTools: { [string]: ToolPalette } = {}
+		if toolCfgInst ~= nil then
+			local toolCfg = require(toolCfgInst) :: any
+			for toolId, def in pairs(toolCfg.ById) do
+				mergedTools[toolId] = def
+			end
+		end
 		local mergedCritters: { [string]: CritterPalette } = {}
 		for speciesId, def in pairs(critterCfg.ById) do
 			mergedCritters[speciesId] = {
@@ -50,7 +70,7 @@ local function loadPalettes(): ({ [string]: CritterPalette }, { [string]: Meteor
 				AccentColor = def.AccentColor,
 			}
 		end
-		return mergedCritters, meteorCfg.ById
+		return mergedCritters, meteorCfg.ById, mergedTools
 	end
 
 	warn("[ApplyHeroMeshTemplateDefaults] ReplicatedStorage.Shared not found; using standalone Studio preview palette.")
@@ -67,7 +87,42 @@ local function loadPalettes(): ({ [string]: CritterPalette }, { [string]: Meteor
 		Frost = { RockColor = Color3.fromRGB(95, 135, 185), CoreColor = Color3.fromRGB(125, 240, 255), TrailColor = Color3.fromRGB(85, 220, 255) },
 		Astral = { RockColor = Color3.fromRGB(90, 75, 135), CoreColor = Color3.fromRGB(255, 210, 80), TrailColor = Color3.fromRGB(215, 110, 255) },
 	}
-	return fallbackCritters, fallbackMeteors
+	local fallbackTools: { [string]: ToolPalette } = {
+		StarterCracker = {
+			GripColor = Color3.fromRGB(96, 60, 38),
+			HandleColor = Color3.fromRGB(142, 92, 54),
+			BandColor = Color3.fromRGB(198, 128, 72),
+			HeadColor = Color3.fromRGB(238, 228, 208),
+			AccentColor = Color3.fromRGB(85, 195, 185),
+			HandleMaterial = Enum.Material.SmoothPlastic,
+			BandMaterial = Enum.Material.Metal,
+			HeadMaterial = Enum.Material.SmoothPlastic,
+			AccentMaterial = Enum.Material.Neon,
+		},
+		FrostCracker = {
+			GripColor = Color3.fromRGB(28, 42, 74),
+			HandleColor = Color3.fromRGB(185, 152, 92),
+			BandColor = Color3.fromRGB(224, 218, 206),
+			HeadColor = Color3.fromRGB(78, 118, 168),
+			AccentColor = Color3.fromRGB(95, 232, 255),
+			HandleMaterial = Enum.Material.Metal,
+			BandMaterial = Enum.Material.SmoothPlastic,
+			HeadMaterial = Enum.Material.SmoothPlastic,
+			AccentMaterial = Enum.Material.Neon,
+		},
+		AstralCracker = {
+			GripColor = Color3.fromRGB(30, 26, 48),
+			HandleColor = Color3.fromRGB(205, 164, 78),
+			BandColor = Color3.fromRGB(235, 224, 202),
+			HeadColor = Color3.fromRGB(215, 174, 82),
+			AccentColor = Color3.fromRGB(196, 110, 255),
+			HandleMaterial = Enum.Material.Metal,
+			BandMaterial = Enum.Material.SmoothPlastic,
+			HeadMaterial = Enum.Material.Metal,
+			AccentMaterial = Enum.Material.Neon,
+		},
+	}
+	return fallbackCritters, fallbackMeteors, fallbackTools
 end
 
 local function configurePartDefaults(part: BasePart, color: Color3, material: Enum.Material, castShadow: boolean): ()
@@ -104,7 +159,12 @@ local function measureMinWorldY(model: Model): number
 	return minY
 end
 
-local function applyToModel(model: Model, critterPal: CritterPalette?, meteorPal: MeteorPalette?): boolean
+local function applyToModel(
+	model: Model,
+	critterPal: CritterPalette?,
+	meteorPal: MeteorPalette?,
+	toolPal: ToolPalette?
+): boolean
 	local parts: { [string]: BasePart } = {}
 	local basePartCount = 0
 	for _, desc in ipairs(model:GetDescendants()) do
@@ -114,6 +174,7 @@ local function applyToModel(model: Model, critterPal: CritterPalette?, meteorPal
 		end
 	end
 
+	local isTool = false
 	if critterPal ~= nil then
 		local body = parts["Body"]
 		local secondary = parts["Secondary"]
@@ -136,12 +197,40 @@ local function applyToModel(model: Model, critterPal: CritterPalette?, meteorPal
 		configurePartDefaults(core, meteorPal.CoreColor, Enum.Material.Neon, false)
 		configurePartDefaults(crest, meteorPal.TrailColor, Enum.Material.Neon, false)
 		model.PrimaryPart = rock
+	elseif toolPal ~= nil then
+		isTool = true
+		local grip = parts["Grip"]
+		local handle = parts["Handle"]
+		local band = parts["Band"]
+		local head = parts["Head"]
+		local accent = parts["Accent"]
+		assert(grip and handle and band and head and accent, string.format("%s missing expected Grip/Handle/Band/Head/Accent BaseParts", model:GetFullName()))
+		configurePartDefaults(grip, toolPal.GripColor, Enum.Material.SmoothPlastic, true)
+		configurePartDefaults(handle, toolPal.HandleColor, toolPal.HandleMaterial, true)
+		configurePartDefaults(band, toolPal.BandColor, toolPal.BandMaterial, true)
+		configurePartDefaults(head, toolPal.HeadColor, toolPal.HeadMaterial, true)
+		configurePartDefaults(accent, toolPal.AccentColor, toolPal.AccentMaterial, toolPal.AccentMaterial ~= Enum.Material.Neon)
+		model.PrimaryPart = grip
 	else
 		return false
 	end
 
 	assert(basePartCount <= 8, string.format("%s exceeds 8-BasePart budget (%d)", model:GetFullName(), basePartCount))
 	local _, bboxSize = model:GetBoundingBox()
+	if isTool then
+		local maxDim = math.max(bboxSize.X, bboxSize.Y, bboxSize.Z)
+		assert(maxDim <= 4.0, string.format("%s max dimension %.3f exceeds 4.0 stud budget", model:GetFullName(), maxDim))
+		print(string.format(
+			"[ApplyHeroMeshTemplateDefaults] Styled Tool %s | Parts=%d/8 | Size=(%.3f, %.3f, %.3f)",
+			model:GetFullName(),
+			basePartCount,
+			bboxSize.X,
+			bboxSize.Y,
+			bboxSize.Z
+		))
+		return true
+	end
+
 	assert(bboxSize.Y <= 8.0, string.format("%s height %.3f exceeds 8.0 stud budget", model:GetFullName(), bboxSize.Y))
 
 	local minY = measureMinWorldY(model)
@@ -160,11 +249,11 @@ local function applyToModel(model: Model, critterPal: CritterPalette?, meteorPal
 	return true
 end
 
-local critterPalettes, meteorPalettes = loadPalettes()
+local critterPalettes, meteorPalettes, toolPalettes = loadPalettes()
 local containers: { Instance } = { workspace }
 local assetTemplates = ReplicatedStorage:FindFirstChild("AssetTemplates")
 if assetTemplates ~= nil then
-	for _, folderName in ipairs({ "Critters", "Meteors" }) do
+	for _, folderName in ipairs({ "Critters", "Meteors", "Tools" }) do
 		local sub = assetTemplates:FindFirstChild(folderName)
 		if sub ~= nil then
 			table.insert(containers, sub)
@@ -176,7 +265,7 @@ local styledCount = 0
 for _, container in ipairs(containers) do
 	for _, child in ipairs(container:GetChildren()) do
 		if child:IsA("Model") then
-			if applyToModel(child, critterPalettes[child.Name], meteorPalettes[child.Name]) then
+			if applyToModel(child, critterPalettes[child.Name], meteorPalettes[child.Name], toolPalettes[child.Name]) then
 				styledCount += 1
 			end
 		end

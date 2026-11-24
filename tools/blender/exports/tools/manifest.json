@@ -1,0 +1,53 @@
+{
+  "StarterCracker": {
+    "tool_id": "StarterCracker",
+    "parts": 5,
+    "triangles": 344,
+    "size_studs": [
+      0.72,
+      1.12,
+      2.84
+    ],
+    "grip_center": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "blend_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\sources\\tools\\StarterCracker.blend",
+    "fbx_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\exports\\tools\\StarterCracker.fbx"
+  },
+  "FrostCracker": {
+    "tool_id": "FrostCracker",
+    "parts": 5,
+    "triangles": 284,
+    "size_studs": [
+      0.5,
+      1.28,
+      2.67
+    ],
+    "grip_center": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "blend_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\sources\\tools\\FrostCracker.blend",
+    "fbx_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\exports\\tools\\FrostCracker.fbx"
+  },
+  "AstralCracker": {
+    "tool_id": "AstralCracker",
+    "parts": 5,
+    "triangles": 352,
+    "size_studs": [
+      0.35,
+      0.965,
+      3.162
+    ],
+    "grip_center": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "blend_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\sources\\tools\\AstralCracker.blend",
+    "fbx_path": "C:\\Users\\Justin\\.gemini\\antigravity\\scratch\\roblox-game-project\\tools\\blender\\exports\\tools\\AstralCracker.fbx"
+  }
+}

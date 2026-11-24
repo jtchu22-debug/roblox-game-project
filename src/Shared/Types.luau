@@ -30,6 +30,7 @@ export type PlotAction =
 	| "UseFrostLure"
 export type MeteorShapeStyle = "FlameCrest" | "IceSpikes" | "StarRing"
 export type SlotCategory = "Pen" | "Incubator" | "Tool" | "Bag"
+export type CrackerToolId = "StarterCracker" | "FrostCracker" | "AstralCracker"
 export type StationZone = "Ranch" | "Hub"
 export type NavigationTarget = "Hub" | "Ranch"
 export type OnboardingFunnelStep = "Spawn" | "FirstMeteor" | "FirstHatch" | "FirstPen" | "FirstUpgrade" | "SecondRescue"
@@ -134,6 +135,22 @@ export type UpgradeDefinition = {
 	PadOffsetZ: number,
 	RequiresUpgradeId: UpgradeId?,
 	Description: string,
+}
+
+export type CrackerToolDefinition = {
+	Id: CrackerToolId,
+	DisplayName: string,
+	RequiredUpgradeId: UpgradeId?,
+	WorkbenchZ: number,
+	HandleColor: Color3,
+	GripColor: Color3,
+	BandColor: Color3,
+	HeadColor: Color3,
+	AccentColor: Color3,
+	HandleMaterial: Enum.Material,
+	BandMaterial: Enum.Material,
+	HeadMaterial: Enum.Material,
+	AccentMaterial: Enum.Material,
 }
 
 export type Service = {

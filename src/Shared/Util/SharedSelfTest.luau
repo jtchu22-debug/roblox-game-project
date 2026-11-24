@@ -12,6 +12,7 @@ local Types = require(Shared:WaitForChild("Types"))
 local ConfigFolder = Shared:WaitForChild("Config")
 local CritterConfig = require(ConfigFolder:WaitForChild("CritterConfig"))
 local MeteorConfig = require(ConfigFolder:WaitForChild("MeteorConfig"))
+local ToolConfig = require(ConfigFolder:WaitForChild("ToolConfig"))
 local UpgradeConfig = require(ConfigFolder:WaitForChild("UpgradeConfig"))
 
 local UtilFolder = script.Parent
@@ -412,6 +413,25 @@ function SharedSelfTest.RunAll(): number
 		assert(authoredModel.Parent == collisionContainer and authoredModel:FindFirstChild("AuthoredChild") == authoredChild, "Unowned model and descendants must survive EnsureExists")
 
 		collisionContainer:Destroy()
+	end)
+	passedCount += 1
+
+	runTest("ToolConfig_Integrity_And_Resolution", function()
+		assert(#ToolConfig.OrderedIds == 3, "Expected 3 Cracker tool definitions")
+		assert(ToolConfig.MAX_TOOL_PARTS == 8 and ToolConfig.MAX_TOOL_TRIANGLES == 400, "Tool budgets must match art direction")
+		assert(ToolConfig.ById.StarterCracker.RequiredUpgradeId == nil, "StarterCracker must be owned by default")
+		assert(ToolConfig.ById.FrostCracker.RequiredUpgradeId == "FrostCracker", "FrostCracker maps to FrostCracker upgrade")
+		assert(ToolConfig.ById.AstralCracker.RequiredUpgradeId == "StarCracker", "AstralCracker maps to StarCracker upgrade")
+
+		assert(ToolConfig.IsToolOwned("StarterCracker", nil) == true, "StarterCracker owned with nil upgrades")
+		assert(ToolConfig.IsToolOwned("FrostCracker", nil) == false, "FrostCracker locked with nil upgrades")
+		assert(ToolConfig.IsToolOwned("AstralCracker", { FrostCracker = true }) == false, "AstralCracker locked without StarCracker")
+		assert(ToolConfig.IsToolOwned("FrostCracker", { FrostCracker = true }) == true, "FrostCracker owned when upgraded")
+		assert(ToolConfig.IsToolOwned("AstralCracker", { FrostCracker = true, StarCracker = true }) == true, "AstralCracker owned when upgraded")
+
+		assert(ToolConfig.ResolveHeldCrackerId(nil) == "StarterCracker", "Default held cracker is StarterCracker")
+		assert(ToolConfig.ResolveHeldCrackerId({ FrostCracker = true }) == "FrostCracker", "FrostCracker upgrade equips FrostCracker")
+		assert(ToolConfig.ResolveHeldCrackerId({ FrostCracker = true, StarCracker = true }) == "AstralCracker", "StarCracker upgrade equips AstralCracker")
 	end)
 	passedCount += 1
 

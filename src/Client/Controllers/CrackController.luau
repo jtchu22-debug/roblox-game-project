@@ -18,6 +18,7 @@ local TweenService = game:GetService("TweenService")
 
 local ControllersFolder = script.Parent
 local SoundController = require(ControllersFolder:WaitForChild("SoundController"))
+local ToolVisualController = require(ControllersFolder:WaitForChild("ToolVisualController"))
 local UIController = require(ControllersFolder:WaitForChild("UIController"))
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -25,6 +26,7 @@ local Constants = require(Shared:WaitForChild("Constants"))
 local Types = require(Shared:WaitForChild("Types"))
 local CritterConfig = require(Shared:WaitForChild("Config"):WaitForChild("CritterConfig"))
 local MeteorConfig = require(Shared:WaitForChild("Config"):WaitForChild("MeteorConfig"))
+local ToolConfig = require(Shared:WaitForChild("Config"):WaitForChild("ToolConfig"))
 local UpgradeConfig = require(Shared:WaitForChild("Config"):WaitForChild("UpgradeConfig"))
 
 type CrackMode = "Standard" | "FrostFracture" | "AstralPulse"
@@ -164,6 +166,7 @@ local function cancelLocalCrack(meteorUID: string, showNotice: boolean): ()
 		activeUsedBeat1Burst = false
 		activeCrackToken += 1
 		hideFeelUI()
+		ToolVisualController.ClearHeldCracker("Cancelled")
 		if showNotice then
 			UIController.ShowToast("Meteor rescue cancelled.", "Info")
 		end
@@ -392,6 +395,7 @@ local function advanceFrostBeat(usedBurst: boolean): ()
 	configureFeelBeat(2)
 	updateFeelButtonPromptText(false)
 	SoundController.Play(if usedBurst then "CrackChime" else "CrackStart")
+	ToolVisualController.PulseCrackSwing(1.0)
 	spawnBurstEffect(activeMeteorPos, PALETTE.OrbitalCyan, 10)
 end
 
@@ -414,6 +418,7 @@ local function submitFinishCrack(usedQuickBurst: boolean): ()
 	local crackMode = activeCrackMode
 
 	hideFeelUI()
+	ToolVisualController.PulseCrackSwing(1.0)
 
 	task.spawn(function()
 		local okFinish, finishRes = pcall(function()
@@ -459,6 +464,7 @@ local function submitFinishCrack(usedQuickBurst: boolean): ()
 			activeCrackMode = "Standard"
 			activeBeat = 1
 			activeUsedBeat1Burst = false
+			ToolVisualController.ClearHeldCracker("Finished")
 		end
 	end)
 end
@@ -744,6 +750,33 @@ function CrackController.Start(self: typeof(CrackController)): ()
 	if renderConn == nil then
 		renderConn = RunService.RenderStepped:Connect(stepCrackFeelUI)
 	end
+
+	local lp = Players.LocalPlayer
+	if lp ~= nil then
+		local function bindHumDied(char: Model): ()
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum ~= nil then
+				hum.Died:Connect(function()
+					if activeCrackUID ~= nil then
+						cancelLocalCrack(activeCrackUID, false)
+					else
+						ToolVisualController.ClearHeldCracker("HumanoidDied")
+					end
+				end)
+			end
+		end
+		if lp.Character ~= nil then
+			bindHumDied(lp.Character)
+		end
+		lp.CharacterAdded:Connect(bindHumDied)
+		lp.CharacterRemoving:Connect(function()
+			if activeCrackUID ~= nil then
+				cancelLocalCrack(activeCrackUID, false)
+			else
+				ToolVisualController.ClearHeldCracker("CharacterRemoving")
+			end
+		end)
+	end
 end
 
 function CrackController.IsCracking(): boolean
@@ -865,6 +898,10 @@ function CrackController.TryStartFromPrompt(prompt: ProximityPrompt): boolean
 			end
 			feelFrame.Visible = true
 		end
+
+		local dto = UIController.GetLatestOwnerState()
+		local equippedToolId = ToolConfig.ResolveHeldCrackerId(if dto ~= nil then dto.Upgrades else nil)
+		ToolVisualController.EquipHeldCracker(equippedToolId)
 
 		SoundController.Play("CrackStart")
 	end)

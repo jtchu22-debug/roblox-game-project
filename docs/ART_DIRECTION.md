@@ -70,6 +70,15 @@ Create one original low-poly Blender model for each launch Cracker tier. Give th
 
 Export editable sources and Studio-ready meshes with consistent scale and grip alignment. Add locked and owned previews at the Observatory Tool Workbench, and show the currently eligible Cracker in hand during the existing meteor crack interaction. The existing server upgrade rules determine which tool tier the player may use. Verify grip alignment, tool cleanup after a cancelled crack or respawn, prompt readability, and first- and third-person visibility on desktop and touch. Use the same mesh optimization and restrained effects principles as the hero assets.
 
+- **S6-ART-01 Implemented Assets & Verification (`StarfallRanch_Dev.rbxl` — Nov 23, 2026):**
+  - **Generator & Editable Sources:** [`tools/blender/generate_cracker_tools.py`](../tools/blender/generate_cracker_tools.py), `.blend` sources in `tools/blender/sources/tools/{StarterCracker,FrostCracker,AstralCracker}.blend`, and Studio-ready `.fbx` exports in `tools/blender/exports/tools/{StarterCracker,FrostCracker,AstralCracker}.fbx` (`manifest.json`).
+  - **Shared Config & Client Visuals:** [`src/Shared/Config/ToolConfig.luau`](../src/Shared/Config/ToolConfig.luau), [`src/Client/Controllers/ToolVisualController.luau`](../src/Client/Controllers/ToolVisualController.luau), and [`src/Client/Controllers/CrackController.luau`](../src/Client/Controllers/CrackController.luau) (`Tools` support added to [`tools/studio/ApplyHeroMeshTemplateDefaults.luau`](../tools/studio/ApplyHeroMeshTemplateDefaults.luau)).
+  - **Verified Budgets (`<= 8` parts, `<= 400` tris, `<= 4.0` studs, `(0, 0, 0)` grip pivot):**
+    - `StarterCracker`: `5/8` flat `MeshPart`s (`Grip`, `Handle`, `Band`, `Head`, `Accent`), `344/400` tris, `0.720 × 2.840 × 1.120` studs.
+    - `FrostCracker`: `5/8` flat `MeshPart`s, `284/400` tris, `0.500 × 2.670 × 1.280` studs.
+    - `AstralCracker`: `5/8` flat `MeshPart`s, `352/400` tris, `0.350 × 3.162 × 0.965` studs.
+  - **Runtime Behavior:** Observatory `ToolWorkbench` displays locked/owned previews live from `OwnerStateDTO.Upgrades` (clear of `UpgradePad_FrostCracker` / `UpgradePad_StarCracker` prompts), equips the highest eligible Cracker in `RightHand` (`Motor6D`, `Massless`, `LocalTransparencyModifier = 0`, Reduced-Motion safe) only after server `RequestStartCrack` approval, cleans up on cancel/finish/`Humanoid.Died`/`CharacterRemoving`, and preserves server `ToolRequired` gating.
+
 ## Launch station models
 
 Give each interactable launch location a finished original low-poly model or modular prop assembly. Use the [Starfall Valley world art direction](./WORLD_ART_DIRECTION.md) for materials and placement. Dress one ranch and the Tool Workbench first, then repeat the approved kit across all six plots. Use the existing plot anchors, upgrade IDs, prompt reach, and server rules to connect the models to gameplay.
