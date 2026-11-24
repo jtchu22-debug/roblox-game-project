@@ -162,3 +162,16 @@ For the earned-Coin equipment catalog, use the [Observatory Gear Shop concept an
   - **Responsive Portrait Cards:** [`UIController.ComputeBagRowLayout`](../src/Client/Controllers/UIController.luau) stacks Bag row actions below text when the drawer width is `< 460 px` (`RowHeight = 112`, `>= 44 px` touch targets, `210 px` title/subtitle width on `320 px` portrait screens across Hatched `Place`/`Sell`, `Incubate`, `Hatch!`, `Feed`/`Pick Up`, Upgrades, `FrostLure`, and Checklist rows) and uses a compact top-right status pill on narrow `FieldGuideDrawer` cards.
   - **Strict Artwork & Portrait Tests:** `UIController.RunSelfTest()` verifies `ArtMedallion` in Bag (`StarSlime`, `FrostCracker`) and Field Guide (`StarSlime` discovered vs. `CometOwl` `?` undiscovered) separately without tautological fallbacks, plus live `300 px`-wide portrait Bag row geometry (`titleW = 210`, `44 px` buttons below subtitle).
   - **Upload-Ready PNG Icons:** [`tools/art/render_ui_icons_png.ps1`](../tools/art/render_ui_icons_png.ps1) exports all `16` `256×256` transparent PNGs, `manifest.json`, and a labeled `4×4` [`contact_sheet.png`](../tools/art/icons_png/contact_sheet.png) under `tools/art/icons_png/`.
+
+### Gameplay HUD direction
+
+Use the owner's [Anime Dice](https://www.roblox.com/games/113290951185459/Anime-Dice) screenshot as a reference for big illustrated buttons, short labels, and a clear primary action at a glance. Aim for the same energy with Starfall Ranch's own icon silhouettes, arrangement, type and materials. Use rounded navy enamel panels, warm cream labels, brass outlines and teal or amber accents. Draw original icons such as an observatory dome for Hub, a ranch gate for Ranch, a supply satchel for Bag and a field journal for Guide.
+
+| HUD area | What belongs there |
+| --- | --- |
+| Upper edge | Keep **Hub** and **Ranch** together as prominent travel buttons. Put **Shop** in the utility group when that destination is available. Keep **Settings** close to the utility controls. |
+| Lower corner | Pin **Coins** and **Coins/s** together in a compact ledger. Use icons plus short labels for **Bag** and **Guide**. Move the utility group out of the movement and jump zones on touch layouts. |
+| Context strip | Use an **Observatory Beacon** to show the next existing action in the rescue loop, such as **Crack Meteor**, **Incubate Pod**, or **Hatch Ready**. A short amber pulse can mark a ready hatch or rare meteor alert. Show the relevant action only in its valid context, using existing prompts and range rules. When the player is out of range, show a compact hint such as **Head to your Incubator**. |
+| World view | Keep the avatar, meteor and aiming area clear. Put offers inside Shop and keep idle overlays compact. Bag, Guide and Shop can use deeper detail once opened. |
+
+Deliver an illustrated HUD pass as part of S6-ART-03. Mock one view near a meteor and one near a ready incubator, then verify the same hierarchy at **320×568 portrait**, **667×375 landscape** and **1280×720 desktop**. Check 44×44 px touch targets, Roblox control clearance, readable prices and income, gamepad focus, and Reduced Motion. The Beacon reuses existing objective and station state. Keep the server's current action validation and reward rules.
